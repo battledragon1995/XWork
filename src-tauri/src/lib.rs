@@ -1,4 +1,5 @@
 pub mod app;
+pub mod platform;
 pub mod storage;
 
 /// Starts the XWork desktop application with the real Tauri runtime.

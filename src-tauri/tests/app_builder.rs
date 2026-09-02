@@ -1,7 +1,41 @@
 use rusqlite::Connection;
-use std::panic::{AssertUnwindSafe, catch_unwind};
+use std::{
+    panic::{AssertUnwindSafe, catch_unwind},
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+};
 use tauri::Manager;
+use xwork_lib::app::lifecycle::{
+    AppLifecycleError, AppLifecycleState, AppRuntime, AppRuntimeFuture, AttentionSession,
+    QuitSummaryDto,
+};
 use xwork_lib::storage::{Storage, StorageError};
+
+/// Supplies an empty runtime to isolated composition tests.
+struct EmptyTestRuntime;
+
+impl AppRuntime for EmptyTestRuntime {
+    /// Returns an empty Quit snapshot.
+    fn quit_summary<'a>(
+        &'a self,
+    ) -> AppRuntimeFuture<'a, Result<QuitSummaryDto, AppLifecycleError>> {
+        Box::pin(async { Ok(QuitSummaryDto::default()) })
+    }
+
+    /// Returns no attention sessions.
+    fn attention_sessions<'a>(
+        &'a self,
+    ) -> AppRuntimeFuture<'a, Result<Vec<AttentionSession>, AppLifecycleError>> {
+        Box::pin(async { Ok(Vec::new()) })
+    }
+
+    /// Completes the empty runtime shutdown.
+    fn shutdown_for_quit<'a>(&'a self) -> AppRuntimeFuture<'a, Result<(), AppLifecycleError>> {
+        Box::pin(async { Ok(()) })
+    }
+}
 
 /// Verifies that successful setup builds and exposes initialized storage state.
 #[test]
@@ -95,4 +129,51 @@ fn composition_root_fails_for_newer_database() {
     ));
 
     assert!(result.is_err());
+}
+
+/// Verifies storage and lifecycle state exist before tray attachment and IPC is routed.
+#[test]
+fn lifecycle_composition_orders_setup_and_registers_commands() {
+    let directory = tempfile::TempDir::new().expect("the temporary directory should be created");
+    let tray_observed_state = Arc::new(AtomicBool::new(false));
+    let tray_observation = tray_observed_state.clone();
+    let mut app = xwork_lib::app::configure_with_lifecycle_for_tests(
+        tauri::test::mock_builder(),
+        directory.path().to_path_buf(),
+        Arc::new(EmptyTestRuntime),
+        // Proves both required states are managed before tray attachment begins.
+        move |app| {
+            let ready = app.try_state::<Storage>().is_some()
+                && app.try_state::<AppLifecycleState>().is_some();
+            tray_observation.store(ready, Ordering::SeqCst);
+            Ok(())
+        },
+    )
+    .build(tauri::test::mock_context(tauri::test::noop_assets()))
+    .expect("the configured mock application should build");
+    #[allow(deprecated)]
+    app.run_iteration(
+        // Advances the mock lifecycle once so Tauri executes its setup hook.
+        |_app_handle, _event| {},
+    );
+    assert!(tray_observed_state.load(Ordering::SeqCst));
+
+    let main = tauri::WebviewWindowBuilder::new(&app, "main", Default::default())
+        .build()
+        .expect("the main mock webview should build");
+    tauri::test::assert_ipc_response(
+        &main,
+        tauri::webview::InvokeRequest {
+            cmd: "minimize_main_window".into(),
+            callback: tauri::ipc::CallbackFn(0),
+            error: tauri::ipc::CallbackFn(1),
+            url: "http://tauri.localhost"
+                .parse()
+                .expect("the mock IPC URL should parse"),
+            body: tauri::ipc::InvokeBody::default(),
+            headers: Default::default(),
+            invoke_key: tauri::test::INVOKE_KEY.to_owned(),
+        },
+        Ok(serde_json::Value::Null),
+    );
 }
