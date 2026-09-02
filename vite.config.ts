@@ -5,6 +5,7 @@ import { defineConfig } from "vitest/config";
 
 // Configure the SPA build, source alias, and jsdom-based component tests.
 export default defineConfig({
+  clearScreen: false,
   plugins: [react(), tailwindcss()],
   resolve: {
     alias: {
@@ -13,5 +14,12 @@ export default defineConfig({
   },
   test: {
     environment: "jsdom",
+  },
+  server: {
+    port: 5173,
+    strictPort: true,
+    watch: {
+      ignored: ["**/src-tauri/**"],
+    },
   },
 });

@@ -7,7 +7,19 @@
   },
   "files": {
     "ignoreUnknown": true,
-    "includes": ["src/**", "/*.ts", "/*.tsx", "/*.json", "/*.css", "/*.html"]
+    "includes": [
+      "src/**",
+      "!!src-tauri/target",
+      "!!src-tauri/gen",
+      "tests/e2e/**",
+      "src-tauri/tauri.conf.json",
+      "src-tauri/capabilities/*.json",
+      "/*.ts",
+      "/*.tsx",
+      "/*.json",
+      "/*.css",
+      "/*.html"
+    ]
   },
   "formatter": {
     "enabled": true,

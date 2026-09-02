@@ -1,8 +1,8 @@
 /target/
+/src-tauri/target/
 /.idea/
 /.vscode/
 .DS_Store
 Thumbs.db
 node_modules/
 dist/
-

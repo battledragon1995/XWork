@@ -1,0 +1,22 @@
+[package]
+name = "xwork"
+version = "0.0.0"
+edition = "2024"
+publish = false
+build = "build.rs"
+
+[lib]
+name = "xwork_lib"
+
+[[bin]]
+name = "xwork"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = { version = "=2.6.3", features = [] }
+
+[dependencies]
+tauri = { version = "=2.11.5", features = [] }
+
+[dev-dependencies]
+tauri = { version = "=2.11.5", features = ["test"] }

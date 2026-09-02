@@ -34,25 +34,25 @@ Trừ scaffold và chuẩn bị phát hành, một lát cắt chỉ hoàn thành
 | 3 | Lifecycle và application shell | `BE-002`, `BE-001` | `FE-001` | 2 |
 | 4 | Projects và Welcome | `BE-003` | `FE-002`, `FE-004`; mở rộng `FE-001` | 3 |
 | 5 | Git status và Project Overview | `BE-004` | `FE-005` | 4 |
-| 6 | Settings nền tảng | `BE-008` | `FE-011`, `FE-012`; mở rộng `FE-001` | 5 |
-| 7 | CLI profiles | `BE-006` | `FE-013` | 6 |
-| 8 | Session, tab và pane | `BE-005` | `FE-006`, `FE-007` | 7 |
+| 6 | Settings nền tảng | `BE-008` | `FE-011`, `FE-012`; mở rộng `FE-001` | 3 |
+| 7 | CLI profiles | `BE-006` | `FE-013` | 4, 6 |
+| 8 | Session, tab và pane | `BE-005` | `FE-006`, `FE-007` | 4, 7 |
 | 9 | Terminal và PTY | `BE-007` | `FE-008`; hoàn thiện luồng terminal trong `FE-006`, `FE-007` | 8 |
-| 10 | Keyboard shortcuts | `BE-009` | `FE-014` | 9 |
-| 11 | Notifications | `BE-011` | `FE-010`; mở rộng `FE-001` | 10 |
-| 12 | Unified search | `BE-010` | `FE-009`; mở rộng `FE-001` | 11 |
-| 13 | Backup và reset | `BE-012` | `FE-015` | 12 |
-| 14 | Home của Phase 1 | Dùng public query đã có | `FE-003` với các khối thuộc Phase 1 | 13 |
-| 15 | File Explorer | `BE-013` | `FE-016` | 14 |
+| 10 | Keyboard shortcuts | `BE-009` | `FE-014` | 6 |
+| 11 | Notifications | `BE-011` | `FE-010`; mở rộng `FE-001` | 9 |
+| 12 | Unified search | `BE-010` | `FE-009`; mở rộng `FE-001` | 4, 8 |
+| 13 | Backup và reset | `BE-012` | `FE-015` | 6, 7, 10 |
+| 14 | Home của Phase 1 | Dùng public query đã có | `FE-003` với các khối thuộc Phase 1 | 4, 8 |
+| 15 | File Explorer | `BE-013` | `FE-016` | 9 |
 | 16 | Source viewer và file watch | `BE-014` | `FE-017`; mở rộng `FE-005` | 15 |
 | 17 | Markdown editor | `BE-015` | `FE-018` | 16 |
-| 18 | Notes | `BE-016` | `FE-019`, Quick Note trên Home của `FE-020`; mở rộng các màn hình tổng hợp | 17 |
+| 18 | Notes | `BE-016` | `FE-019`, Quick Note trên Home của `FE-020`; mở rộng các màn hình tổng hợp | 14 |
 | 19 | Cửa sổ Quick Note | `BE-017`; mở rộng `BE-001`, `BE-009` | Hoàn thiện `FE-020`; mở rộng `FE-001`, `FE-014` | 18 |
-| 20 | Calendar và Event | `BE-018` | `FE-021`, `FE-022`; mở rộng các màn hình tổng hợp | 19 |
-| 21 | Reminder và notification settings | `BE-019`; mở rộng `BE-008`, `BE-011` | `FE-023`; mở rộng `FE-010`, `FE-021` | 20 |
+| 20 | Calendar và Event | `BE-018` | `FE-021`, `FE-022`; mở rộng các màn hình tổng hợp | 18 |
+| 21 | Reminder và notification settings | `BE-019`; mở rộng `BE-008`, `BE-011` | `FE-023`; mở rộng `FE-010`, `FE-021` | 11, 20 |
 | 22 | Chuẩn bị phát hành | Đóng gói, updater, kiểm tra macOS | Hoàn thiện và xác minh bản phát hành | 21 |
 
-Mỗi giai đoạn chỉ bắt đầu khi giai đoạn liền trước đạt điều kiện hoàn thành. Thứ tự tuần tự giữ cho mỗi bản trung gian chạy được và tránh mở đồng thời nhiều contract hoặc phần mở rộng của cùng một màn hình tổng hợp.
+Các quan hệ trong cột `Bắt đầu sau` là phụ thuộc tối thiểu. Mặc định triển khai theo thứ tự số giai đoạn; chỉ chạy song song khi các plan chi tiết chứng minh không có contract, file hoặc hành vi dùng chung chưa được chốt.
 
 ## Giai đoạn 0 — Nền tài liệu
 

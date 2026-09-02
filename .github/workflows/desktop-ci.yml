@@ -1,0 +1,40 @@
+name: desktop-ci
+
+on:
+  - push
+  - pull_request
+
+permissions:
+  contents: read
+
+jobs:
+  desktop:
+    runs-on: windows-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+      - name: Install pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 11.25.0
+      - name: Install Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Install tauri-driver
+        run: cargo install tauri-driver --version 2.0.6 --locked
+      - name: Type check desktop tests
+        run: pnpm typecheck:e2e
+      - name: Check Rust formatting
+        run: pnpm format:rust
+      - name: Lint Rust
+        run: pnpm lint:rust
+      - name: Test Rust
+        run: pnpm test:rust
+      - name: Build desktop application
+        run: pnpm tauri build --no-bundle
+      - name: Test desktop application
+        run: pnpm test:e2e

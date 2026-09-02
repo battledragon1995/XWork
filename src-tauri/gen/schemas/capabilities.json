@@ -1,0 +1,1 @@
+{"main":{"identifier":"main","description":"Grants the main window only the permissions consumed by the current shell.","local":true,"windows":["main"],"permissions":[]}}
