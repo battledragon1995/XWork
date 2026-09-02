@@ -30,6 +30,13 @@ Store implementation plans in `00-Docs/98-Plan/`.
 
 Implementation plans use `yyyyMMdd-name-kebab.md`.
 
+The `yyyyMMdd` prefix records the plan creation date, not a roadmap phase
+number or a unique identifier. Multiple plans may share the same date prefix.
+Do not rename a plan merely because it is updated later.
+
+A plan's roadmap ownership is determined by its Sources and Scope sections,
+not by its filename prefix.
+
 Use `00-Docs/99-Template/04-Plan.md` as the starting template.
 
 Do not place detailed implementation tasks in
@@ -81,6 +88,12 @@ decisions unambiguous.
 Do not invent source paths, interfaces, dependencies, or line numbers that have
 not been established by the repository or specifications.
 
+An exact-pinned dependency must include its complete manifest entry and exact
+version in the plan. Do not leave version selection to the implementer.
+
+When a dependency version is not already established by a source document,
+record how compatibility with the pinned toolchain was verified.
+
 ## Task Rules
 
 Order tasks by real dependency.
@@ -97,10 +110,39 @@ Each task must state:
 Prefer a failing test before implementation when the behavior can be tested at
 that level.
 
+A failing-test step must make the intended test target discoverable and compile
+it far enough to fail on the missing behavior. An undiscovered test file or a
+command that runs zero matching tests is not a valid red test.
+
+When a task names an integration test file, its verification command must
+select that test target explicitly, such as `cargo test --test <target>`. A
+test-name filter may be used only when the plan identifies the exact test names
+or module paths it selects.
+
+Expected results must name the behavior, assertion, or symbol that causes the
+failure. Do not use a generic "compilation or assertions fail" expectation when
+a more specific failure can be planned.
+
 Do not add speculative abstractions, dependencies, directories, or future
 features.
 
 Do not include Git commit steps unless the user explicitly requests commits.
+
+## Test Isolation and Seams
+
+Tests must not read or write the developer's real app data, configuration,
+credentials, projects, or other user-owned state.
+
+When production code resolves a path, service, clock, process, or OS resource,
+the plan must state the exact test seam used to substitute an isolated value.
+List any test-only interface in the task's Interfaces section.
+
+Do not rely on process-global environment mutation for test isolation when
+tests may run concurrently.
+
+Every planned startup or initialization failure must include at least one
+explicit failure scenario, its injection mechanism, and the expected
+observable result.
 
 ## XWork Architecture Boundaries
 
@@ -145,6 +187,17 @@ Include a Windows Tauri build when work affects:
 Validate only on Windows during normal development. Defer macOS validation to
 the release-preparation phase unless explicitly requested earlier.
 
+Final verification commands must be equivalent to or stronger than the
+commands required by the applicable specifications.
+
+A package-manager wrapper may replace a required command only when its current
+script expands to the same flags and targets. Otherwise, use the required
+command directly or include the wrapper-script change in the plan scope.
+
+Negative requirements such as "adds no command" or "does not modify user data"
+must state a concrete verification method. Do not prescribe a runtime assertion
+unless the framework exposes an API that can observe it.
+
 A plan is complete only when all required checks pass and its completion
 criteria are demonstrated.
 
@@ -163,3 +216,15 @@ During implementation:
 
 When implementation finishes, summarize the outcome, verification evidence,
 and any remaining limitations.
+
+## Plan Review Gate
+
+Before approving a plan, verify that:
+
+- Every exact dependency includes an exact version.
+- Every listed test file is executed by at least one stated command.
+- Every red-test command compiles the intended test target and fails for the
+  stated reason rather than passing with zero matching tests.
+- Every OS or user-data integration test has an explicit isolation seam.
+- Final commands satisfy all flags required by the source specifications.
+- The plan contains no Git commit step unless the user requested commits.

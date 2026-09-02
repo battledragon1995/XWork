@@ -4,9 +4,15 @@ on:
   push:
     paths-ignore:
       - "00-Docs/**"
+      - "AGENTS.md"
+      - "CLAUDE.md"
+      - "PLANS.md"
   pull_request:
     paths-ignore:
       - "00-Docs/**"
+      - "AGENTS.md"
+      - "CLAUDE.md"
+      - "PLANS.md"
 
 permissions:
   contents: read
