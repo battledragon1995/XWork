@@ -1,8 +1,12 @@
 name: desktop-ci
 
 on:
-  - push
-  - pull_request
+  push:
+    paths-ignore:
+      - "00-Docs/**"
+  pull_request:
+    paths-ignore:
+      - "00-Docs/**"
 
 permissions:
   contents: read

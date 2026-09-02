@@ -28,7 +28,7 @@ until the user requests implementation.
 
 Store implementation plans in `00-Docs/98-Plan/`.
 
-Roadmap phase plans use `NN-<phase-name-kebab>.md`.
+Implementation plans use `yyyyMMdd-name-kebab.md`.
 
 Use `00-Docs/99-Template/04-Plan.md` as the starting template.
 
