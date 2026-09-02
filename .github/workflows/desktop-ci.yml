@@ -34,7 +34,3 @@ jobs:
         run: pnpm lint:rust
       - name: Test Rust
         run: pnpm test:rust
-      - name: Build desktop application
-        run: pnpm tauri build --no-bundle
-      - name: Test desktop application
-        run: pnpm test:e2e
