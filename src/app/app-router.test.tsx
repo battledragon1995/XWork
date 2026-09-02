@@ -1,23 +1,208 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen } from "@testing-library/react";
-import { RouterProvider } from "react-router";
-import { afterEach, describe, expect, it } from "vitest";
+import { act, cleanup, render, screen, within } from "@testing-library/react";
+import { userEvent } from "@testing-library/user-event";
+import { createMemoryRouter, RouterProvider } from "react-router";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { AppErrorBoundary } from "./app-error-boundary";
+import { AppProviders } from "./app-providers";
 import { createAppRouter } from "./app-router";
+import { AppShell } from "./app-shell";
+import { resetQuitStore, useQuitStore } from "./quit-store";
 
-// Remove rendered output between tests so each router instance stays isolated.
+// Start every case from an idle Quit flow and remove the previous render.
+beforeEach(() => {
+  resetQuitStore();
+});
+
 afterEach(() => {
   cleanup();
 });
 
+// Render the production router at one entry so every case shares the same setup.
+function renderAt(path: string) {
+  return render(
+    <AppProviders>
+      <RouterProvider router={createAppRouter([path])} />
+    </AppProviders>,
+  );
+}
+
+// Read the breadcrumb labels currently rendered by the shell, in order.
+function readBreadcrumb(): string[] {
+  return within(screen.getByLabelText("Breadcrumb"))
+    .getAllByRole("listitem")
+    .map((item) => item.textContent ?? "");
+}
+
 describe("createAppRouter", () => {
-  // Verify the root route renders the minimal shell named "XWork".
-  it("renders the application shell at the root route", () => {
+  // Verify each primary area route renders its own placeholder with the owning feature.
+  it.each([
+    ["/", "Home", "FE-003"],
+    ["/projects", "Projects", "FE-004"],
+    ["/notes", "Notes", "FE-019"],
+    ["/calendar", "Calendar", "FE-021"],
+    ["/settings", "Settings", "FE-011"],
+  ])("renders the %s route as the %s area placeholder", (path, area, arrivesWith) => {
+    renderAt(path);
+
+    expect(screen.getByRole("heading", { level: 1, name: area })).toBeInTheDocument();
+    expect(screen.getByText(`This area arrives with ${arrivesWith}.`)).toBeInTheDocument();
+  });
+
+  // Verify the reserved project detail route renders without owning project data.
+  it("reserves the project detail route for FE-005", () => {
+    renderAt("/projects/xwork");
+
+    expect(screen.getByRole("heading", { level: 1, name: "Project Overview" })).toBeInTheDocument();
+    expect(screen.getByText("This area arrives with FE-005.")).toBeInTheDocument();
+  });
+
+  // Verify the reserved session route renders and keeps the opaque identifier untouched.
+  it("reserves the session route for FE-006 and keeps the raw session id", () => {
+    renderAt("/sessions/9f3a-B7%20c");
+
+    expect(screen.getByRole("heading", { level: 1, name: "Session" })).toBeInTheDocument();
+    expect(screen.getByText("This area arrives with FE-006.")).toBeInTheDocument();
+    expect(readBreadcrumb()).toEqual(["Session", "9f3a-B7 c"]);
+  });
+
+  // Verify the breadcrumb of a matched area reflects the route table, not a store.
+  it("builds the breadcrumb from the matched route", () => {
+    renderAt("/projects/xwork");
+
+    expect(readBreadcrumb()).toEqual(["Projects", "xwork"]);
+  });
+
+  // Verify an unmatched route renders the not-found placeholder and can return Home.
+  it("renders the not-found placeholder with a Home action", async () => {
+    const user = userEvent.setup();
+    renderAt("/nope");
+
+    expect(screen.getByRole("heading", { level: 1, name: "Not found" })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Go to Home" }));
+
+    expect(screen.getByRole("heading", { level: 1, name: "Home" })).toBeInTheDocument();
+  });
+
+  // Verify the shell keeps its landmarks exactly once around whichever child route matched.
+  it("keeps one persistent shell around the matched child route", () => {
+    renderAt("/notes");
+
+    expect(screen.getAllByRole("banner")).toHaveLength(1);
+    expect(screen.getAllByRole("navigation")).toHaveLength(1);
+    expect(screen.getAllByRole("main")).toHaveLength(1);
+    expect(screen.getByRole("main")).toContainElement(
+      screen.getByRole("heading", { level: 1, name: "Notes" }),
+    );
+  });
+
+  // Verify every child route carries the application error element rather than bubbling out.
+  it("attaches the route error element to every child route", () => {
     const router = createAppRouter(["/"]);
+    const children = router.routes[0]?.children ?? [];
 
-    render(<RouterProvider router={router} />);
+    expect(children.length).toBeGreaterThan(0);
+    for (const child of children) {
+      expect(child.errorElement).toBeDefined();
+    }
+  });
+});
 
-    expect(screen.getByRole("main", { name: "XWork" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { level: 1, name: "XWork" })).toBeInTheDocument();
+describe("AppErrorBoundary", () => {
+  // Build a router whose only child route throws, so the boundary renders inside the shell.
+  function renderFailingRoute() {
+    const router = createMemoryRouter(
+      [
+        {
+          path: "/",
+          element: <AppShell />,
+          children: [
+            {
+              path: "boom",
+              element: <ThrowingRoute />,
+              errorElement: <AppErrorBoundary />,
+              handle: { crumbs: () => ["Notes"] },
+            },
+            { index: true, element: <p>Home stand-in</p>, handle: { crumbs: () => ["Home"] } },
+          ],
+        },
+      ],
+      { initialEntries: ["/boom"] },
+    );
+
+    return render(
+      <AppProviders>
+        <RouterProvider router={router} />
+      </AppProviders>,
+    );
+  }
+
+  // Fail on purpose so the router hands control to the route error element.
+  function ThrowingRoute(): never {
+    throw new Error("Deliberate render failure");
+  }
+
+  // Verify a failing child route keeps the shell usable and names the failing area.
+  it("keeps the shell usable and names the failing area", () => {
+    renderFailingRoute();
+
+    expect(screen.getByRole("banner")).toBeInTheDocument();
+    expect(screen.getByRole("navigation")).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { level: 1, name: "Something went wrong" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("The Notes area could not be displayed.")).toBeInTheDocument();
+  });
+
+  // Verify the recovery action returns the user to Home without reloading the application.
+  it("recovers to Home", async () => {
+    const user = userEvent.setup();
+    renderFailingRoute();
+
+    await user.click(screen.getByRole("button", { name: "Go to Home" }));
+
+    expect(screen.getByText("Home stand-in")).toBeInTheDocument();
+  });
+});
+
+describe("AppProviders", () => {
+  // Verify the providers pass the application through untouched.
+  it("renders its children", () => {
+    render(
+      <AppProviders>
+        <p>Application</p>
+      </AppProviders>,
+    );
+
+    expect(screen.getByText("Application")).toBeInTheDocument();
+  });
+
+  // Verify the single Quit dialog host is mounted at application level, so the wordmark menu
+  // and the tray can never produce two dialogs.
+  it("hosts the one Quit dialog", async () => {
+    render(
+      <AppProviders>
+        <RouterProvider router={createAppRouter(["/"])} />
+      </AppProviders>,
+    );
+
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+
+    await act(async () => {
+      useQuitStore.getState().receiveTrayRequest({
+        requestId: 3,
+        summary: {
+          sessionCount: 1,
+          projectCount: 1,
+          runningProcessCount: 0,
+          unsavedFileCount: 0,
+        },
+      });
+    });
+
+    expect(screen.getAllByRole("dialog")).toHaveLength(1);
+    expect(screen.getByRole("heading", { name: "Quit XWork?" })).toBeInTheDocument();
   });
 });

@@ -1,19 +1,11 @@
 ---
 name: work-dd
-description: Create or update the detailed design specification itself for one XWork frontend (FE-NNN) or backend (BE-NNN) feature. Use only when the requested deliverable is that feature's contract under 00-Docs/02-Frontend or 00-Docs/03-Backend. Do not use for implementation plans, execution plans, roadmap plans, or files under 00-Docs/98-Plan, even when such a plan cites an FE-NNN or BE-NNN specification.
+description: Create or update one implementation-ready detailed design contract for a specified XWork frontend (FE-NNN) or backend (BE-NNN) feature. Use for feature-level design documentation, not source-code implementation or broad product architecture.
 ---
 
 # XWork Detailed Design
 
 Create one detailed design document for the XWork feature named by the user. The input must identify exactly one frontend or backend feature, preferably by its `FE-NNN` or `BE-NNN` code.
-
-## Scope guard
-
-This skill writes or updates the feature specification itself. It does not turn an existing feature specification into an implementation plan.
-
-- Use this skill for requests such as "create the detailed design for FE-004" or "update the BE-001 contract."
-- Do not use this skill for requests such as "create an implementation plan for FE-001," "plan the implementation of this FE file," or any deliverable stored under `00-Docs/98-Plan/`.
-- For an implementation-plan request, follow `PLANS.md` and its plan template directly without loading this skill. Treat cited `FE-NNN` and `BE-NNN` files as plan inputs, not as outputs to overwrite.
 
 ## Resolve the feature
 

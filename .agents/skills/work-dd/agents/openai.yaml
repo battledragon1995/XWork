@@ -1,4 +1,4 @@
 interface:
-  display_name: "Work Detailed Design"
-  short_description: "Create detailed XWork FE or BE design contracts"
-  default_prompt: "Use $work-dd to create the detailed design for FE-004."
+  display_name: "XWork Feature Detailed Design"
+  short_description: "Write XWork FE or BE feature specifications"
+  default_prompt: "Use $work-dd to create the detailed design specification for FE-004."

@@ -13,7 +13,8 @@
     "windows": [
       {
         "label": "main",
-        "title": "XWork"
+        "title": "XWork",
+        "decorations": false
       }
     ],
     "security": {

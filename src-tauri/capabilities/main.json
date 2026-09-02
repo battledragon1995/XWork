@@ -1,7 +1,11 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "main",
-  "description": "Grants the main window only the permissions consumed by the current shell.",
+  "description": "Grants the main window only the permissions the shell consumes: the two lifecycle event listeners of BE-001 and native window dragging.",
   "windows": ["main"],
-  "permissions": []
+  "permissions": [
+    "core:event:allow-listen",
+    "core:event:allow-unlisten",
+    "core:window:allow-start-dragging"
+  ]
 }

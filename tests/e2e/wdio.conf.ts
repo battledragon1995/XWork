@@ -53,6 +53,8 @@ export const config: WebdriverIO.Config = {
   reporters: ["spec"],
   mochaOpts: {
     ui: "bdd",
-    timeout: 60_000,
+    // Every command relayed through tauri-driver to WebView2 costs several seconds on Windows,
+    // so a scenario with a handful of clicks needs far more than the Mocha default.
+    timeout: 240_000,
   },
 };

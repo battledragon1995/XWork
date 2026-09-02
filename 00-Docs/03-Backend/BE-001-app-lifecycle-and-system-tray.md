@@ -60,6 +60,8 @@ XWork chỉ chạy một instance, đóng cửa sổ chính thì ẩn xuống tr
 
 `src-tauri/tauri.conf.json` tiếp tục dùng application identifier `com.xwork.app`, window label `main` và title `XWork` hiện có. `src-tauri/capabilities/main.json` không cấp thêm core/plugin permission vì toàn bộ OS integration của BE-001 chạy trong Rust.
 
+Lát cắt tích hợp `FE-001`, chứ không phải BE-001, mới là nơi sửa hai file này. `FE-001` đặt `"decorations": false` cho window `main` để dùng thanh trên cùng tùy biến, và thêm đúng ba quyền cho frontend: `core:event:allow-listen` cùng `core:event:allow-unlisten` cho hai event của BE-001, và `core:window:allow-start-dragging` cho vùng kéo cửa sổ. Không quyền window API chung nào được mở: `hide_main_window`, `minimize_main_window` và `toggle_main_window_maximized` vẫn là đường duy nhất để frontend tác động lên cửa sổ. Command và event contract của BE-001 không đổi vì thay đổi này.
+
 ## Dữ liệu
 
 BE-001 không tạo bảng hoặc migration. Pending quit request, trạng thái `quitting`, tray menu model và session attention đều là runtime state, bị loại bỏ khi process kết thúc. Dữ liệu bền vững tiếp tục đi qua `Storage` của BE-002 nhưng BE-001 không ghi bản ghi nào.
@@ -388,7 +390,7 @@ Source error nội bộ được giữ trong log chain nhưng payload/`Display` 
 - [ ] `request_quit`, tray Quit và `confirm_quit` await `AppRuntimeFuture` ngoài lifecycle lock; fake future có yield vẫn hoàn tất, không `block_on` hoặc `spawn_blocking` một async cleanup.
 - [ ] Shutdown đặt BE-011 intake gate trước BE-005/BE-007 cleanup, await `shutdown_runtime_sources` sau runtime cleanup và chỉ đóng Storage/exit khi toàn bộ chuỗi thành công.
 - [ ] Fresh process mở Home và không khôi phục session/tab/pane/output; dữ liệu bền vững của BE-002 và capability khác không bị Quit xóa.
-- [ ] Binding được sinh từ Rust, không sửa tay; custom command không làm rộng `src-tauri/capabilities/main.json`.
+- [ ] Binding được sinh từ Rust, không sửa tay; custom command không làm rộng `src-tauri/capabilities/main.json`. Riêng ba quyền `core:event:allow-listen`, `core:event:allow-unlisten` và `core:window:allow-start-dragging` do lát cắt `FE-001` thêm và không cấp thêm OS API nào cho frontend.
 - [ ] Mọi function, method, callback, test và helper mới có comment ngắn; state transition/race có inline comment giải thích invariant.
 - [ ] Trên Windows, formatter/linter/type-check/test frontend liên quan, `cargo fmt --check`, `cargo clippy --all-targets --all-features -- -D warnings`, `cargo test --all-targets --all-features` và Tauri build đều pass.
 - [ ] Smoke test desktop thật xác nhận close-to-tray, restore/focus, single instance, menu native và Quit; hành vi macOS được hoãn đến chuẩn bị release theo quy tắc project.
