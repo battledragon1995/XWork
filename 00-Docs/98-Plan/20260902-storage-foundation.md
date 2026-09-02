@@ -1,6 +1,6 @@
 # BE-002 Storage Foundation Implementation Plan
 
-**Status:** Draft
+**Status:** Complete
 
 **Goal:** Implement the shared SQLite storage foundation exactly as specified
 by `BE-002`, so every later backend capability persists data through one
@@ -175,13 +175,13 @@ rejects a database whose `user_version` is newer than the registry.
   &[Migration]) -> Result<(), StorageError>`; `pub mod storage` in
   `src-tauri/src/lib.rs`.
 
-- [ ] **Step 1: Add the dependencies**
+- [x] **Step 1: Add the dependencies**
 
   Add `rusqlite = { version = "=0.40.2", features = ["bundled"] }` to
   `[dependencies]` and `tempfile = "=3.27.0"` to `[dev-dependencies]`, then
   update `src-tauri/Cargo.lock`.
 
-- [ ] **Step 2: Add the failing migration tests**
+- [x] **Step 2: Add the failing migration tests**
 
   Create the storage module files and declare them from `lib.rs` so the test
   module is compiled. In `#[cfg(test)]` inside `migrations.rs`, cover: an empty
@@ -194,14 +194,14 @@ rejects a database whose `user_version` is newer than the registry.
   `DatabaseVersionTooNew` without file changes. Keep every migration fixture
   inside the test module or a temporary database.
 
-- [ ] **Step 3: Verify the tests fail for the expected reason**
+- [x] **Step 3: Verify the tests fail for the expected reason**
 
   Run: `cargo test --manifest-path src-tauri/Cargo.toml storage::migrations`
 
   Expected: compilation fails on the migration contract referenced by the new
   tests because its implementation does not exist yet.
 
-- [ ] **Step 4: Implement the migration contract**
+- [x] **Step 4: Implement the migration contract**
 
   Implement `StorageError` exactly as specified (including safe `Display` text
   without SQL or data), keep the migrations module internal to `storage`, and
@@ -210,7 +210,7 @@ rejects a database whose `user_version` is newer than the registry.
   immediate-transaction runner that writes `PRAGMA user_version` in the same
   transaction as the migration SQL.
 
-- [ ] **Step 5: Verify the task**
+- [x] **Step 5: Verify the task**
 
   Run: `cargo test --manifest-path src-tauri/Cargo.toml storage::migrations`
 
@@ -243,7 +243,7 @@ configures and verifies `busy_timeout`, `foreign_keys`, `journal_mode`, and
   `pub fn with_transaction<T, E>(&self, operation: impl FnOnce(&Transaction<'_>)
   -> Result<T, E>) -> Result<T, E> where E: From<StorageError>`.
 
-- [ ] **Step 1: Add the failing storage tests**
+- [x] **Step 1: Add the failing storage tests**
 
   Add unit tests in `mod.rs` for the fixed database file name, mapping of
   mutex, begin, and commit failures to `StorageError`, and that a callback
@@ -254,7 +254,7 @@ configures and verifies `busy_timeout`, `foreign_keys`, `journal_mode`, and
   committed data survives a close-and-reopen; `with_transaction` commits on
   `Ok` and rolls back on `Err`; clones share one underlying connection.
 
-- [ ] **Step 2: Verify the tests fail for the expected reason**
+- [x] **Step 2: Verify the tests fail for the expected reason**
 
   Run:
 
@@ -264,7 +264,7 @@ configures and verifies `busy_timeout`, `foreign_keys`, `journal_mode`, and
   Expected: compilation or assertions fail because `Storage::open`,
   `with_connection`, and `with_transaction` are not implemented yet.
 
-- [ ] **Step 3: Implement the minimum storage handle**
+- [x] **Step 3: Implement the minimum storage handle**
 
   Implement `Storage` with a single `Arc<Mutex<Connection>>`, `open` with
   directory creation, the exact database file name, pragma configuration with
@@ -274,7 +274,7 @@ configures and verifies `busy_timeout`, `foreign_keys`, `journal_mode`, and
   and committing only on `Ok`, mapping storage failures through
   `From<StorageError>` while returning callback errors unchanged.
 
-- [ ] **Step 4: Verify the task**
+- [x] **Step 4: Verify the task**
 
   Run:
 
@@ -307,7 +307,7 @@ fails, and adds no public IPC surface.
   app_data_dir: PathBuf) -> Builder<R>` used only by integration tests; no
   command, event, Channel, DTO, or binding.
 
-- [ ] **Step 1: Extend the composition test first**
+- [x] **Step 1: Extend the composition test first**
 
   In `app_builder.rs`, route every build through
   `configure_with_app_data_dir` and a `tempfile::TempDir`. Cover: successful
@@ -316,14 +316,14 @@ fails, and adds no public IPC surface.
   newer than the empty production registry makes the build fail. Keep the
   existing mock-runtime build assertion inside the successful case.
 
-- [ ] **Step 2: Verify the test fails for the expected reason**
+- [x] **Step 2: Verify the test fails for the expected reason**
 
   Run: `cargo test --manifest-path src-tauri/Cargo.toml --test app_builder`
 
   Expected: compilation fails because the test-only composition entry point
   and managed `Storage` state do not exist yet.
 
-- [ ] **Step 3: Implement the setup hook**
+- [x] **Step 3: Implement the setup hook**
 
   In `app/mod.rs`, make `configure` resolve the production app data directory
   and add the doc-hidden `configure_with_app_data_dir` test entry point. Both
@@ -332,7 +332,7 @@ fails, and adds no public IPC surface.
   startup. Do not add an invoke handler or modify commands, events,
   capabilities, DTOs, bindings, or frontend files.
 
-- [ ] **Step 4: Verify the task**
+- [x] **Step 4: Verify the task**
 
   Run: `cargo test --manifest-path src-tauri/Cargo.toml --test app_builder`
 
@@ -350,8 +350,28 @@ fails, and adds no public IPC surface.
 
 ## Deviations and Decisions
 
-- None.
+- Tauri 2.11.5 does not execute `Builder::setup` during `Builder::build`.
+  Composition tests therefore build the mock application and call one
+  `run_iteration` to execute setup. Successful setup is inspected afterward;
+  setup failures are observed as the documented startup panic from Tauri's
+  mock lifecycle. The production setup path and storage contract are unchanged.
 
 ## Outcome
 
-Pending implementation.
+Implemented the shared SQLite storage foundation with one serialized
+`Arc<Mutex<Connection>>`, verified connection PRAGMAs, an empty production
+migration registry with validated atomic sequential execution, transaction
+helpers, and synchronous Tauri managed-state setup. Added 11 unit tests and 7
+integration tests covering the completion criteria without accessing real app
+data.
+
+Final verification on Windows completed successfully:
+
+- `pnpm format:rust`
+- `pnpm lint:rust`
+- `cargo test --manifest-path src-tauri/Cargo.toml --all-targets --all-features`
+- `pnpm tauri build --no-bundle`
+
+The Tauri build emitted the pre-existing warning that bundle identifier
+`com.xwork.app` ends with `.app`; the release executable was still built
+successfully and identifier changes remain outside BE-002.
