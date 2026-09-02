@@ -43,7 +43,47 @@ enum TrayAction {
 
 /// Stores the model currently attached to the native tray menu.
 struct TrayMenuState {
-    model: Mutex<Vec<TrayEntry>>,
+    inner: Mutex<TrayMenuInner>,
+}
+
+/// Stores the attached model and the newest refresh generation atomically.
+struct TrayMenuInner {
+    model: Vec<TrayEntry>,
+    latest_refresh_ticket: u64,
+}
+
+impl TrayMenuState {
+    /// Allocates a generation that supersedes every earlier in-flight refresh.
+    fn begin_refresh(&self) -> Result<u64, AppLifecycleError> {
+        let mut inner = self.lock_inner()?;
+        inner.latest_refresh_ticket = inner.latest_refresh_ticket.wrapping_add(1).max(1);
+        Ok(inner.latest_refresh_ticket)
+    }
+
+    /// Publishes a refresh only when no newer refresh started before this result arrived.
+    fn replace_refresh_model_if_current(
+        &self,
+        ticket: u64,
+        next_model: Vec<TrayEntry>,
+        replace_native: impl FnOnce(&[TrayEntry]) -> Result<(), AppLifecycleError>,
+    ) -> Result<bool, AppLifecycleError> {
+        let mut inner = self.lock_inner()?;
+        if inner.latest_refresh_ticket != ticket || inner.model == next_model {
+            return Ok(false);
+        }
+
+        replace_native(&next_model)?;
+        inner.model = next_model;
+        Ok(true)
+    }
+
+    /// Acquires the tray state mutex and maps poisoning to the lifecycle contract.
+    fn lock_inner(&self) -> Result<std::sync::MutexGuard<'_, TrayMenuInner>, AppLifecycleError> {
+        self.inner.lock().map_err(
+            // Keeps poisoned state from silently diverging from the native menu.
+            |_| AppLifecycleError::StateLockPoisoned,
+        )
+    }
 }
 
 /// Reports the result of selecting Quit from the native tray.
@@ -163,13 +203,17 @@ pub async fn tray_select_session<R: Runtime>(
     app: &AppHandle<R>,
     menu_id: &str,
 ) -> Result<bool, AppLifecycleError> {
-    let state = app.state::<AppLifecycleState>();
-    let sessions = state.attention_sessions().await?;
-    let model = build_tray_menu_model(&sessions);
-    let TrayAction::Session(session_id) = resolve_menu_action(&model, menu_id) else {
-        replace_native_menu_if_attached(app, model)?;
+    let (refresh_ticket, model) = attention_menu_snapshot(app).await?;
+    let action = resolve_menu_action(&model, menu_id);
+    let refresh_result = publish_attention_menu(app, refresh_ticket, model);
+    let TrayAction::Session(session_id) = action else {
+        refresh_result?;
         return Ok(false);
     };
+    // A menu refresh failure must not block navigation for a session validated by this snapshot.
+    if let Err(error) = refresh_result {
+        eprintln!("attention-menu refresh during session navigation failed: {error}");
+    }
 
     let window = app
         .get_webview_window("main")
@@ -200,6 +244,27 @@ pub async fn tray_select_session<R: Runtime>(
     Ok(true)
 }
 
+/// Refreshes the attention group from the runtime snapshot when its model changed.
+pub(crate) async fn refresh_attention_menu<R: Runtime>(
+    app: &AppHandle<R>,
+) -> Result<bool, AppLifecycleError> {
+    let (refresh_ticket, model) = attention_menu_snapshot(app).await?;
+    publish_attention_menu(app, refresh_ticket, model)
+}
+
+/// Allocates a refresh ticket before awaiting and builds the model from that exact snapshot.
+async fn attention_menu_snapshot<R: Runtime>(
+    app: &AppHandle<R>,
+) -> Result<(Option<u64>, Vec<TrayEntry>), AppLifecycleError> {
+    let refresh_ticket = app
+        .try_state::<TrayMenuState>()
+        .map(|menu_state| menu_state.begin_refresh())
+        .transpose()?;
+    let state = app.state::<AppLifecycleState>();
+    let sessions = state.attention_sessions().await?;
+    Ok((refresh_ticket, build_tray_menu_model(&sessions)))
+}
+
 /// Attaches the Phase 1 native tray using the existing application icon.
 pub(crate) fn attach_native_tray<R: Runtime>(app: &AppHandle<R>) -> Result<(), AppLifecycleError> {
     let model = build_tray_menu_model(&[]);
@@ -211,7 +276,10 @@ pub(crate) fn attach_native_tray<R: Runtime>(app: &AppHandle<R>) -> Result<(), A
                 operation: TrayOperation::CreateIcon,
             })?;
     app.manage(TrayMenuState {
-        model: Mutex::new(model),
+        inner: Mutex::new(TrayMenuInner {
+            model,
+            latest_refresh_ticket: 0,
+        }),
     });
 
     TrayIconBuilder::with_id(TRAY_ID)
@@ -238,6 +306,14 @@ pub(crate) fn attach_native_tray<R: Runtime>(app: &AppHandle<R>) -> Result<(), A
                 operation: TrayOperation::CreateIcon,
             },
         )?;
+
+    let refresh_app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        // Initial refresh runs after setup so runtime snapshots never block the native callback.
+        if let Err(error) = refresh_attention_menu(&refresh_app).await {
+            eprintln!("initial attention-menu refresh failed: {error}");
+        }
+    });
     Ok(())
 }
 
@@ -247,38 +323,39 @@ fn resolve_attached_action<R: Runtime>(
     menu_id: &str,
 ) -> Result<TrayAction, AppLifecycleError> {
     let state = app.state::<TrayMenuState>();
-    let model = state.model.lock().map_err(
-        // Reuses the lock-poison category for process-local tray state.
-        |_| AppLifecycleError::StateLockPoisoned,
-    )?;
-    Ok(resolve_menu_action(&model, menu_id))
+    let inner = state.lock_inner()?;
+    Ok(resolve_menu_action(&inner.model, menu_id))
 }
 
-/// Replaces a native menu after a stale selection when a tray is attached.
-fn replace_native_menu_if_attached<R: Runtime>(
+/// Publishes a ticketed attention snapshot when its tray is still attached and current.
+fn publish_attention_menu<R: Runtime>(
     app: &AppHandle<R>,
+    refresh_ticket: Option<u64>,
     model: Vec<TrayEntry>,
-) -> Result<(), AppLifecycleError> {
-    let Some(state) = app.try_state::<TrayMenuState>() else {
-        return Ok(());
+) -> Result<bool, AppLifecycleError> {
+    let Some(refresh_ticket) = refresh_ticket else {
+        return Ok(false);
     };
-    let menu = build_native_menu(app, &model)?;
-    let tray = app
-        .tray_by_id(TRAY_ID)
-        .ok_or(AppLifecycleError::TrayOperationFailed {
-            operation: TrayOperation::ReplaceMenu,
-        })?;
-    tray.set_menu(Some(menu)).map_err(
-        // Classifies failure to replace the current native menu.
-        |_| AppLifecycleError::TrayOperationFailed {
-            operation: TrayOperation::ReplaceMenu,
-        },
-    )?;
-    *state.model.lock().map_err(
-        // Keeps poisoned state from silently diverging from the native menu.
-        |_| AppLifecycleError::StateLockPoisoned,
-    )? = model;
-    Ok(())
+    let Some(state) = app.try_state::<TrayMenuState>() else {
+        return Ok(false);
+    };
+    let replace_native =
+        // Rebuilds and swaps the native menu while the model transition is serialized.
+        |next_model: &[TrayEntry]| {
+            let menu = build_native_menu(app, next_model)?;
+            let tray = app
+                .tray_by_id(TRAY_ID)
+                .ok_or(AppLifecycleError::TrayOperationFailed {
+                    operation: TrayOperation::ReplaceMenu,
+                })?;
+            tray.set_menu(Some(menu)).map_err(
+                // Classifies failure to replace the current native menu.
+                |_| AppLifecycleError::TrayOperationFailed {
+                    operation: TrayOperation::ReplaceMenu,
+                },
+            )
+        };
+    state.replace_refresh_model_if_current(refresh_ticket, model, replace_native)
 }
 
 /// Builds a native menu from the pure ordered tray model.
@@ -369,11 +446,13 @@ fn format_session_label(session: &AttentionSession) -> String {
 
 #[cfg(test)]
 mod tests {
+    use std::{cell::Cell, sync::Mutex};
+
     use super::{
-        OPEN_MENU_ID, QUIT_MENU_ID, TrayAction, TrayEntry, build_tray_menu_model, normalize_label,
-        resolve_menu_action, session_menu_id,
+        OPEN_MENU_ID, QUIT_MENU_ID, TrayAction, TrayEntry, TrayMenuInner, TrayMenuState,
+        build_tray_menu_model, normalize_label, resolve_menu_action, session_menu_id,
     };
-    use crate::app::lifecycle::AttentionSession;
+    use crate::app::lifecycle::{AppLifecycleError, AttentionSession, TrayOperation};
 
     /// Creates one attention-session fixture with stable display fields.
     fn session(id: &str, sequence: u64) -> AttentionSession {
@@ -451,6 +530,175 @@ mod tests {
         assert_eq!(
             resolve_menu_action(&model, "xwork · Session session-1"),
             TrayAction::Unknown
+        );
+    }
+
+    /// Verifies unchanged refreshes are no-ops and failed replacements keep the old model.
+    #[test]
+    fn menu_state_replaces_only_changed_successful_models() {
+        let initial = build_tray_menu_model(&[]);
+        let state = TrayMenuState {
+            inner: Mutex::new(TrayMenuInner {
+                model: initial.clone(),
+                latest_refresh_ticket: 0,
+            }),
+        };
+        let replacements = Cell::new(0);
+        let ticket = state
+            .begin_refresh()
+            .expect("the refresh ticket should allocate");
+
+        let unchanged = state
+            .replace_refresh_model_if_current(
+                ticket,
+                initial.clone(),
+                // Records any unexpected native replacement for an unchanged model.
+                |_model| {
+                    replacements.set(replacements.get() + 1);
+                    Ok(())
+                },
+            )
+            .expect("an unchanged model should be accepted");
+        assert!(!unchanged);
+        assert_eq!(replacements.get(), 0);
+
+        let changed = build_tray_menu_model(&[session("session-1", 1)]);
+        let error = state
+            .replace_refresh_model_if_current(
+                ticket,
+                changed.clone(),
+                // Simulates a native replacement failure before state publication.
+                |_model| {
+                    Err(AppLifecycleError::TrayOperationFailed {
+                        operation: TrayOperation::ReplaceMenu,
+                    })
+                },
+            )
+            .expect_err("a native replacement failure should be preserved");
+        assert_eq!(
+            error,
+            AppLifecycleError::TrayOperationFailed {
+                operation: TrayOperation::ReplaceMenu
+            }
+        );
+        assert_eq!(
+            state
+                .inner
+                .lock()
+                .expect("the model lock should remain usable")
+                .model
+                .clone(),
+            initial
+        );
+
+        let replaced = state
+            .replace_refresh_model_if_current(
+                ticket,
+                changed.clone(),
+                // Records the successful native replacement before model publication.
+                |_model| {
+                    replacements.set(replacements.get() + 1);
+                    Ok(())
+                },
+            )
+            .expect("a changed model should replace successfully");
+        assert!(replaced);
+        assert_eq!(replacements.get(), 1);
+        assert_eq!(
+            state
+                .inner
+                .lock()
+                .expect("the model lock should remain usable")
+                .model
+                .clone(),
+            changed
+        );
+    }
+
+    /// Verifies click and background refreshes share one latest-ticket publication protocol.
+    #[test]
+    fn click_and_background_refresh_use_latest_ticket() {
+        let initial = build_tray_menu_model(&[]);
+        let state = TrayMenuState {
+            inner: Mutex::new(TrayMenuInner {
+                model: initial,
+                latest_refresh_ticket: 0,
+            }),
+        };
+        let click_ticket = state
+            .begin_refresh()
+            .expect("the click refresh ticket should allocate");
+        let background_ticket = state
+            .begin_refresh()
+            .expect("the background refresh ticket should allocate");
+        let replacements = Cell::new(0);
+        let new_model = build_tray_menu_model(&[session("new", 2)]);
+
+        assert!(
+            state
+                .replace_refresh_model_if_current(
+                    background_ticket,
+                    new_model.clone(),
+                    // Records the native replacement for the newest completed refresh.
+                    |_model| {
+                        replacements.set(replacements.get() + 1);
+                        Ok(())
+                    },
+                )
+                .expect("the newest refresh should publish")
+        );
+        assert!(
+            !state
+                .replace_refresh_model_if_current(
+                    click_ticket,
+                    build_tray_menu_model(&[session("old", 1)]),
+                    // Records any incorrect native replacement by the stale refresh.
+                    |_model| {
+                        replacements.set(replacements.get() + 1);
+                        Ok(())
+                    },
+                )
+                .expect("the stale refresh should be discarded")
+        );
+        assert_eq!(replacements.get(), 1);
+        assert_eq!(
+            state
+                .inner
+                .lock()
+                .expect("the model lock should remain usable")
+                .model
+                .clone(),
+            new_model
+        );
+
+        let superseded_ticket = state
+            .begin_refresh()
+            .expect("the superseded ticket should allocate");
+        let _failed_newest_ticket = state
+            .begin_refresh()
+            .expect("the failed newest ticket should allocate");
+        assert!(
+            !state
+                .replace_refresh_model_if_current(
+                    superseded_ticket,
+                    build_tray_menu_model(&[session("superseded", 3)]),
+                    // Records any incorrect fallback publication after the newest refresh failed.
+                    |_model| {
+                        replacements.set(replacements.get() + 1);
+                        Ok(())
+                    },
+                )
+                .expect("an older result should stay discarded after a newer failure")
+        );
+        assert_eq!(replacements.get(), 1);
+        assert_eq!(
+            state
+                .inner
+                .lock()
+                .expect("the model lock should remain usable")
+                .model
+                .clone(),
+            new_model
         );
     }
 }

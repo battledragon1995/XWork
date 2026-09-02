@@ -299,7 +299,8 @@ impl AppLifecycleState {
 
         match shutdown_result {
             Ok(()) => {
-                inner.phase = LifecyclePhase::Idle;
+                // Keep shutdown terminal until process exit so no new Quit or close flow can race it.
+                inner.phase = LifecyclePhase::ShuttingDown(None);
                 Ok(ShutdownOutcome::ExitReady)
             }
             Err(_) => {
@@ -479,7 +480,7 @@ mod tests {
 
     use super::{
         AppLifecycleError, AppLifecycleState, AppRuntime, AppRuntimeFuture, AttentionSession,
-        LifecyclePhase, QuitFlow, QuitSummaryDto, ShutdownOutcome, authorize_quit_command,
+        QuitFlow, QuitSummaryDto, ShutdownOutcome, authorize_quit_command,
         authorize_window_command,
     };
 
@@ -750,6 +751,29 @@ mod tests {
         );
     }
 
+    /// Verifies failed cleanup without a dialog restores Idle for a later retry.
+    #[test]
+    fn zero_session_shutdown_failure_restores_idle() {
+        let runtime = Arc::new(FakeRuntime::new(Ok(summary(0))));
+        runtime.set_shutdown(Err(AppLifecycleError::RuntimeShutdownFailed));
+        let state = AppLifecycleState::new(runtime.clone());
+
+        assert!(matches!(
+            tauri::async_runtime::block_on(state.request_quit()),
+            Ok(QuitFlow::ProceedShutdown)
+        ));
+        assert_eq!(
+            tauri::async_runtime::block_on(state.finish_shutdown()),
+            Err(AppLifecycleError::RuntimeShutdownFailed)
+        );
+        assert!(
+            !state
+                .is_shutting_down()
+                .expect("the restored Idle state should remain readable")
+        );
+        assert_eq!(runtime.shutdown_calls.load(Ordering::SeqCst), 1);
+    }
+
     /// Verifies a failed snapshot leaves the state available for a retry.
     #[test]
     fn snapshot_failure_leaves_state_idle() {
@@ -845,11 +869,11 @@ mod tests {
         ));
     }
 
-    /// Verifies a successful confirmed shutdown clears its pending request.
+    /// Verifies successful cleanup remains terminal and rejects repeated Quit entry points.
     #[test]
-    fn successful_confirm_clears_pending_request() {
+    fn successful_shutdown_stays_terminal_and_runs_cleanup_once() {
         let runtime = Arc::new(FakeRuntime::new(Ok(summary(1))));
-        let state = AppLifecycleState::new(runtime);
+        let state = AppLifecycleState::new(runtime.clone());
         let request = dialog_request(
             tauri::async_runtime::block_on(state.request_quit())
                 .expect("the request should succeed"),
@@ -862,13 +886,25 @@ mod tests {
             tauri::async_runtime::block_on(state.finish_shutdown()),
             Ok(ShutdownOutcome::ExitReady)
         ));
-        assert!(matches!(
+        assert!(
             state
-                .inner
-                .lock()
-                .expect("the state lock should be available")
-                .phase,
-            LifecyclePhase::Idle
+                .is_shutting_down()
+                .expect("shutdown state should remain readable")
+        );
+        assert_eq!(
+            state
+                .pending_request_for_tests()
+                .expect("the state lock should remain usable"),
+            None
+        );
+        assert!(matches!(
+            tauri::async_runtime::block_on(state.request_quit()),
+            Err(AppLifecycleError::QuitAlreadyInProgress)
         ));
+        assert_eq!(
+            state.begin_confirm_quit(request.request_id),
+            Err(AppLifecycleError::QuitAlreadyInProgress)
+        );
+        assert_eq!(runtime.shutdown_calls.load(Ordering::SeqCst), 1);
     }
 }
