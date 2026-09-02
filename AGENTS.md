@@ -33,6 +33,7 @@ XWork is a local-first desktop application for Windows and macOS, built with Tau
 
 - For work that meets the criteria in `PLANS.md`, read and follow `PLANS.md`.
 - Store implementation plans under `00-Docs/98-Plan/`.
+- Implementation plans are execution-time guides, not living documentation. Once a plan's implementation is complete, treat the plan as a historical record and do not update it for later feature development or user-requested changes unless the user explicitly asks to revise that plan.
 - Creating a plan does not authorize source-code implementation.
 
 ## Verification
