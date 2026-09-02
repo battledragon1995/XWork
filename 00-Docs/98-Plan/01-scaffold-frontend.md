@@ -432,6 +432,10 @@ configuration, or Tauri bundling.
   text files out with CRLF (`core.autocrlf`) while Biome formats with LF.
   Added `.gitattributes` (`* text=auto eol=lf`) to pin LF line endings on
   every platform instead of changing Biome or the workflow.
+- CI actions were bumped from the Node 20-targeting `@v4` majors to
+  `actions/checkout@v7`, `pnpm/action-setup@v6`, and `actions/setup-node@v7`
+  (all targeting Node 24) to clear the runner's Node.js 20 deprecation
+  warning. Inputs, ordering, and gate commands are unchanged.
 
 During implementation, append every material deviation or decision instead of
 rewriting completed history.
