@@ -1,14 +1,30 @@
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { TauriCapabilities } from "@wdio/tauri-service";
+
+type WebView2TauriCapabilities = TauriCapabilities & {
+  "tauri:options": {
+    application: string;
+    webviewOptions: {
+      userDataFolder: string;
+    };
+  };
+};
 
 const applicationPath = fileURLToPath(
   new URL("../../src-tauri/target/release/xwork.exe", import.meta.url),
 );
+const userDataFolder = join(process.env.RUNNER_TEMP ?? tmpdir(), `xwork-webview2-${process.pid}`);
 
-const capabilities: TauriCapabilities = {
+const capabilities: WebView2TauriCapabilities = {
   browserName: "tauri",
   "tauri:options": {
     application: applicationPath,
+    // Isolates the WebView2 profile so stale locks cannot block session creation.
+    webviewOptions: {
+      userDataFolder,
+    },
   },
 };
 

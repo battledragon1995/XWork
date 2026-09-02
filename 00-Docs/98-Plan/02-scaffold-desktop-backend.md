@@ -1,7 +1,7 @@
 # Phase 2 — Desktop and Backend Scaffold Implementation Plan
 
 **Status:** Implemented — local verification complete; historical red checks
-skipped; first remote CI run pending
+skipped; remote desktop CI remediation pending verification
 
 **Goal:** Wrap the existing frontend SPA in a minimal Tauri 2 desktop runtime,
 establish a testable Rust composition root, and make the Windows desktop build
@@ -631,8 +631,9 @@ production build, or the real-runtime smoke scenario.
   was verified against Tauri core 2.11.5 by Cargo, Clippy, tests, and both
   development and production desktop builds.
 - pnpm 11.25.0 requires explicit lifecycle-script approval, so
-  `pnpm-workspace.yaml` allows only the existing Vite consumer `esbuild` to run
-  its install script.
+  `pnpm-workspace.yaml` allows the existing Vite consumer `esbuild` and the
+  WebdriverIO transitive packages `edgedriver` and `geckodriver` to run their
+  install scripts.
 - `@wdio/tauri-service` 1.3.0 declares `@wdio/globals` 9.29.1 even though its
   published runtime and type files do not import it. That unused dependency
   conflicts with the required WDIO 9.31 peer graph, so the locked pnpm config
@@ -657,6 +658,12 @@ production build, or the real-runtime smoke scenario.
   It opened a responsive native `XWork` window and Vite on port 5173 without
   startup or CSP errors; the harness required explicit cleanup after its
   non-PTY Ctrl+C did not propagate to the window process.
+- The first remote desktop runs exposed two clean-runner differences. pnpm
+  required explicit lifecycle approval for WebdriverIO's transitive driver
+  packages, and EdgeDriver timed out while creating a session with WebView2's
+  default profile. The E2E capability now assigns a unique temporary WebView2
+  user-data folder per run to prevent stale profile locks; remote verification
+  of that remediation remains pending.
 
 During implementation, append every material deviation and decision instead of
 rewriting completed history.
@@ -677,8 +684,8 @@ all frontend gates, E2E type checking, Rustfmt, Clippy with warnings denied,
 Rust tests, `pnpm tauri build --no-bundle`, the desktop smoke scenario, and a
 development-runtime smoke check.
 
-The only remaining verification is Task 4 Step 3: observe `frontend-ci` and
-`desktop-ci` from a clean GitHub Actions checkout after these changes are pushed.
-No push or remote workflow run was performed as part of this implementation.
-Completing this scaffold does not mean that `FE-001`, `BE-001`, or `BE-002` has
-been implemented.
+The only remaining verification is Task 4 Step 3. `frontend-ci` passed from a
+clean GitHub Actions checkout. `desktop-ci` passed installation, Rust gates, and
+the production build, then timed out creating its WebView2 session; it must be
+rerun after the isolated-profile remediation is pushed. Completing this scaffold
+does not mean that `FE-001`, `BE-001`, or `BE-002` has been implemented.
