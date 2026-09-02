@@ -1,6 +1,6 @@
 # Phase 1 — Frontend Scaffold Implementation Plan
 
-**Status:** Draft
+**Status:** Implemented locally — GitHub Actions observation pending
 
 **Goal:** Create a minimal client-only SPA that runs with Vite, renders an empty
 application shell through a memory router, and has complete frontend quality
@@ -187,14 +187,14 @@ local development and CI.
   `test`, and `test:watch` scripts; the `pnpm@11.25.0` package-manager alias; an
   exact dependency graph and lockfile used by Tasks 2–3.
 
-- [ ] **Step 1: Create the minimal manifest and pin the environment**
+- [x] **Step 1: Create the minimal manifest and pin the environment**
 
   Create a private ESM package, declare `engines.node` for Node.js 24 LTS, and
   set `packageManager` to `pnpm@11.25.0`. Define the scripts above with direct
   Vite, Biome, TypeScript, and Vitest commands; do not hide any quality gate
   behind a combined script.
 
-- [ ] **Step 2: Install the correct scaffold dependencies with exact versions**
+- [x] **Step 2: Install the correct scaffold dependencies with exact versions**
 
   Runtime dependencies include only React/React DOM, React Router, and Zustand.
   Development dependencies include only TypeScript, Vite and its React plugin,
@@ -207,12 +207,12 @@ local development and CI.
   feature dependency. Do not use `--force`, `--legacy-peer-deps`, or overrides
   to hide a peer mismatch.
 
-- [ ] **Step 3: Create the lockfile and ignore frontend artifacts**
+- [x] **Step 3: Create the lockfile and ignore frontend artifacts**
 
   Generate `pnpm-lock.yaml`. Add `node_modules/` and `dist/` to `.gitignore`;
   preserve the existing ignore rules and do not add unrelated patterns.
 
-- [ ] **Step 4: Verify the dependency contract**
+- [x] **Step 4: Verify the dependency contract**
 
   Run: `pnpm install --frozen-lockfile`
 
@@ -258,7 +258,7 @@ without feature code.
   `lib`, and `utils` so the registry can add source to the correct area in a
   later phase.
 
-- [ ] **Step 1: Write the root-route component test before implementation**
+- [x] **Step 1: Write the root-route component test before implementation**
 
   Create a colocated test that initializes the router with entry `/`, renders
   it through `RouterProvider`, and asserts that the minimal application shell
@@ -267,7 +267,7 @@ without feature code.
   comments above the test callback and cleanup callback as required by the
   repository comment rules.
 
-- [ ] **Step 2: Verify that the test fails because the router is absent**
+- [x] **Step 2: Verify that the test fails because the router is absent**
 
   Run: `pnpm test -- src/app/app-router.test.tsx`
 
@@ -275,7 +275,7 @@ without feature code.
   failure must not come from a missing dependency or test-environment
   configuration.
 
-- [ ] **Step 3: Configure the minimal frontend**
+- [x] **Step 3: Configure the minimal frontend**
 
   Configure strict TypeScript, `noEmit`, React's JSX transform, and the `@/*`
   alias. Configure Vite with React, Tailwind CSS 4, the matching alias, and
@@ -283,7 +283,7 @@ without feature code.
   files without formatting generated artifacts. `src/index.css` imports only
   Tailwind; do not add feature design tokens or themes to the scaffold.
 
-- [ ] **Step 4: Establish shadcn/ui and Animate UI infrastructure without a component**
+- [x] **Step 4: Establish shadcn/ui and Animate UI infrastructure without a component**
 
   Create `components.json` using the current schema, the `src/index.css` CSS
   entry, Tailwind CSS 4 CSS variables, and aliases that point to the target tree
@@ -291,7 +291,7 @@ without feature code.
   `src/components/ui/` or `src/components/animate-ui/` directories, or create a
   `cn` helper without a consumer.
 
-- [ ] **Step 5: Implement the entry point, memory router, and minimal shell**
+- [x] **Step 5: Implement the entry point, memory router, and minimal shell**
 
   `src/main.tsx` mounts React strict mode and `RouterProvider` into the root from
   `index.html`. `createAppRouter` registers only route `/` with `AppShell`; its
@@ -299,7 +299,7 @@ without feature code.
   changing production behavior. `AppShell` renders only a semantic shell named
   “XWork”; do not add a sidebar, top bar, links, a store, or business state.
 
-- [ ] **Step 6: Verify the focused test and local quality gates**
+- [x] **Step 6: Verify the focused test and local quality gates**
 
   Run: `pnpm test -- src/app/app-router.test.tsx`
 
@@ -327,7 +327,7 @@ without feature code.
   Expected: Vite creates the production bundle in `dist/` without a build
   error.
 
-- [ ] **Step 7: Smoke-test the development server on Windows**
+- [x] **Step 7: Smoke-test the development server on Windows**
 
   Run: `pnpm dev`
 
@@ -361,7 +361,7 @@ production build.
 - Produces: the Windows `frontend-ci` workflow and one frontend quality-gate
   job.
 
-- [ ] **Step 1: Create the minimal Windows workflow**
+- [x] **Step 1: Create the minimal Windows workflow**
 
   Run on `windows-latest` for `push` and `pull_request`. Check out the source,
   install pnpm 11.25.0, install Node.js 24 with pnpm caching, run
@@ -369,7 +369,7 @@ production build.
   tests, and production build in order. Do not add a macOS matrix, Rust, Tauri,
   artifact publication, or deployment.
 
-- [ ] **Step 2: Verify that the workflow uses the local contract**
+- [x] **Step 2: Verify that the workflow uses the local contract**
 
   Review the YAML to ensure it does not duplicate commands that differ from the
   `package.json` scripts, use `continue-on-error` for a quality gate, or request
@@ -406,15 +406,65 @@ configuration, or Tauri bundling.
 
 ## Deviations and Decisions
 
-- None.
+- Local commands ran `pnpm@11.25.0` through `corepack pnpm` because the
+  machine has a standalone pnpm 11.24.0; no global toolchain was changed.
+- Support packages without documented versions were pinned to
+  `@vitejs/plugin-react@6.1.1`, `jsdom@30.0.1`,
+  `@testing-library/jest-dom@7.0.1`, `@testing-library/dom@10.4.1`,
+  `@types/react@19.2.18`, `@types/react-dom@19.2.5`, and
+  `@types/node@24.13.3`. `@testing-library/dom` was added explicitly because
+  it is a required peer of both `@testing-library/react@16.3.3` and
+  `@testing-library/jest-dom@7.0.1`.
+- `engines.node` is pinned to the major range `"24"` for Node.js 24 LTS.
+- The `lint` script runs `biome lint .`; formatting is covered separately by
+  `format:check`, matching the plan's separate quality-gate contract instead
+  of the combined `biome check` mentioned in the tech-stack overview.
+- Biome was scoped to `src/**` and root configuration/source files through
+  `files.includes`; without this, `biome format .` also reformatted
+  `00-Docs/01-Wireframe/assets/wireframe.css`, which is documentation rather
+  than frontend source.
+- Biome 2.5.11 deprecates `linter.rules.recommended`; `biome migrate --write`
+  converted it to `linter.rules.preset: "recommended"` so `pnpm lint` reports
+  no diagnostics.
+- TypeScript 7 removed `baseUrl`; `paths` maps `@/*` to `./src/*` relative to
+  `tsconfig.json` without `baseUrl`.
 
 During implementation, append every material deviation or decision instead of
 rewriting completed history.
 
 ## Outcome
 
-Pending implementation.
+Implemented and verified locally on Windows with Node.js 24.19.0 and
+pnpm 11.25.0.
 
-When implementation is complete, record the created files, evidence for every
-local and CI quality gate, and any remaining limitations. Completing this plan
-does not mean that `FE-001` has been implemented.
+Created files: `.gitignore` updates, `package.json`, `pnpm-lock.yaml`,
+`tsconfig.json`, `vite.config.ts`, `biome.json`, `components.json`,
+`index.html`, `.github/workflows/frontend-ci.yml`, `src/index.css`,
+`src/main.tsx`, `src/vite-env.d.ts`, `src/app/app-shell.tsx`,
+`src/app/app-router.tsx`, and `src/app/app-router.test.tsx`.
+
+Verification evidence:
+
+- Reproducible install: `pnpm install --frozen-lockfile` succeeded and the
+  lockfile hash stayed unchanged; no peer dependency warning appeared.
+- Dependency contract: `pnpm list --depth 0` showed exactly the 18 direct
+  dependencies, each pinned to an exact version matching the tech stack.
+- Red test: the router test first failed only because
+  `src/app/app-router.tsx` did not exist.
+- Focused green test: `pnpm test -- src/app/app-router.test.tsx` passed
+  (1 test) without React or Router warnings.
+- Local gates: `pnpm format:check`, `pnpm lint`, `pnpm typecheck`,
+  `pnpm test`, and `pnpm build` all passed; Vite produced `dist/` with
+  Tailwind CSS output.
+- Dev-server smoke test: `pnpm dev` served `http://localhost:5173/`; a real
+  browser rendered route `/` with the `XWork` main landmark and heading and a
+  clean console. The server was stopped and port 5173 was verified free
+  afterward.
+- The post-smoke-test diff contained no shadcn/ui or Animate UI source
+  component, feature directory, IPC wrapper, generated binding, or Tauri file.
+
+Remaining limitations:
+
+- Task 3 Step 3 is pending: the `frontend-ci` workflow has not been observed
+  on GitHub because the change has not been committed or pushed.
+- Completing this plan does not mean that `FE-001` has been implemented.
