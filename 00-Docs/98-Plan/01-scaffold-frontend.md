@@ -1,6 +1,6 @@
 # Phase 1 — Frontend Scaffold Implementation Plan
 
-**Status:** Implemented locally — GitHub Actions observation pending
+**Status:** Implemented
 
 **Goal:** Create a minimal client-only SPA that runs with Vite, renders an empty
 application shell through a memory router, and has complete frontend quality
@@ -380,7 +380,7 @@ production build.
   Expected: the local command sequence corresponding to the CI job passes on
   Windows.
 
-- [ ] **Step 3: Verify the GitHub Actions run**
+- [x] **Step 3: Verify the GitHub Actions run**
 
   After the change is available on GitHub, observe the `frontend-ci` workflow.
 
@@ -466,9 +466,13 @@ Verification evidence:
   afterward.
 - The post-smoke-test diff contained no shadcn/ui or Animate UI source
   component, feature directory, IPC wrapper, generated binding, or Tauri file.
+- Windows CI: run #1 failed at the formatting gate because of CRLF checkout
+  (see Deviations); after adding `.gitattributes`, run #2 for commit
+  `eab285d` completed successfully on `windows-latest` with every gate step
+  green: checkout, pnpm 11.25.0, Node 24 with cache, `--frozen-lockfile`
+  install, format check, lint, type check, tests, and build
+  (https://github.com/battledragon1995/XWork/actions/runs/33583878833).
 
 Remaining limitations:
 
-- Task 3 Step 3 is pending: the `frontend-ci` workflow has not been observed
-  on GitHub because the change has not been committed or pushed.
 - Completing this plan does not mean that `FE-001` has been implemented.
