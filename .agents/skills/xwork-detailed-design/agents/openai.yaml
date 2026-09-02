@@ -1,4 +1,0 @@
-interface:
-  display_name: "XWork Detailed Design"
-  short_description: "Write XWork FE-NNN/BE-NNN detailed-design documents"
-  default_prompt: "Use $xwork-detailed-design to write a detailed XWork feature design after inspecting the repository and resolving ambiguities."
