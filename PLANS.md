@@ -56,6 +56,8 @@ interpretation.
 
 ## Plan Content
 
+Write every implementation plan in English.
+
 Each plan must be self-contained enough for an implementer to execute while
 still treating the linked specifications as the source of truth.
 
