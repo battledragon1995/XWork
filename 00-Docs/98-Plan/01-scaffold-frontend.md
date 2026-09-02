@@ -428,6 +428,10 @@ configuration, or Tauri bundling.
   no diagnostics.
 - TypeScript 7 removed `baseUrl`; `paths` maps `@/*` to `./src/*` relative to
   `tsconfig.json` without `baseUrl`.
+- The first CI run failed at the formatting gate: the Windows runner checked
+  text files out with CRLF (`core.autocrlf`) while Biome formats with LF.
+  Added `.gitattributes` (`* text=auto eol=lf`) to pin LF line endings on
+  every platform instead of changing Biome or the workflow.
 
 During implementation, append every material deviation or decision instead of
 rewriting completed history.
