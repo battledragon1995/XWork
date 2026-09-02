@@ -1,5 +1,7 @@
 allowBuilds:
+  edgedriver: true
   esbuild: true
+  geckodriver: true
 overrides:
   '@wdio/tauri-service@1.3.0>@wdio/globals': '-'
 patchedDependencies:
