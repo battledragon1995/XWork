@@ -52,7 +52,6 @@ Backend cung cấp một snapshot settings typed: General là các invariant ch�
 | `src-tauri/tests/settings_commands.rs` | Kiểm tra migration, command public, tính bền vững, atomicity và subscription qua backend boundary |
 | `src-tauri/tests/data_management_contract.rs` | Kiểm tra maintenance permit, typed plan/projection, shared transaction và publish sau commit |
 | `src-tauri/tests/export_bindings.rs` | Sinh và kiểm tra TypeScript binding từ các kiểu public của BE-008 |
-| `tests/e2e/settings.spec.ts` | Kiểm chứng tích hợp desktop Settings với FE-001/FE-011/FE-012 và mở rộng FE-023 |
 | `src/bindings/settings.ts` | Một output sinh tự động chứa toàn bộ public DTO của BE-008; được mở rộng thêm type notification ở Phase 4 |
 
 Không sửa thủ công `src/bindings/settings.ts`; binding generator phải sinh đúng một output aggregate và contract test thất bại nếu file trên đĩa khác kết quả sinh từ Rust.
@@ -541,7 +540,7 @@ Error IPC có tagged shape `{ code, ...details }`. `PersistenceFailed` và `Unav
 - [ ] Ở Phase 4, consumer test chứng minh terminal/reminder toggle và CLI OS-state filter được đọc qua public snapshot, còn Missed reminder vẫn luôn được ghi nhận.
 - [ ] Mọi function, method, callback, helper và test được thêm có comment ngắn đúng quy tắc project; không sửa binding sinh tự động bằng tay.
 - [ ] `cargo fmt --manifest-path src-tauri/Cargo.toml --check`, `cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --all-features -- -D warnings` và `cargo test --manifest-path src-tauri/Cargo.toml` pass trên Windows.
-- [ ] Frontend formatter/lint/type-check/test/build liên quan pass; Tauri build và desktop E2E trên Windows chứng minh settings còn sau restart, theme/sidebar áp dụng và các row General cố định không thể bị chỉnh sửa.
+- [ ] Frontend formatter/lint/type-check/unit/component test và build liên quan pass; Rust integration test chứng minh settings còn sau khi mở lại service, còn smoke thủ công Windows xác nhận theme/sidebar áp dụng sau khi mở lại ứng dụng.
 
 ## Kiểm thử
 
@@ -551,7 +550,6 @@ Error IPC có tagged shape `{ code, ...details }`. `PersistenceFailed` và `Unav
 | `src-tauri/tests/settings_commands.rs` | Integration | Migration default; command registration; read/update/restore; atomic rollback; revision; restart persistence; concurrent disjoint patch; ở Phase 4 subscriber nhận snapshot mới nhất với revision đơn điệu và migration bảo toàn dữ liệu |
 | `src-tauri/tests/data_management_contract.rs` | Integration | Write permit chặn settings mutation; typed `_in` plan/projection dùng shared transaction; rollback không publish; commit thay cache/subscriber no-fail; backup v3 chỉ sẵn sàng sau `0008..0010` |
 | `src-tauri/tests/export_bindings.rs` | Contract | Sinh toàn bộ BE-008 DTO từ Rust và fail khi binding trên đĩa không đồng bộ |
-| `tests/e2e/settings.spec.ts` | Desktop E2E thuộc lát cắt FE liên quan | General locked state; Appearance/sidebar round-trip qua restart; restore; validation và Phase 4 notification settings trên Windows |
 
 ## Câu hỏi mở
 

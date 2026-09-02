@@ -51,7 +51,6 @@ Backend cung cấp catalog action typed cùng shortcut mặc định theo nền 
 | `src-tauri/tests/data_management_contract.rs` | Contract test maintenance permit, typed plan/projection, shared transaction và publish sau commit |
 | `src-tauri/tests/export_bindings.rs` | Contract test binding TypeScript khớp Rust source |
 | `src-tauri/tests/app_builder.rs` | Smoke test composition root có managed state và bốn command |
-| `tests/e2e/settings-keyboard-shortcuts.e2e.ts` | Desktop E2E Windows cho record, conflict, reset one/all sau khi FE-014 hoàn thành |
 
 `settings/keyboard_shortcuts.rs` là file riêng vì `settings/mod.rs` đã sở hữu contract Appearance/General của BE-008 và Keyboard Shortcuts có schema, catalog cùng vòng đời riêng. Không sửa tay binding; generator phải tạo đúng một output aggregate và contract test phải fail nếu file trên đĩa lệch kết quả sinh.
 
@@ -447,7 +446,6 @@ Conflict không có variant lỗi. Lỗi plugin global/chord bị ứng dụng b
 | `src-tauri/tests/data_management_contract.rs` | Integration | Write permit chặn mutation; typed `_in` replacement/reset dùng shared transaction; rollback không publish; commit publish cache/subscriber no-fail |
 | `src-tauri/tests/export_bindings.rs` | Contract | Sinh toàn bộ DTO/error BE-009 và fail khi `src/bindings/keyboard-shortcuts.ts` lệch Rust source |
 | `src-tauri/tests/app_builder.rs` | Integration | App builder manage service, đăng ký đúng bốn command và không thêm global plugin Phase 1 |
-| `tests/e2e/settings-keyboard-shortcuts.e2e.ts` | Desktop E2E Windows | Search action, record bằng `code`, conflict text/không dispatch, reset row/all, focus/IME/terminal guard; Phase 3 mở Quick Note từ global chord |
 
 Test database dùng temporary directory/file riêng, không chạm app data thật. Test global shortcut hệ điều hành chỉ chạy trong lát cắt BE-017 trên Windows; unit test BE-009 Phase 1 không đăng ký phím toàn cục thật và macOS được hoãn đến release preparation theo quy tắc repository.
 

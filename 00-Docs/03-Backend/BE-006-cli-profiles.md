@@ -49,7 +49,6 @@ Backend cung cấp ba profile dựng sẵn Codex, Claude và Terminal; CRUD prof
 | `src-tauri/tests/data_management_contract.rs` | Contract test maintenance permit, typed plan/projection, shared transaction và cleanup outbox. |
 | `src-tauri/tests/cli_profiles_windows.rs` | Windows integration test cho `PATH`/`PATHEXT`, shell discovery và Windows Credential Manager với credential tạm. |
 | `src-tauri/tests/app_builder.rs` | Smoke test app builder đăng ký đủ command và managed state BE-006. |
-| `tests/e2e/settings-cli-profiles.e2e.ts` | E2E mocked-IPC cho Settings Terminal & CLI Profiles và trạng thái tool unavailable. |
 
 ## Dữ liệu
 
@@ -726,7 +725,7 @@ pub enum CliProfilesError {
 - [ ] Generated TypeScript binding khớp Rust DTO và không có chỉnh sửa thủ công.
 - [ ] Mọi function/method/callback/helper/test mới có comment ngắn; logic credential compensation có inline comment giải thích invariant.
 - [ ] `cargo fmt --check`, `cargo clippy --all-targets --all-features -- -D warnings` và `cargo test --all-targets --all-features` pass trên Windows.
-- [ ] Formatter, linter, typecheck và E2E liên quan FE-006/FE-013 pass; Tauri build Windows pass vì feature thay command/binding, capability registration và desktop credential integration.
+- [ ] Formatter, linter, typecheck và unit/component test liên quan FE-006/FE-013 pass; Tauri build Windows pass vì feature thay command/binding, capability registration và desktop credential integration.
 - [ ] Windows credential integration test chỉ dùng account UUID có prefix test, luôn cleanup trong teardown và không đụng credential người dùng.
 
 ## Kiểm thử
@@ -742,7 +741,6 @@ pub enum CliProfilesError {
 | `src-tauri/tests/cli_profiles_windows.rs` | Integration Windows | Resolver thật với temp executable/PATHEXT, shell discovery và Windows Credential Manager round-trip bằng test account rồi cleanup. |
 | `src-tauri/tests/app_builder.rs` | Smoke | Managed state, startup task và sáu command BE-006 được đăng ký trong builder. |
 | `src-tauri/tests/export_bindings.rs` | Contract | Export toàn bộ DTO/event/error BE-006 vào `src/bindings/terminal/` và fail khi output lệch Rust source. |
-| `tests/e2e/settings-cli-profiles.e2e.ts` | E2E mocked IPC | FE-013 CRUD/default shell/check status/secret masked; FE-006 profile unavailable, Check again và Open CLI Profiles theo wireframe. |
 
 ## Quyết định và giả định đã chốt
 

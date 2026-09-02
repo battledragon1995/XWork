@@ -63,7 +63,6 @@ Backend giữ buffer Markdown runtime đồng bộ với editor, xác định ch
 | `src-tauri/tests/files_markdown_save_commands.rs` | Integration test buffer, manual/atomic save, optimistic conflict, watcher fanout và close flow trên temp project. |
 | `src-tauri/tests/export_bindings.rs` | Sinh và kiểm tra binding DTO/error/event BE-015. |
 | `src/bindings/files/` | Output TypeScript do `ts-rs` sinh; không chỉnh tay. |
-| `tests/e2e/files.e2e.ts` | Mở rộng desktop E2E Windows cho edit/preview dirty, Save/shortcut, save-and-close và external conflict. |
 
 Không sửa capability permission: frontend không nhận API filesystem. Windows API chỉ được gọi trong Rust dưới `cfg(windows)`; macOS writer chỉ nhận path đã resolve từ handle/root authority.
 
@@ -531,7 +530,7 @@ Các variant BE-014 khác giữ nguyên mapping. Internal source chain giữ OS 
 - [ ] Generated TypeScript binding chứa hai request, outcome/result, error/event kind mới và contract test phát hiện drift.
 - [ ] Mọi function/method/callback/test/helper có comment ngắn; optimistic race, atomic replace ambiguity, save lease và watcher self-event có inline comment giải thích invariant.
 - [ ] Trên Windows, `cargo fmt --check`, `cargo clippy --all-targets --all-features -- -D warnings` và `cargo test --all-targets --all-features` pass.
-- [ ] Frontend formatter/lint/type-check/component test và `tests/e2e/files.e2e.ts` pass; E2E xác nhận button cùng Ctrl+S, dirty indicators, conflict và Save and close.
+- [ ] Frontend formatter/lint/type-check/component test pass và xác nhận button cùng Ctrl+S, dirty indicators, conflict và Save and close.
 - [ ] `pnpm tauri build` pass trên Windows với binding/invoke/target-specific writer; smoke test NTFS xác nhận editor ngoài atomic-save không bị overwrite âm thầm.
 
 ## Kiểm thử
@@ -545,7 +544,6 @@ Các variant BE-014 khác giữ nguyên mapping. Internal source chain giữ OS 
 | `src-tauri/tests/files_markdown_save_commands.rs` | Integration | Temp project và managed service: update/save boundary, byte round-trip, manual-only, external modify/delete/replace, read-only/locked/link/root locate, concurrent edit/save/close và two-handle conflict. |
 | `src-tauri/tests/app_builder.rs` | Integration | Mock runtime đăng ký thêm đúng hai command, Files state/writer inject được và không capability permission mới. |
 | `src-tauri/tests/export_bindings.rs` | Contract | Export DTO/error/event final của Files và fail khi generated `src/bindings/files/` lệch Rust source. |
-| `tests/e2e/files.e2e.ts` | Desktop E2E Windows | Edit/Preview giữ buffer, ba dirty indicator, Save button/Ctrl+S, Saved status, conflict choices, Save and close/Discard/Cancel. |
 
 Integration filesystem chỉ dùng temporary directory, không chạm repository hoặc app data thật. Atomicity test có reader loop và chỉ chấp nhận toàn bộ old hoặc new bytes, không partial; watcher test dùng channel/deadline hữu hạn thay vì sleep mù. Windows native test chạy trên NTFS khi có thể và ghi rõ skip cho môi trường không tạo được symlink/UNC fixture; fake writer vẫn bắt buộc cover mọi failure branch. macOS native suite chạy ở release preparation.
 

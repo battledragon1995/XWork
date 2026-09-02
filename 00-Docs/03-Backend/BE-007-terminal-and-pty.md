@@ -50,7 +50,6 @@ Backend tạo một PTY thật cho tool đã chọn, chạy shell hoặc CLI t�
 | `src-tauri/tests/fixtures/pty_echo.ps1` | Fixture Windows phát chunk/Unicode, echo input, report size và exit code xác định được. |
 | `src-tauri/tests/fixtures/pty_child_tree.ps1` | Fixture Windows tạo child process để xác nhận close/Quit không để process mồ côi. |
 | `src/bindings/terminal/` | Binding TypeScript do ts-rs sinh; không sửa tay. |
-| `tests/e2e/terminal.e2e.ts` | Desktop E2E Windows nối WTerm/Ghostty với PTY thật cho FE-006/007/008. |
 
 Không có migration và không đổi capability permission. Main webview chỉ gọi custom command đã đăng ký; backend tự thực hiện PTY/process access. CSP hiện tại đã có `'wasm-unsafe-eval'`; implementation phải giữ và kiểm chứng, không nới thêm source hoặc wildcard.
 
@@ -622,7 +621,7 @@ pub enum TerminalError {
 - [ ] Generated binding `src/bindings/terminal/` khớp Rust DTO/error và không được sửa tay; CSP production/dev vẫn chỉ nới `'wasm-unsafe-eval'` cần thiết.
 - [ ] Mọi function/method/callback/helper/test mới có comment; framing/attach compensation/termination escalation có inline invariant comment.
 - [ ] `cargo fmt --check`, `cargo clippy --all-targets --all-features -- -D warnings` và toàn bộ Rust test pass trên Windows.
-- [ ] Frontend formatter/lint/typecheck/unit test và `tests/e2e/terminal.e2e.ts` pass; `pnpm tauri build` Windows pass vì feature thay IPC Channel, process integration, binding và desktop runtime.
+- [ ] Frontend formatter/lint/typecheck/unit/component test và Rust integration test terminal pass; `pnpm tauri build` Windows pass vì feature thay IPC Channel, process integration, binding và desktop runtime; smoke thủ công Windows xác nhận rendering/input của terminal thật.
 
 ## Kiểm thử
 
@@ -637,7 +636,6 @@ pub enum TerminalError {
 | `src-tauri/tests/terminal_pty_windows.rs` | Integration Windows | ConPTY thật với fixture: Unicode/chunk, input/control, resize, exit code, burst/backpressure, four-terminal stability và child-tree kill. |
 | `src-tauri/tests/app_builder.rs` | Smoke | Terminal manager/router late bind đúng một lần, state/commands đăng ký và mock builder không tạo PTY lúc setup. |
 | `src-tauri/tests/export_bindings.rs` | Contract | Export DTO/event/error BE-007 vào `src/bindings/terminal/`, fail khi drift và không sinh type cho raw Channel frame. |
-| `tests/e2e/terminal.e2e.ts` | Desktop E2E Windows | Codex/Claude/shell, 1–4 pane, background/tray, WTerm Ghostty, alternate screen, mouse, synchronized output, Unicode/emoji/IME, clipboard, find/link, resize, close/reopen/Quit. |
 
 Test tự động không dùng project đang phát triển, credential thật hoặc command người dùng. Integration tạo temporary project root/profile fixture; mọi child/process tree có teardown force-kill và assertion không còn sống. Compatibility với Codex/Claude thật là manual smoke có điều kiện khi CLI đã cài, không làm CI thất bại trên runner thiếu CLI.
 

@@ -91,7 +91,6 @@ Người dùng mở XWork và thấy một khung ứng dụng hoàn chỉnh: sid
 | `src/app/quit-store.test.ts` | Test chuyển trạng thái luồng Quit và xử lý từng error code. |
 | `src/app/use-lifecycle-events.test.ts` | Test dedupe event, điều hướng theo `sessionId` và hủy đăng ký. |
 | `src/lib/ipc/app-lifecycle.test.ts` | Test tên command, hình dạng tham số và ánh xạ lỗi typed. |
-| `tests/e2e/app-smoke.e2e.ts` | Scenario desktop cho shell thật: landmark, điều hướng khu vực và thu gọn sidebar. |
 
 Dependency mới được khóa exact version: `@tauri-apps/api` cùng dòng `2.11` với Tauri, `lucide-react` `1.39.0` theo `01-TechStack.md`, cùng `clsx`, `tailwind-merge`, `class-variance-authority` và các primitive Radix mà `dialog`, `dropdown-menu`, `tooltip` được sao chép cần. Không thêm `motion` hoặc component Animate UI ở lát cắt này vì shell chưa dùng animation nào.
 
@@ -343,7 +342,7 @@ export function invokeCommand<TResult, TError extends TaggedIpcError>(
 - [ ] Không có DTO hoặc error type viết tay cho lifecycle; toàn bộ kiểu đến từ `src/bindings/app-lifecycle.ts` và file này không bị sửa tay.
 - [ ] Không có persistence nào trong webview: tìm trong `src/` không có `localStorage`, `sessionStorage` hoặc `indexedDB`.
 - [ ] Mọi function, component, hook, callback và test mới có comment ngắn nêu mục đích; chỗ có invariant như clamp độ rộng, dedupe event và khóa nút khi đang thoát có comment giải thích.
-- [ ] Trên Windows, `pnpm format:check`, `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm build`, `pnpm typecheck:e2e`, `pnpm test:rust` và `pnpm tauri build` đều pass; sau khi có binary release, `pnpm test:e2e` cũng pass.
+- [ ] Trên Windows, `pnpm format:check`, `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm build`, `pnpm test:rust` và `pnpm tauri build` đều pass.
 - [ ] Smoke test thủ công trên Windows xác nhận cửa sổ không viền vẫn kéo đổi kích thước theo viền được, hide và show từ tray, minimize, maximize cùng `Quit XWork` hoạt động; kiểm tra macOS hoãn tới bước chuẩn bị phát hành theo quy tắc project.
 
 ## Kiểm thử
@@ -359,9 +358,8 @@ export function invokeCommand<TResult, TError extends TaggedIpcError>(
 | `src/app/quit-store.test.ts` | Unit | Chuyển trạng thái cho kết quả `null` và kết quả có request; chặn `confirm_quit` lặp; ánh xạ `runtime_snapshot_failed`, `runtime_shutdown_failed`, `quit_already_in_progress` và nhóm lỗi tích hợp; `stale_quit_request` gọi lại `request_quit` đúng một lần. |
 | `src/app/use-lifecycle-events.test.ts` | Unit | Đăng ký đúng hai event một lần; dedupe theo `requestId`; điều hướng bằng `sessionId` nguyên vẹn; hủy đăng ký khi unmount. |
 | `src/lib/ipc/app-lifecycle.test.ts` | Unit | Gọi đúng tên sáu command; `requestId` gửi dạng camelCase; lỗi dạng `{ code }` trở thành `IpcCallError` có `payload`; lỗi lạ trở thành `IpcCallError` với `payload` bằng `null`. |
-| `tests/e2e/app-smoke.e2e.ts` | End-to-end | Trên desktop thật: shell render đủ landmark và wordmark; điều hướng qua bốn khu vực và `Settings` đổi breadcrumb cùng tiêu đề khu vực; nút thu gọn đổi độ rộng sidebar. |
 
-Các hành vi phụ thuộc cửa sổ native — kéo cửa sổ, minimize, maximize, hide xuống tray, mở lại từ tray và thoát process — được xác nhận bằng smoke test thủ công trên Windows với bản build thật; component test và end-to-end test không được coi là thay thế cho bước này.
+Các hành vi phụ thuộc cửa sổ native — kéo cửa sổ, minimize, maximize, hide xuống tray, mở lại từ tray và thoát process — được xác nhận bằng smoke test thủ công trên Windows với bản build thật; automated test không được coi là thay thế cho bước này.
 
 ## Câu hỏi mở
 

@@ -54,7 +54,6 @@ Backend tổng hợp project, session và command từ public query của capabi
 | `src-tauri/tests/unified_search_contract.rs` | Integration test command, adapters, partial failure, timeout và phase source |
 | `src-tauri/tests/export_bindings.rs` | Contract test binding trên đĩa khớp Rust source |
 | `src-tauri/tests/app_builder.rs` | Smoke test composition root đăng ký state/source/command đúng phase |
-| `tests/e2e/command-palette.e2e.ts` | Desktop E2E Windows cho mở Palette, tìm, keyboard selection và mở target thật |
 
 Việc tách `ranking.rs` và `service.rs` có lý do thực tế: ranking là thuật toán thuần cần unit test dày, trong khi service giữ async ports/deadline và catalog. Không tách repository vì Search không sở hữu persistence. Binding chỉ được sinh từ Rust.
 
@@ -509,9 +508,8 @@ Lỗi domain source không dùng variant top-level; chúng được làm sạch 
 | `src-tauri/tests/unified_search_contract.rs` | Integration | Command window/input boundary; fake source concurrency/deadline; adapter DTO projection; response serialization; stale domain target; file/note/event extension fixtures |
 | `src-tauri/tests/export_bindings.rs` | Contract | Sinh toàn bộ public DTO/error BE-010 và fail khi `src/bindings/search.ts` lệch Rust source |
 | `src-tauri/tests/app_builder.rs` | Integration | Phase 1 builder inject đúng ba source, manage Search và đăng ký đúng một command, không có permission/plugin mới |
-| `tests/e2e/command-palette.e2e.ts` | Desktop E2E Windows | Mở bằng pill/Ctrl K, input/debounce/loading/empty/partial error, grouped result/highlight, Arrow/Enter/Escape/focus restore và target thực theo phase |
 
-Fixture source dùng dữ liệu tạm/giả xác định được, không đọc project/app-data thật. Test deadline dùng paused/controlled Tokio time, không sleep wall-clock. E2E File/Note/Event được bổ sung trong lát cắt phase tương ứng; macOS validation hoãn đến release preparation theo quy tắc repository.
+Fixture source dùng dữ liệu tạm/giả xác định được, không đọc project/app-data thật. Test deadline dùng paused/controlled Tokio time, không sleep wall-clock. Component regression cho File/Note/Event được bổ sung trong lát cắt phase tương ứng; macOS validation hoãn đến release preparation theo quy tắc repository.
 
 ## Câu hỏi mở
 

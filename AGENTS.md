@@ -38,6 +38,10 @@ XWork is a local-first desktop application for Windows and macOS, built with Tau
 ## Verification
 
 - Write tests for new behavior and bug fixes.
+- Do not add or run automated desktop end-to-end tests. Cover frontend behavior
+  with unit/component tests, backend and IPC behavior with Rust integration and
+  contract tests, and native-window behavior with targeted manual Windows smoke
+  checks.
 - During development, build and test only on Windows.
 - Defer macOS validation until release preparation unless explicitly requested earlier.
 - Run the relevant frontend formatter, linter, type checks, and tests, plus Rustfmt, Clippy, and Rust tests before completion.

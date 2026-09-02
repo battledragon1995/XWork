@@ -55,7 +55,6 @@ Backend giữ nguồn dữ liệu chính trong bộ nhớ cho toàn bộ phiên,
 | `src-tauri/tests/data_management_contract.rs` | Contract test read permit của create session và async quiesce/resume quanh Reset. |
 | `src-tauri/tests/export_bindings.rs` | Điểm sinh và kiểm tra binding từ toàn bộ DTO public của Sessions. |
 | `src/bindings/sessions/` | Output TypeScript sinh bởi `ts-rs`; không chỉnh tay. |
-| `tests/e2e/sessions-runtime.e2e.ts` | Luồng desktop Windows cho tạo/xóa session, tab, split, resize, maximize và reopen sau khi frontend liên quan hoàn thành. |
 
 Không có migration hoặc thay đổi capability permission: đây là state trong bộ nhớ và custom Tauri command đã được giới hạn bằng danh sách đăng ký trong composition root.
 
@@ -974,7 +973,7 @@ pub enum SessionsError {
 - [ ] Mọi Sessions command nhận invoking `WebviewWindow` và chỉ exact `main` thành công; `quick-note`/label khác nhận `UnauthorizedWindow` trước project/profile/content port hoặc state access, trong khi public Rust consumer methods không bị áp IPC authorization.
 - [ ] Binding TypeScript được sinh từ Rust và test xác nhận không có drift hay DTO viết tay.
 - [ ] `cargo fmt --check`, `cargo clippy --all-targets --all-features -- -D warnings` và `cargo test --all-targets --all-features` pass trên Windows.
-- [ ] Frontend formatter, lint, type-check, test/build liên quan pass sau khi nối generated binding; desktop E2E xác nhận các luồng session/tab/pane trên Windows.
+- [ ] Frontend formatter, lint, type-check, unit/component test và build liên quan pass sau khi nối generated binding; smoke thủ công Windows xác nhận resize, maximize và reopen ở desktop runtime.
 - [ ] `pnpm tauri build` pass vì thay đổi managed state, invoke handler, public IPC và desktop integration.
 
 ## Kiểm thử
@@ -987,7 +986,6 @@ pub enum SessionsError {
 | `src-tauri/tests/data_management_contract.rs` | Integration | Write permit chặn create session, impact gồm unsaved file và reset await gate-free shutdown rồi resume admission không restore session. |
 | `src-tauri/tests/app_builder.rs` | Integration | Composition root đăng ký state/command và build được bằng Tauri mock runtime. |
 | `src-tauri/tests/export_bindings.rs` | Contract | Export tất cả DTO/error Sessions gồm `UnauthorizedWindow` và fail khi generated TypeScript khác Rust source; xác nhận `SessionNotificationContext` không đi vào binding. |
-| `tests/e2e/sessions-runtime.e2e.ts` | Desktop E2E Windows | Tạo/rename/delete session, tool unavailable, tab drag/keyboard reorder, split 1–4, resize, maximize/restore, close warning và reopen. |
 
 Test manager dùng clock/ID allocator/content port xác định được, không sleep và không tạo process thật. Test process/PTY thật, terminal buffer, input/resize và bốn terminal đồng thời thuộc `BE-007`.
 

@@ -75,7 +75,6 @@ Backend đọc an toàn file nằm trong project đã đăng ký, trả nội du
 | `src-tauri/tests/data_management_contract.rs` | Reset Recent Files trong shared transaction, publish invalidation và không duplicate runtime cleanup. |
 | `src-tauri/tests/export_bindings.rs` | Sinh và kiểm tra TypeScript binding cho DTO/error/event public mới của Files. |
 | `src/bindings/files/` | Output TypeScript do `ts-rs` sinh; không chỉnh tay. |
-| `tests/e2e/files.e2e.ts` | Mở rộng desktop E2E Windows cho source, unsupported, recent files và external-change conflict. |
 
 Không cấp Tauri filesystem/opener permission cho webview. Custom command chỉ được đăng ký ở composition root; opener và watcher chỉ được gọi trong Rust.
 
@@ -786,7 +785,7 @@ Các variant BE-013 đã có giữ nguyên semantics; BE-014 chỉ thêm variant
 - [ ] Mọi command từ window khác main bị chặn trước side effect; generated binding/event payload khớp Rust.
 - [ ] Mọi function/method/callback/test/helper có comment ngắn; read race, fingerprint, watcher overflow, conflict và partial open-recent failure có inline comment giải thích invariant.
 - [ ] Trên Windows, `cargo fmt --check`, `cargo clippy --all-targets --all-features -- -D warnings` và `cargo test --all-targets --all-features` pass.
-- [ ] Frontend formatter/lint/type-check/test liên quan và `tests/e2e/files.e2e.ts` pass; `pnpm tauri build` pass vì migration/dependency/state/commands/events/generated binding mới.
+- [ ] Frontend formatter/lint/type-check/unit/component test liên quan pass; `pnpm tauri build` pass vì migration/dependency/state/commands/events/generated binding mới.
 - [ ] Smoke test Windows xác nhận native opener, watcher khi app ẩn tray, atomic save từ editor ngoài và UNC fallback; macOS validation để release preparation.
 
 ## Kiểm thử
@@ -803,7 +802,6 @@ Các variant BE-013 đã có giữ nguyên semantics; BE-014 chỉ thêm variant
 | `src-tauri/tests/data_management_contract.rs` | Integration | Recent Files reset-only dưới shared write permit/transaction, rollback/commit event và runtime cleanup chỉ qua Sessions router. |
 | `src-tauri/tests/app_builder.rs` | Integration | Composition storage/gate/Projects/Sessions/Files/reset adapter, router bind một lần, watcher worker shutdown và six command registration trong mock runtime. |
 | `src-tauri/tests/export_bindings.rs` | Contract | Export toàn bộ DTO/error/event Files mới và fail khi generated TypeScript lệch source. |
-| `tests/e2e/files.e2e.ts` | Desktop E2E Windows | Source read-only/status; binary/too-large actual size/actions; recent files; clean auto-reload; dirty conflict facts/choices; close unsaved flow. |
 
 Filesystem tests chỉ dùng temporary directory, không dùng repository/app data thật. Test watcher dùng condition/event channel có deadline hữu hạn, không sleep mù; backend-specific native delivery có retry bounded và fake watcher giữ deterministic coverage. Test opener dùng fake adapter, native app launch chỉ smoke thủ công.
 

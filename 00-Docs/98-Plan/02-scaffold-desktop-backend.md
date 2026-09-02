@@ -1,5 +1,10 @@
 # Phase 2 — Desktop and Backend Scaffold Implementation Plan
 
+> **Superseded verification decision (2026-09-02):**
+> `00-Docs/98-Plan/20260902-remove-desktop-e2e.md` removes the automated desktop
+> E2E stack repository-wide. References below are retained only as completed
+> implementation history and are not current requirements.
+
 **Status:** Implemented — local verification complete; historical red checks
 skipped; remote desktop CI remediation pending verification
 

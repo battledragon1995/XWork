@@ -66,9 +66,6 @@ XWork có đúng một cửa sổ `quick-note` tạo lười, đưa ra trước 
 | `src-tauri/tests/app_lifecycle.rs` | Regression close `main` không đóng Quick Note, close Quick Note không hide-to-tray và Quit chặn open mới |
 | `src-tauri/tests/app_builder.rs` | Smoke test plugin/controller/tray/command/capability được ghép đúng một lần và đúng thứ tự |
 | `src-tauri/tests/export_bindings.rs` | Contract test binding trên đĩa khớp Rust source |
-| `tests/e2e/quick-note.e2e.ts` | Desktop E2E Windows cho open/reuse/focus, Cancel, invalid, project link, save-close và mở lại draft rỗng |
-| `tests/e2e/home.e2e.ts` | Regression composer nhúng và điểm mở floating window trên Home/Welcome |
-| `tests/e2e/settings-keyboard-shortcuts.e2e.ts` | Regression action Global, conflict, đổi/reset chord và status unavailable |
 
 Không tạo migration và không thêm dependency vào `package.json`: plugin chỉ được gọi từ Rust nên WebView không cần `@tauri-apps/plugin-global-shortcut`. `src-tauri/capabilities/main.json` tiếp tục không có global-shortcut permission.
 
@@ -286,7 +283,7 @@ Không phát event opened/closed/saved và không dùng Channel. `notes://change
 5. Cancel/Escape/Close destroy renderer và draft. Mở lại luôn có title/content rỗng và project unlinked; không khôi phục draft sau crash/restart.
 6. FE Save phải gọi `create_note(CreateNoteInputDto)` trước close. Empty body/title-only, title/content limit và project race dùng đúng typed `NotesError`; lỗi giữ window/draft mở.
 7. Chỉ response create thành công mới cho phép close-by-save. `notes://changed` đã phát sau commit trước khi FE gọi close; note xuất hiện ở Notes/Home/project dù close sau đó lỗi.
-8. Khi save response thành công, cùng renderer không được gọi create lần hai. Retry chỉ gọi close; E2E phải chứng minh close failure giả không tạo duplicate.
+8. Khi save response thành công, cùng renderer không được gọi create lần hai. Retry chỉ gọi close; component test phải chứng minh close failure giả không tạo duplicate.
 9. Project dropdown dùng `list_projects(None)` public và gửi optional project ID vào BE-016. Project unavailable vẫn được chọn theo Notes contract; project bị remove trong race trả `ProjectNotFound`, clear/reload option theo FE.
 10. Action global duy nhất là `quick_note.open_global`, default `Primary+Shift+KeyN`: `Ctrl+Shift+N` Windows, `Command+Shift+N` macOS. Không đăng ký shortcut application-scope nào bằng plugin.
 11. Mọi action trong conflict group BE-009 không dispatchable. BE-017 unregister chord trước đó và không chọn action thắng; tray/Welcome/Home vẫn mở được window.
@@ -392,7 +389,7 @@ Lỗi register/unregister global shortcut không đi qua command error: nó đư
 - [ ] `quick-note.json` có permission rỗng, `main.json` không có global-shortcut permission, không có guest plugin package hoặc arbitrary window API.
 - [ ] Binding sinh từ Rust và contract test phát hiện drift; mọi function/method/callback/helper/test có comment ngắn, race/generation có inline comment invariant.
 - [ ] Trên Windows, `cargo fmt --check`, `cargo clippy --all-targets --all-features -- -D warnings`, `cargo test --all-targets --all-features`, frontend formatter/linter/typecheck/test và `pnpm tauri build` pass.
-- [ ] Desktop E2E pass cho floating/Home/settings boundary; manual smoke xác nhận real global shortcut từ ứng dụng khác, tray native, focus/always-on-top và chord bị process khác chiếm.
+- [ ] Unit/component và Rust integration test pass cho floating/Home/settings boundary; manual smoke xác nhận real global shortcut từ ứng dụng khác, tray native, focus/always-on-top và chord bị process khác chiếm.
 
 ## Kiểm thử
 
@@ -406,11 +403,8 @@ Lỗi register/unregister global shortcut không đi qua command error: nó đư
 | `src-tauri/tests/app_lifecycle.rs` | Integration | Main close độc lập, Quick close không hide, shutdown rejects trigger và draft không vào Quit summary |
 | `src-tauri/tests/app_builder.rs` | Integration | Single-instance trước global plugin, services/controller/tray readiness, invoke handler và capabilities register đúng một lần |
 | `src-tauri/tests/export_bindings.rs` | Contract | `quick-note-window.ts` khớp DTO/error Rust và tái sử dụng `ShortcutChordDto` đúng binding |
-| `tests/e2e/quick-note.e2e.ts` | Desktop E2E Windows | Main/Welcome/Home open, multi-window switch, repeated trigger draft retention, Escape/Cancel, invalid body, linked project, save-close/reopen |
-| `tests/e2e/home.e2e.ts` | Desktop E2E Windows | Composer nhúng không bị thay thế; Home floating affordance và saved note refresh đúng |
-| `tests/e2e/settings-keyboard-shortcuts.e2e.ts` | Desktop E2E Windows | Global row/default, conflict status text, change/reset chord, unavailable recovery copy |
 
-Window/plugin/platform test dùng adapter và mock runtime deterministic, không đăng ký hotkey thật trong test song song. E2E không tuyên bố mô phỏng được tray context menu hoặc global input ngoài WebView; các hành vi đó có checklist manual Windows với executable thật và một helper process giữ chord. Test không log/fixture nội dung note cá nhân.
+Window/plugin/platform test dùng adapter và mock runtime deterministic, không đăng ký hotkey thật trong test song song. Automated test không tuyên bố mô phỏng được tray context menu hoặc global input ngoài WebView; các hành vi đó có checklist manual Windows với executable thật và một helper process giữ chord. Test không log/fixture nội dung note cá nhân.
 
 ## Câu hỏi mở
 

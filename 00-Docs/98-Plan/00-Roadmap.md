@@ -8,7 +8,7 @@ Không đặt task chi tiết hoặc ước lượng thời gian ở đây. Mỗ
 
 - `Giai đoạn 1 — Scaffold frontend` đã hoàn thành và được giữ nguyên như lịch sử triển khai.
 - Scaffold desktop/backend được thực hiện ngay sau scaffold frontend để mọi tính năng tiếp theo có thể chạy và kiểm thử trong Tauri từ đầu.
-- Mỗi lát cắt triển khai theo thứ tự: chốt tài liệu và contract liên quan → viết test backend → triển khai backend và sinh binding → triển khai frontend → kiểm thử component và desktop end-to-end.
+- Mỗi lát cắt triển khai theo thứ tự: chốt tài liệu và contract liên quan → viết test backend → triển khai backend và sinh binding → triển khai frontend → kiểm thử unit/component, integration và smoke thủ công Windows khi có hành vi native.
 - Mã FE và BE không ghép theo số thứ tự. Một lát cắt nhóm các mã cùng tạo ra một hành vi người dùng hoàn chỉnh; ví dụ `BE-001` kết hợp với `BE-002` trước khi hoàn thiện phần lifecycle của `FE-001`.
 - Không dùng mock IPC làm runtime phát triển cho tính năng sản phẩm. Test double chỉ được dùng bên trong unit/component test và phải bám đúng contract public đã sinh từ backend.
 - Các giao diện tổng hợp như Application shell, Home, Project Overview, Command Palette và Notification center được mở rộng tại lát cắt sở hữu dữ liệu mới. Mỗi phần mở rộng phải được tích hợp và kiểm thử ngay trong lát cắt đó.
@@ -21,7 +21,7 @@ Trừ scaffold và chuẩn bị phát hành, một lát cắt chỉ hoàn thành
 - Tài liệu `BE-NNN`, `FE-NNN` và wireframe áp dụng đã đủ dữ kiện, không còn câu hỏi mở ảnh hưởng implementation.
 - Backend có test cho behavior và business rule mới; command/event/channel dùng phạm vi hẹp và binding TypeScript được sinh từ kiểu public của Rust.
 - Frontend gọi backend thật qua wrapper trong `src/lib/ipc/`; không có DTO viết tay hoặc mock runtime cho phạm vi đã hoàn thành.
-- Unit test, component test và desktop end-to-end test chứng minh được luồng chính cùng các trạng thái lỗi quan trọng của lát cắt.
+- Unit/component test frontend cùng unit/integration/contract test Rust chứng minh luồng chính và các trạng thái lỗi quan trọng; hành vi chỉ quan sát được qua cửa sổ hệ điều hành có checklist smoke thủ công Windows.
 - Formatter, lint, type-check, frontend test/build, Rustfmt, Clippy với warnings denied, Rust test và Tauri build trên Windows đều pass.
 
 ## Tổng quan trình tự
@@ -80,9 +80,9 @@ Phạm vi:
 - Khởi tạo `src-tauri/` với Tauri 2, stable Rust Edition 2024, `rust-toolchain.toml` và composition root tối thiểu trong `src-tauri/src/app/`.
 - Cấu hình `tauri.conf.json`, capability tối thiểu và CSP cần thiết cho frontend hiện có; chưa tạo capability nghiệp vụ hoặc migration khi chưa có consumer.
 - Thêm Rustfmt, Clippy với warnings denied, Rust test và Tauri build Windows vào quality gates/CI.
-- Thiết lập khung desktop end-to-end test tối thiểu để các lát cắt sau thêm scenario.
+- Thiết lập Tauri build Windows và checklist smoke thủ công tối thiểu cho hành vi desktop native.
 
-Hoàn thành khi: `pnpm tauri dev` mở SPA hiện có trong cửa sổ desktop; frontend gates, Rust gates, desktop smoke test và Tauri build Windows đều pass.
+Hoàn thành khi: `pnpm tauri dev` mở SPA hiện có trong cửa sổ desktop; frontend gates, Rust gates, smoke test thủ công Windows và Tauri build đều pass.
 
 ## Giai đoạn 3–14 — Phase 1: Project và Terminal
 
@@ -195,12 +195,12 @@ Hoàn thành giai đoạn này đồng thời xác minh toàn bộ tiêu chí Ph
 - Kiểm tra và sửa lỗi trên macOS 13.3+ (PTY hệ thống, phím tắt, tray, cửa sổ nổi, IME); theo `AGENTS.md`, macOS chỉ làm ở bước này.
 - Đóng gói installer Windows và app/DMG macOS; ký và cấu hình Tauri signed updater; tạo workflow phát hành GitHub Releases.
 - Rà soát log không chứa dữ liệu nhạy cảm và backup không chứa secret thuần văn bản.
-- Chạy lại toàn bộ quality gates và desktop end-to-end suite trên bản đóng gói phù hợp trước khi phát hành.
+- Chạy lại toàn bộ quality gates và checklist smoke thủ công trên bản đóng gói phù hợp trước khi phát hành.
 
 ## Rủi ro cần theo dõi
 
 - `FE-001`, `FE-003`, `FE-005`, `FE-009` và `FE-010` nhận dữ liệu từ nhiều capability: mỗi lát cắt chỉ sửa phần mở rộng do capability mới tạo ra và phải có regression test cho các phần đã hoàn thành.
 - Terminal là phần rủi ro kỹ thuật cao nhất (WTerm + ConPTY + WebView2): scaffold desktop sớm và lát cắt PTY riêng giúp kiểm chứng trên runtime thật trước khi mở rộng sang File, Notes và Calendar.
-- Thứ tự backend trước frontend có thể làm contract thiên về implementation: tài liệu FE, wireframe và tiêu chí end-to-end phải được chốt cùng tài liệu BE trước khi viết code backend.
+- Thứ tự backend trước frontend có thể làm contract thiên về implementation: tài liệu FE, wireframe và tiêu chí hành vi quan sát được phải được chốt cùng tài liệu BE trước khi viết code backend.
 - Backup, search và các màn hình tổng hợp mở rộng theo phase: chỉ dùng public interface của capability nguồn, không truy cập implementation nội bộ để rút ngắn lát cắt.
 - Quick Note, tray, folder picker, global shortcut và notification hệ điều hành phụ thuộc desktop runtime; không giả lập sâu các hành vi này trong SPA.

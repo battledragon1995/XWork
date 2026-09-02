@@ -65,7 +65,6 @@ Cung cấp CRUD bền vững cho event timed/all-day, timezone IANA, recurrence 
 | `src-tauri/tests/data_management_contract.rs` | Golden backup v3, compatibility v1/v2, merge/remap/reset/rollback Events |
 | `src-tauri/tests/app_builder.rs` | Xác nhận manage/register Calendar, shared gate và adapters đúng một lần |
 | `src-tauri/tests/export_bindings.rs` | Contract test binding trên đĩa khớp Rust source |
-| `tests/e2e/calendar.e2e.ts` | Smoke test IPC Calendar/Event form, detail, month/upcoming và project filter |
 
 Không thêm capability permission mới: các command chỉ dùng core invoke đã có. Mọi file implementation có thể chạm cho BE-018 đều nằm trong bảng này.
 
@@ -853,7 +852,6 @@ Error serialize theo `{ kind, ...fields }`; không chứa raw SQLite/RRULE parse
 | `src-tauri/tests/data_management_contract.rs` | Integration | Golden v3, required events array, v1/v2 preservation, source/local/dangling project resolve, parsed record bất biến, Calendar không nhận map, reminder UUID v5 remap, semantic unchanged giữ ID, incoming-wins, typed projection/reset và rollback/event |
 | `src-tauri/tests/app_builder.rs` | Integration | Shared maintenance gate, managed Calendar, command/search/data adapter đăng ký đúng một lần |
 | `src-tauri/tests/export_bindings.rs` | Contract | Sinh toàn bộ DTO/event/error BE-018 và fail khi `src/bindings/calendar.ts` lệch Rust source |
-| `tests/e2e/calendar.e2e.ts` | E2E | Tạo/sửa/xóa từ Event form/detail; month/upcoming/Home/Project Overview refresh qua event; typed errors hiển thị đúng |
 
 ## Câu hỏi mở
 

@@ -61,7 +61,6 @@ Backend cho phép người dùng đăng ký một folder có sẵn làm project,
 | `src-tauri/tests/data_management_contract.rs` | Contract test read/write permit, typed project plan/projection và shared-transaction import/reset. |
 | `src-tauri/tests/export_bindings.rs` | Sinh và kiểm tra binding từ DTO/error public của Projects. |
 | `src/bindings/projects/` | Output TypeScript do `ts-rs` sinh; không chỉnh tay. |
-| `tests/e2e/projects.e2e.ts` | Desktop E2E Windows cho danh sách, rename, pin, unavailable, locate/remove dialog và điều hướng overview. |
 
 Không cần thay đổi capability permission: dialog/opener được gọi trong Rust qua API hẹp, không cấp plugin API hay filesystem permission cho webview.
 
@@ -693,7 +692,7 @@ Lỗi nội bộ giữ `StorageError`, OS error và source chain để chẩn đ
 - [ ] DTO/error TypeScript sinh từ Rust, không có contract viết tay hoặc field aggregate của capability khác.
 - [ ] Mọi function/method/callback/test/helper có comment ngắn; path normalization và partial remove có inline comment giải thích invariant.
 - [ ] Trên Windows, `cargo fmt --check`, `cargo clippy --all-targets --all-features -- -D warnings` và `cargo test --all-targets --all-features` pass.
-- [ ] Frontend formatter/lint/type-check/test/build liên quan pass; desktop E2E project flow pass với database/folder fixture tạm.
+- [ ] Frontend formatter/lint/type-check/unit/component test và build liên quan pass với database/folder fixture tạm; smoke thủ công Windows xác nhận folder picker và opener native.
 - [ ] `pnpm tauri build` pass vì có migration, managed state, plugin, invoke handler và generated binding mới.
 - [ ] Native folder picker và opener được smoke test thủ công trên Windows vì WebDriver chỉ điều khiển webview, không giả lập dialog/file manager hệ điều hành.
 
@@ -709,7 +708,6 @@ Lỗi nội bộ giữ `StorageError`, OS error và source chain để chẩn đ
 | `src-tauri/tests/data_management_contract.rs` | Integration | Write permit chặn project mutation; export/prepare/apply/reset dùng shared transaction, opaque project map chỉ được app adapter gọi `resolve` cho linked/dangling IDs, rollback không publish và commit publish projection no-fail. |
 | `src-tauri/tests/app_builder.rs` | Integration | Composition root tạo đúng một shared gate, inject cùng identity vào ProjectService và đăng ký storage/project state, plugins, commands với Tauri mock runtime. |
 | `src-tauri/tests/export_bindings.rs` | Contract | Export toàn bộ DTO/error Projects gồm `UnauthorizedWindow` và fail khi generated TypeScript lệch Rust source. |
-| `tests/e2e/projects.e2e.ts` | Desktop E2E Windows | Project fixture thật: list/search/rename/pin/open overview/unavailable/remove dialog và shell/Welcome transition; native picker/opener nằm trong manual smoke. |
 
 Fixture filesystem/database chỉ dùng temporary directory, không dùng project đang phát triển hoặc app data thật. Test remove guard dùng fake xác định được cho zero runtime, blocker, cleanup failure và race; integration với process thật thuộc `BE-005`/`BE-007`.
 

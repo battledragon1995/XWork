@@ -52,7 +52,6 @@ Backend cung cấp snapshot Git mới theo yêu cầu cho card project và Proje
 | `src-tauri/tests/projects_git_status.rs` | Integration test public command với database/project và repository fixture tạm. |
 | `src-tauri/tests/export_bindings.rs` | Sinh và kiểm tra binding cho DTO/error Git trong capability Projects. |
 | `src/bindings/projects/` | Output TypeScript sinh từ Rust; không chỉnh tay. |
-| `tests/e2e/projects.e2e.ts` | Desktop E2E Windows cho Git summary trên card và change list read-only ở overview. |
 
 Không có migration hoặc capability permission mới. `gix` chỉ chạy trong Rust và không có filesystem/shell API tổng quát nào được cấp cho webview.
 
@@ -343,7 +342,7 @@ pub enum ProjectsError {
 - [ ] Binding TypeScript sinh từ Rust và contract test fail khi output lệch hoặc có DTO viết tay.
 - [ ] Mọi function/method/callback/test/helper có comment ngắn; mapping precedence/path escape có inline comment giải thích invariant.
 - [ ] Trên Windows, `cargo fmt --check`, `cargo clippy --all-targets --all-features -- -D warnings` và `cargo test --all-targets --all-features` pass.
-- [ ] Frontend formatter, lint, type-check, component test/build liên quan pass; desktop E2E xác nhận card summary và overview change list/error/clean states.
+- [ ] Frontend formatter, lint, type-check, component test/build liên quan pass và xác nhận card summary cùng overview change list/error/clean states.
 - [ ] `pnpm tauri build` pass vì thay đổi dependency, invoke handler và generated IPC contract.
 
 ## Kiểm thử
@@ -355,7 +354,6 @@ pub enum ProjectsError {
 | `src-tauri/tests/projects_git_status.rs` | Integration | Exact `main` gọi summary/detail thành công; `quick-note`/label khác nhận `UnauthorizedWindow` trước resolver/reader; project/database và Git fixtures trong temp directory; plain/parent/linked/bare/corrupt repo; staged/unstaged/untracked/submodule; repository tree bất biến trước/sau query. |
 | `src-tauri/tests/app_builder.rs` | Integration | Mock runtime build với ProjectService/Git reader và hai invoke command đã đăng ký. |
 | `src-tauri/tests/export_bindings.rs` | Contract | Sinh DTO/error Projects có Git cùng `UnauthorizedWindow` và fail khi binding khác Rust source. |
-| `tests/e2e/projects.e2e.ts` | Desktop E2E Windows | Card hiển thị branch + changed count/clean/not-repo/error; overview hiển thị danh sách sorted và thông điệp read-only, không có Git write action. |
 
 Fixture Git chỉ được tạo trong temporary directory dành riêng cho test và bị hủy sau test; không dùng repository đang phát triển, app data thật hoặc Git credential/network. Test setup có thể xây repository fixture bằng test-only plumbing, nhưng production command path phải được kiểm bằng seam/read-only snapshot để không gọi API ghi.
 

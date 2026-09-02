@@ -79,8 +79,6 @@ Backend theo dõi các reminder occurrence hiện hành, đánh thức đúng h�
 | `src-tauri/tests/app_builder.rs` | Smoke startup/migration/service/sink/command/Quit order đúng một lần. |
 | `src-tauri/tests/settings_commands.rs` | Xác nhận migration `0010`, snapshot/subscription và năm notification settings sau `0009`. |
 | `src-tauri/tests/export_bindings.rs` | Contract test binding Rust/TypeScript và enum target Phase 4. |
-| `tests/e2e/calendar-reminders.e2e.ts` | Desktop E2E Windows cho bell, Missed, Open/Snooze/Dismiss, tray và fake OS adapter. |
-| `tests/e2e/settings-notifications.e2e.ts` | Desktop E2E Windows cho event reminder toggle và không backfill. |
 
 Không thêm permission notification cho webview: chỉ adapter Rust gọi plugin. Các action reminder đi qua custom command đã authorize, không qua plugin notification JS.
 
@@ -845,8 +843,6 @@ Lỗi scheduler nền không chứa user data và không phát trực tiếp qua
 | `src-tauri/tests/data_management_contract.rs` | Integration | Golden backup v3 loại state; event reminder UUID remap reconcile; typed reset plan/projection, child-before-parent, rollback/baseline và no-fail publish. |
 | `src-tauri/tests/app_builder.rs` | Smoke | Migration `0008→0009→0010`, dependency wiring, Calendar/lifecycle/settings sinks, seven commands và Quit join đăng ký một lần. |
 | `src-tauri/tests/export_bindings.rs` | Contract | `reminders.ts`, binding Notifications và Settings khớp Rust, không export internal clock/checkpoint/source key. |
-| `tests/e2e/calendar-reminders.e2e.ts` | Desktop E2E Windows | Reminder bell/Missed/detail, Open, Snooze 5/10/30, Dismiss, tray và fake OS policy. |
-| `tests/e2e/settings-notifications.e2e.ts` | Desktop E2E Windows | Toggle event reminders, Missed always-on và không backfill khi bật lại. |
 
 ## Câu hỏi mở
 

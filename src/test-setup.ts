@@ -1,4 +1,10 @@
 import "@testing-library/jest-dom/vitest";
+import { vi } from "vitest";
+
+// Replace native event subscriptions for component tests that render the whole application shell.
+vi.mock("@tauri-apps/api/event", () => ({
+  listen: vi.fn(async () => () => {}),
+}));
 
 // jsdom implements neither ResizeObserver nor pointer capture, and the copied Radix
 // primitives call both while positioning a tooltip or a menu. The stubs below keep those

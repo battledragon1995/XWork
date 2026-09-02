@@ -57,7 +57,7 @@ Dependency chỉ được thêm khi phase chứa chức năng tương ứng bắ
 | Kiểm tra Rust | Clippy | 1.98.0 | `cargo clippy --all-targets --all-features -- -D warnings` |
 | Unit/component test frontend | Vitest; React Testing Library | 4.1.11; 16.3.3 | Test colocated với source |
 | Unit/integration test backend | Rust test harness | 1.98.0 | Unit test trong module và integration test trong crate desktop |
-| End-to-end desktop | WebdriverIO; Tauri service | 9.31.x; cùng major tương thích | Chạy trên Windows trong quá trình phát triển |
+| Kiểm tra desktop | Tauri build; smoke test thủ công có mục tiêu | 2.11.x | Không dùng desktop end-to-end tự động; chỉ kiểm tra thủ công hành vi bắt buộc phải quan sát qua cửa sổ hệ điều hành trên Windows |
 | Đóng gói | Tauri CLI và Bundler | 2.11.x | Windows installer trong development/release; macOS app và DMG khi chuẩn bị phát hành |
 
 ## Hạ tầng và triển khai

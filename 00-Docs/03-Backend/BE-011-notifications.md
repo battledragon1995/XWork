@@ -78,7 +78,6 @@ Backend lưu notification terminal có target typed, trả danh sách/unread cou
 | `src-tauri/tests/calendar_consumers.rs` | Contract test Phase 4 adapter map public Calendar context sang event target Notifications. |
 | `src-tauri/tests/data_management_contract.rs` | Reset transaction/pause/resume/projection/event của Notifications qua BE-012. |
 | `src/bindings/notifications/` | TypeScript binding do ts-rs sinh; không sửa tay. |
-| `tests/e2e/notifications.e2e.ts` | Desktop E2E Windows cho bell badge/panel, activity nền, read/delete/open và OS notification adapter test mode. |
 
 Không sửa `src-tauri/capabilities/main.json`: frontend không gọi command của plugin notification. Plugin được khởi tạo và chỉ adapter Rust sử dụng, còn custom command BE-011 vẫn đi qua invoke handler hiện có của window `main`.
 
@@ -639,7 +638,7 @@ Lỗi OS delivery chỉ là internal diagnostic category `permission`, `platform
 - [ ] Generated binding `src/bindings/notifications/` khớp Rust và không sửa tay; `src-tauri/capabilities/main.json` không cấp notification API cho frontend; single-instance plugin BE-001 vẫn đăng ký đầu tiên.
 - [ ] Mọi function/method/callback/helper/test mới có comment; visibility/dedupe/commit-before-delivery/Quit race có inline invariant comment.
 - [ ] `cargo fmt --manifest-path src-tauri/Cargo.toml --check`, `cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --all-features -- -D warnings` và `cargo test --manifest-path src-tauri/Cargo.toml` pass trên Windows.
-- [ ] Frontend formatter/lint/typecheck/unit test và `tests/e2e/notifications.e2e.ts` pass; `pnpm tauri build` Windows pass vì thêm migration, plugin, command, event và generated binding.
+- [ ] Frontend formatter/lint/typecheck/unit/component test và Rust integration test notification pass; `pnpm tauri build` Windows pass vì thêm migration, plugin, command, event và generated binding; smoke thủ công Windows xác nhận thông báo hệ điều hành.
 
 ## Kiểm thử
 
@@ -656,7 +655,6 @@ Lỗi OS delivery chỉ là internal diagnostic category `permission`, `platform
 | `src-tauri/tests/data_management_contract.rs` | Integration | Notifications pause/reset/resume dưới write permit, rollback/commit projection, child order với Reminders và không backup inbox. |
 | `src-tauri/tests/app_builder.rs` | Smoke | Plugin trước use, gate/dependency/reset adapters, service/sink/state/sáu command đăng ký một lần, startup/Quit/reset order và mock builder không gửi toast. |
 | `src-tauri/tests/export_bindings.rs` | Contract | Export DTO/event/error vào `src/bindings/notifications/`, fail khi drift và không có source key/internal policy/reminder type Phase 4. |
-| `tests/e2e/notifications.e2e.ts` | Desktop E2E Windows | Bell unread, panel order, mark/read/clear/delete, background needs-input/finish/error, open exact pane, hide-to-tray và OS adapter test mode. |
 
 Test dùng temporary database, deterministic clock/UUID, fake BE-005/BE-008 context và recording OS adapter; không chạy CLI thật hoặc hiển thị toast hệ điều hành trong CI. Smoke thủ công trên Windows dùng installed build để xác nhận toast thật cho needs-input/error và không lộ terminal output/path. macOS hoãn tới release preparation.
 

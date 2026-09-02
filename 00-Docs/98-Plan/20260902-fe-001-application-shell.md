@@ -1,5 +1,10 @@
 # FE-001 Application Shell Implementation Plan
 
+> **Superseded verification decision (2026-09-02):**
+> `00-Docs/98-Plan/20260902-remove-desktop-e2e.md` removes the automated desktop
+> E2E stack repository-wide. References below are retained only as completed
+> implementation history and are not current requirements.
+
 **Status:** Implemented
 
 **Goal:** Replace the scaffold shell with the complete Phase 1 application

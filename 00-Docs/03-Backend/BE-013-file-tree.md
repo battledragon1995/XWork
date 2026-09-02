@@ -56,7 +56,6 @@ Backend cho phép File Explorer tải lười từng cấp của cây file, tìm
 | `src-tauri/tests/files_tree_commands.rs` | Integration test public boundary với project/temp tree, ignore, symlink/reparse, pagination và reveal fake. |
 | `src-tauri/tests/export_bindings.rs` | Sinh và kiểm tra TypeScript binding cho DTO/error public của Files. |
 | `src/bindings/files/` | Output TypeScript do `ts-rs` sinh; không chỉnh tay. |
-| `tests/e2e/files.e2e.ts` | Desktop E2E Windows cho bật File Explorer, expand/collapse, filter, refresh, path menu và trạng thái lỗi. |
 
 Không cần migration hoặc capability filesystem/opener cho webview. Frontend chỉ invoke command XWork; official opener được gọi từ Rust qua adapter hẹp.
 
@@ -508,7 +507,7 @@ pub enum FilesError {
 - [ ] DTO/error TypeScript được sinh từ Rust, command chỉ đăng ký cho composition XWork và Quick Note window bị chặn.
 - [ ] Mọi function/method/callback/test/helper có comment ngắn; path containment, reparse detection và partial-result logic có inline comment giải thích invariant.
 - [ ] Trên Windows, `cargo fmt --check`, `cargo clippy --all-targets --all-features -- -D warnings` và `cargo test --all-targets --all-features` pass.
-- [ ] Frontend formatter/lint/type-check/test liên quan và desktop E2E File Explorer pass; `pnpm tauri build` pass vì command/state/dependency/generated binding mới.
+- [ ] Frontend formatter/lint/type-check/unit/component test File Explorer pass; `pnpm tauri build` pass vì command/state/dependency/generated binding mới.
 - [ ] Smoke test Windows xác nhận `reveal_item_in_dir`, Copy path/relative path và junction không thoát sandbox; macOS validation để release preparation.
 
 ## Kiểm thử
@@ -522,7 +521,6 @@ pub enum FilesError {
 | `src-tauri/tests/files_tree_commands.rs` | Integration | Project/temp tree thật qua public service/command: list/search/refresh, `.ignore`/`.gitignore`/exclude, pagination, unavailable/remove race, symlink/junction, non-UTF8 theo platform và filesystem snapshot read-only. |
 | `src-tauri/tests/app_builder.rs` | Integration | Composition root manage Files state, ghép Projects/opener adapter và đăng ký bốn command trong mock runtime. |
 | `src-tauri/tests/export_bindings.rs` | Contract | Export request/response/entry/warning/error Files và fail khi TypeScript lệch Rust source. |
-| `tests/e2e/files.e2e.ts` | Desktop E2E Windows | Toggle bằng `Ctrl+B`, expand/collapse/collapse-all, filter, refresh, keyboard selection, copy paths, reveal và partial/fatal state. |
 
 Filesystem fixture luôn nằm trong temporary directory, không dùng repository đang phát triển hoặc project/app-data thật. Test reveal dùng fake adapter; hành vi mở File Explorer thật được smoke test thủ công. Test symlink/junction skip có điều kiện rõ nếu runner không có quyền tạo link, nhưng Windows reparse policy vẫn phải có unit fixture bắt buộc.
 

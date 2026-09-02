@@ -71,8 +71,6 @@ XWork/
 │   ├── Cargo.toml
 │   ├── build.rs
 │   └── tauri.conf.json
-├── tests/
-│   └── e2e/                         # Desktop end-to-end test
 ├── package.json
 ├── pnpm-lock.yaml
 ├── tsconfig.json
@@ -105,8 +103,7 @@ Chỉ tạo thư mục của feature khi bắt đầu triển khai feature đó.
 | `src-tauri/src/shared/` | ID, error và primitive có ít nhất hai capability dùng cùng ngữ nghĩa | Helper tùy tiện hoặc model riêng của một capability |
 | `src-tauri/migrations/` | Thay đổi schema bất biến và chạy tuần tự | Dữ liệu mẫu hoặc migration được sửa sau khi đã phát hành |
 | `src-tauri/capabilities/` | Permission tối thiểu gắn với từng window/webview | Secret, business configuration hoặc quyền wildcard không cần thiết |
-| `src-tauri/tests/` | Integration test của database, capability và public backend boundary | End-to-end UI test |
-| `tests/e2e/` | Luồng người dùng qua desktop runtime | Unit test hoặc test chi tiết implementation nội bộ |
+| `src-tauri/tests/` | Integration test của database, capability và public backend boundary | Test hành vi trình bày thuần frontend |
 
 ## Quy tắc đặt file mới
 
@@ -118,7 +115,7 @@ Chỉ tạo thư mục của feature khi bắt đầu triển khai feature đó.
 - DTO public được định nghĩa ở backend gần capability sở hữu nó và sinh binding vào `src/bindings/`.
 - Unit/component test frontend dùng hậu tố `.test.ts` hoặc `.test.tsx` và đặt cạnh source.
 - Unit test Rust đặt trong cùng module với `#[cfg(test)]`; integration test đặt trong `src-tauri/tests/`.
-- Desktop end-to-end test đặt trong `tests/e2e/`.
+- Hành vi chỉ quan sát được qua cửa sổ hệ điều hành dùng checklist smoke thủ công có mục tiêu trên Windows; không tạo desktop end-to-end test tự động.
 - Cấu hình frontend cấp project đặt ở root; cấu hình desktop, capability và bundle đặt trong `src-tauri/`.
 - Tài nguyên tĩnh dùng toàn ứng dụng đặt tại `src/assets/`; tài nguyên chỉ một feature dùng đặt trong feature đó.
 - Migration đặt tại `src-tauri/migrations/`, chỉ được thêm file mới và không sửa migration đã phát hành.

@@ -100,7 +100,6 @@ Backend tạo và khôi phục một gói JSON cục bộ từ các public backu
 | `src-tauri/tests/data_management_contract.rs` | Integration test envelope, native adapter giả, transaction, merge, reset và redaction |
 | `src-tauri/tests/export_bindings.rs` | Contract test binding trên đĩa khớp Rust source |
 | `src-tauri/tests/app_builder.rs` | Smoke test composition root đăng ký service/participant/command/plugin và không mở ACL webview mới |
-| `tests/e2e/settings-data.e2e.ts` | Desktop E2E Windows cho export/import/location/reset sau FE-015 |
 
 Không tạo migration cho BE-012. Feature dùng schema hiện hành do domain sở hữu; registry Phase 1 kết thúc ở `0005_create_notifications.sql`. Các extension tuân thứ tự bắt buộc đã chốt: BE-014 dùng `0006_create_recent_files.sql`, BE-016 dùng `0007_create_notes.sql`, BE-018 dùng `0008_create_calendar_events.sql`, BE-019 dùng `0009_create_reminder_deliveries.sql`, rồi BE-008 thêm notification settings bằng `0010_add_notification_settings.sql`. App không khởi tạo participant của phase nếu migration bắt buộc tương ứng chưa hoàn tất.
 
@@ -964,7 +963,6 @@ pub enum DataManagementError {
 | `src-tauri/tests/data_management_contract.rs` | Integration | V1 round-trip, cross-domain one-transaction rollback, merge collision, credential reference/redaction/outbox, gate với concurrent mutation/session, async runtime cleanup/reset, owner subscribe/publish và `data://changed` |
 | `src-tauri/tests/export_bindings.rs` | Contract | Sinh toàn bộ DTO/error BE-012 và fail khi `src/bindings/data-management.ts` lệch Rust source |
 | `src-tauri/tests/app_builder.rs` | Integration | Builder manage service/gate, inject đúng participant theo phase, đăng ký command/plugin và xác nhận không mở ACL webview mới |
-| `tests/e2e/settings-data.e2e.ts` | Desktop E2E Windows | Settings Data location/copy/open, export/import Cancel/success/error/preview và reset type `RESET`/focus/result |
 
 Integration test dùng temp app-data/database/project và fake dialog/opener/clipboard/keyring/runtime; không đọc/xóa app data, credential hoặc source project thật. File fixture secret dùng canary riêng và test quét bytes backup, serialized DTO, event/error/tracing capture. Test atomic file không dựa vào rename xuyên volume. Phase 3/4 bổ sung golden fixture v2/v3 và compatibility v1→v2/v3, v2→v3 trong lát cắt owner; macOS validation hoãn đến release preparation.
 

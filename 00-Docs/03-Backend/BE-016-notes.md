@@ -67,11 +67,6 @@ Backend lưu note Markdown local trong SQLite, cung cấp query/mutation typed c
 | `src-tauri/tests/data_management_contract.rs` | Golden backup v2, compatibility v1/v2, merge/reset Notes và rollback xuyên domain |
 | `src-tauri/tests/export_bindings.rs` | Contract test binding trên đĩa khớp Rust source |
 | `src-tauri/tests/app_builder.rs` | Smoke test composition register Notes, search source và data participant |
-| `tests/e2e/notes.e2e.ts` | Desktop E2E Windows cho FE-019/020 và Notes command thật |
-| `tests/e2e/home.e2e.ts` | Regression Home pinned/recent/Quick Note saved-invalid |
-| `tests/e2e/projects.e2e.ts` | Regression Project Overview linked notes và project remove unlink |
-| `tests/e2e/command-palette.e2e.ts` | Regression Notes result active/archive và loại Trash |
-| `tests/e2e/settings-data.e2e.ts` | Regression export/import/reset sau backup schema v2 |
 
 Không thêm crate tìm kiếm hoặc capability permission. `shared/maintenance.rs` là primitive thực sự dùng chung: app composition tạo đúng một gate và inject cùng instance vào BE-012 cùng mọi service persistence; file không chứa model hay rule Notes.
 
@@ -951,7 +946,7 @@ Public error không chứa raw SQLite, content/title/query hoặc project detail
 - [ ] Chỉ event canonical `notes://changed` được phát sau commit mutation thực, đúng `NoteChangeKindDto`/ID/revision/sequence; không có channel suffix theo kind, payload bulk an toàn và emit failure không đổi command result.
 - [ ] Generated binding sinh từ Rust và contract test phát hiện drift; mọi function/method/callback/helper/test có comment ngắn, logic lifecycle/revision có inline comment invariant.
 - [ ] Trên Windows, `cargo fmt --check`, `cargo clippy --all-targets --all-features -- -D warnings`, `cargo test --all-targets --all-features`, frontend formatter/linter/typecheck/test và `pnpm tauri build` pass.
-- [ ] Desktop E2E pass cho FE-019/020 và regression Home/Project Overview/Command Palette/Settings Data; macOS hoãn đến release preparation.
+- [ ] Unit/component test pass cho FE-019/020 và regression Home/Project Overview/Command Palette/Settings Data; macOS hoãn đến release preparation.
 
 ## Kiểm thử
 
@@ -966,13 +961,8 @@ Public error không chứa raw SQLite, content/title/query hoặc project detail
 | `src-tauri/tests/data_management_contract.rs` | Integration | Golden v2 strict/round-trip, v1 compatibility, write permit chặn mutation, source/local/dangling project resolve, parsed record bất biến, owner chỉ nhận bản sao đã remap, typed `_in` same-ID merge/reset trong shared transaction, rollback không publish và commit publish no-fail |
 | `src-tauri/tests/export_bindings.rs` | Contract | Sinh DTO/event/error BE-016 và fail khi `src/bindings/notes.ts` lệch Rust source |
 | `src-tauri/tests/app_builder.rs` | Integration | Builder inject cùng maintenance gate, manage Notes và register command/search/data adapters đúng một lần |
-| `tests/e2e/notes.e2e.ts` | Desktop E2E Windows | Editor/Preview/autosave status, pin/project/search, Archive read-only/restore, Trash/delete/Empty Trash và keyboard/focus |
-| `tests/e2e/home.e2e.ts` | Desktop E2E Windows | Quick Note blank invalid, save/clear/toast/open note, pinned/recent refresh |
-| `tests/e2e/projects.e2e.ts` | Desktop E2E Windows | Linked note/New Note preselected project và remove project unlink không xóa note |
-| `tests/e2e/command-palette.e2e.ts` | Desktop E2E Windows | Title/body result, archived target, Trash exclusion và stale target recovery |
-| `tests/e2e/settings-data.e2e.ts` | Desktop E2E Windows | Export/import v2 Notes count/content/lifecycle và Reset count/cleanup |
 
-Database/project/clock/event fixtures dùng temp/fake, không chạm app data hoặc source project thật. Search benchmark tách khỏi correctness test và dùng dữ liệu deterministic; không sleep wall-clock cho debounce/TTL. Backup golden JSON không chứa content người dùng thật. E2E kiểm nội dung Markdown test vô hại và cleanup database test.
+Database/project/clock/event fixtures dùng temp/fake, không chạm app data hoặc source project thật. Search benchmark tách khỏi correctness test và dùng dữ liệu deterministic; không sleep wall-clock cho debounce/TTL. Backup golden JSON và test component chỉ dùng nội dung Markdown vô hại; database test luôn được cleanup.
 
 ## Câu hỏi mở
 
