@@ -29,6 +29,12 @@ XWork is a local-first desktop application for Windows and macOS, built with Tau
 - Add concise inline comments for complex logic to explain its reasoning, invariants, or important edge cases.
 - Do not restate obvious code behavior. Keep comments synchronized with code changes.
 
+## Implementation Plans
+
+- For work that meets the criteria in `PLANS.md`, read and follow `PLANS.md`.
+- Store implementation plans under `00-Docs/98-Plan/`.
+- Creating a plan does not authorize source-code implementation.
+
 ## Verification
 
 - Write tests for new behavior and bug fixes.

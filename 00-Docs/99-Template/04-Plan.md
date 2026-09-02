@@ -1,64 +1,138 @@
-# <Feature ID / Name> Implementation Plan
+# <Phase / Feature ID and Name> Implementation Plan
 
-**Goal:** [One sentence describing what this builds]
+**Status:** Draft
 
-**Architecture:** [2-3 sentences about approach]
+**Goal:** [One sentence describing the measurable outcome]
 
-**Tech Stack:** [Key technologies/libraries]
+**Completion Criteria:**
 
-**Spec:** [path to the spec/design doc this plan implements — the plan
-argues from the spec, so the spec travels with it; executors read both]
+- [Observable result that proves the work is complete]
+- [Required verification that must pass]
+
+**Architecture:** [Two or three sentences describing the implementation
+approach and the important boundaries it preserves]
+
+**Tech Stack:** [Only the technologies and libraries relevant to this plan]
+
+**Sources:**
+
+- Roadmap: `00-Docs/98-Plan/00-Roadmap.md`
+- Requirements: `path/to/requirements.md`
+- Frontend spec: `00-Docs/02-Frontend/FE-NNN-<name>.md`
+- Backend spec: `00-Docs/03-Backend/BE-NNN-<name>.md`
+- Wireframe: `00-Docs/01-Wireframe/<path>`
+
+Remove source entries that do not apply. Do not copy full requirements into
+this plan.
+
+## Scope
+
+**In Scope:**
+
+- [Behavior or deliverable included in this plan]
+
+**Out of Scope:**
+
+- [Related behavior intentionally deferred or excluded]
 
 ## Global Constraints
 
-[The spec's project-wide requirements — version floors, dependency limits,
-naming and copy rules, platform requirements — one line each, with exact
-values copied verbatim from the spec. Every task's requirements implicitly
-include this section.]
+- [Applicable version, dependency, naming, platform, or architecture constraint
+  copied exactly from its source]
+
+Every task implicitly includes these constraints.
+
+## Assumptions, Risks, and Blockers
+
+**Assumptions:**
+
+- [Assumption supported by the source documents]
+
+**Risks:**
+
+- [Risk and the plan step that mitigates it]
+
+**Blockers:** None.
+
+Do not proceed while a material blocker or unresolved specification question
+remains.
+
+## Dependency Order
+
+1. [Task or prerequisite] → enables [dependent task]
+2. [Task or prerequisite] → enables [dependent task]
 
 ---
 
-### Task N: [Component Name]
+### Task N: [Outcome-Oriented Task Name]
+
+**Outcome:** [Observable result produced by this task]
+
+**Depends On:** [Earlier task numbers or `None`]
 
 **Files:**
-- Create: `exact/path/to/file.py`
-- Modify: `exact/path/to/existing.py:123-145`
-- Test: `tests/exact/path/to/test.py`
+
+- Create: `exact/path/to/new-file`
+- Modify: `exact/path/to/existing-file`
+- Test: `exact/path/to/test-file`
+
+List only files supported by the current repository structure or source
+documents. Do not invent line numbers.
 
 **Interfaces:**
-- Consumes: [what this task uses from earlier tasks — exact signatures]
-- Produces: [what later tasks rely on — exact function names, parameter
-  and return types. A task's implementer sees only their own task; this
-  block is how they learn the names and types neighboring tasks use.]
 
-- [ ] **Step 1: Write the failing test**
+- Consumes: [Exact existing interfaces or `None`]
+- Produces: [Exact names, parameters, return types, events, or DTOs used by
+  later tasks]
 
-```python
-def test_specific_behavior():
-    result = function(input)
-    assert result == expected
-```
+- [ ] **Step 1: Add or update the focused test**
 
-- [ ] **Step 2: Run test to verify it fails**
+  [Describe the behavior the test demonstrates. Prefer a failing test before
+  implementation when the behavior is testable at this level.]
 
-Run: `pytest tests/path/test.py::test_name -v`
-Expected: FAIL with "function not defined"
+- [ ] **Step 2: Verify the test fails for the expected reason**
 
-- [ ] **Step 3: Write minimal implementation**
+  Run: `<focused-test-command>`
 
-```python
-def function(input):
-    return expected
-```
+  Expected: `<specific failure proving the behavior is missing>`
 
-- [ ] **Step 4: Run test to verify it passes**
+- [ ] **Step 3: Implement the minimum change**
 
-Run: `pytest tests/path/test.py::test_name -v`
-Expected: PASS
+  [Describe the smallest implementation that satisfies the tested behavior.]
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 4: Verify the task**
 
-```bash
-git add tests/path/test.py src/path/file.py
-git commit -m "feat: add specific feature"
-```
+  Run: `<focused-test-or-check-command>`
+
+  Expected: `<specific passing result>`
+
+Repeat the task section as needed. Do not include Git commit steps unless the
+user explicitly requests commits.
+
+## Final Verification
+
+Include only checks relevant to this plan.
+
+| Scope | Command | Expected Result |
+|---|---|---|
+| Frontend format/lint | `<command>` | Pass with no errors |
+| Frontend type check | `<command>` | Pass with no type errors |
+| Frontend tests | `<command>` | All relevant tests pass |
+| Rustfmt | `<command>` | No formatting diff |
+| Clippy | `<command>` | Pass with warnings denied |
+| Rust tests | `<command>` | All relevant tests pass |
+| Windows Tauri build | `<command>` | Build succeeds |
+
+## Deviations and Decisions
+
+- None.
+
+During implementation, append material deviations and decisions without
+rewriting completed history.
+
+## Outcome
+
+Pending implementation.
+
+When complete, summarize the delivered result, verification evidence, and any
+remaining limitations.
