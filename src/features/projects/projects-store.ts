@@ -27,6 +27,18 @@ export interface ProjectsState {
   endAdd(failure: AddProjectFailure | null): void;
 }
 
+/** Read one project name from the retained store snapshot for the route breadcrumb. */
+export function readProjectCrumbLabel(projectId: string | undefined): string {
+  if (projectId === undefined) {
+    return "";
+  }
+
+  return (
+    useProjectsStore.getState().projects.find((project) => project.id === projectId)?.displayName ??
+    ""
+  );
+}
+
 /**
  * Newest query token. Every query records the token it started with and publishes only while
  * it still matches, so a slow answer can never overwrite a newer one and releasing every

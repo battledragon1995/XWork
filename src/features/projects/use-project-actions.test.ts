@@ -56,6 +56,9 @@ let refreshSpy: Mock<() => void>;
 /** Removal callback the route uses to move focus off the destroyed card. */
 let onRemovedSpy: Mock<() => void>;
 
+/** Availability callback the overview uses to refresh metadata immediately. */
+let onUnavailableSpy: Mock<() => void>;
+
 // Build one promise a case can settle by hand, which is how pending state is observed.
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -69,8 +72,13 @@ function deferred<T>() {
 }
 
 // Render the hook with the seeded store, mirroring how the route mounts it.
-function renderActions() {
-  return renderHook(() => useProjectActions({ onRemoved: onRemovedSpy }));
+function renderActions(withUnavailableCallback = true) {
+  return renderHook(() =>
+    useProjectActions({
+      onRemoved: onRemovedSpy,
+      ...(withUnavailableCallback ? { onUnavailable: onUnavailableSpy } : {}),
+    }),
+  );
 }
 
 beforeEach(() => {
@@ -78,6 +86,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   refreshSpy = vi.fn<() => void>();
   onRemovedSpy = vi.fn<() => void>();
+  onUnavailableSpy = vi.fn<() => void>();
   useProjectsStore.setState({ projects: [PROJECT, OTHER], status: "ready", refresh: refreshSpy });
   renameProjectMock.mockResolvedValue(PROJECT);
   setProjectPinnedMock.mockResolvedValue(PROJECT);
@@ -254,6 +263,7 @@ describe("openFolder", () => {
       message: "XWork can't open that folder any more.",
       retry: "locate",
     });
+    expect(onUnavailableSpy).toHaveBeenCalledOnce();
     expect(refreshSpy).toHaveBeenCalledOnce();
 
     await act(async () => {
@@ -261,6 +271,21 @@ describe("openFolder", () => {
     });
 
     expect(locateProjectFolderMock).toHaveBeenCalledExactlyOnceWith("3f2a");
+  });
+
+  // Verify FE-004 consumers may omit the callback and keep the same visible failure behavior.
+  it("keeps projectUnavailable behavior when no callback is supplied", async () => {
+    openProjectFolderMock.mockRejectedValue(
+      new IpcCallError("open_project_folder", { code: "projectUnavailable", reason: "missing" }),
+    );
+    const view = renderActions(false);
+
+    await act(async () => {
+      await view.result.current.openFolder(PROJECT);
+    });
+
+    expect(view.result.current.failure?.kind).toBe("retryable");
+    expect(onUnavailableSpy).not.toHaveBeenCalled();
   });
 
   // Verify a failed opener offers the same operation again.
@@ -279,6 +304,7 @@ describe("openFolder", () => {
       message: "XWork couldn't open the folder for xwork. Try again.",
       retry: "openFolder",
     });
+    expect(onUnavailableSpy).not.toHaveBeenCalled();
   });
 });
 

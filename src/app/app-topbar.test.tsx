@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { RouterProvider } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -10,6 +10,7 @@ import {
   toggleMainWindowMaximized,
 } from "@/lib/ipc/app-lifecycle";
 import { IpcCallError } from "@/lib/ipc/ipc-error";
+import { resetProjectsStore, useProjectsStore } from "@/features/projects/projects-store";
 import { AppProviders } from "./app-providers";
 import { createAppRouter } from "./app-router";
 import { COLLAPSED_SIDEBAR_WIDTH_PX, resetShellStore, useShellStore } from "./shell-store";
@@ -30,6 +31,26 @@ vi.mock("@/lib/ipc/app-lifecycle", () => ({
 // branch, so no project-load alert can compete with the window-control alerts under test.
 vi.mock("@/lib/ipc/projects", () => ({
   addProject: vi.fn(async () => ({ outcome: "cancelled" })),
+  getProject: vi.fn(async () => ({
+    id: "3f2a",
+    displayName: "xwork",
+    rootPath: "D:\\Self\\XWork",
+    isPinned: false,
+    addedAtMs: 1_700_000_000_000,
+    lastOpenedAtMs: 1_700_000_000_000,
+    availability: { status: "available" },
+  })),
+  getProjectGitStatus: vi.fn(async () => ({
+    summary: {
+      projectId: "3f2a",
+      repositoryKind: "notRepository",
+      head: null,
+      changedCount: 0,
+      untrackedCount: 0,
+    },
+    changes: [],
+  })),
+  getRemoveProjectImpact: vi.fn(),
   listProjects: vi.fn(async () => [
     {
       id: "3f2a",
@@ -42,6 +63,20 @@ vi.mock("@/lib/ipc/projects", () => ({
     },
   ]),
   onProjectsChanged: vi.fn(async () => () => {}),
+  openProject: vi.fn(async () => ({
+    id: "3f2a",
+    displayName: "xwork",
+    rootPath: "D:\\Self\\XWork",
+    isPinned: false,
+    addedAtMs: 1_700_000_000_000,
+    lastOpenedAtMs: 1_700_000_000_000,
+    availability: { status: "available" },
+  })),
+  openProjectFolder: vi.fn(),
+  locateProjectFolder: vi.fn(async () => ({ outcome: "cancelled" })),
+  removeProject: vi.fn(),
+  renameProject: vi.fn(),
+  setProjectPinned: vi.fn(),
 }));
 
 const hideMock = vi.mocked(hideMainWindow);
@@ -51,6 +86,7 @@ const toggleMock = vi.mocked(toggleMainWindowMaximized);
 beforeEach(() => {
   vi.clearAllMocks();
   resetShellStore();
+  resetProjectsStore();
 });
 
 afterEach(() => {
@@ -100,6 +136,42 @@ describe("AppTopbar context", () => {
     await user.click(screen.getByRole("link", { name: "Calendar" }));
 
     expect(screen.getByLabelText("Breadcrumb")).toHaveTextContent("Calendar");
+  });
+
+  // Verify a project rename changes the crumb from the retained store without navigation.
+  it("updates the project breadcrumb when the store name changes", async () => {
+    useProjectsStore.setState({
+      projects: [
+        {
+          id: "3f2a",
+          displayName: "xwork",
+          rootPath: "D:\\Self\\XWork",
+          isPinned: false,
+          addedAtMs: 1_700_000_000_000,
+          lastOpenedAtMs: 1_700_000_000_000,
+          availability: { status: "available" },
+        },
+      ],
+    });
+    renderShellAt("/projects/3f2a");
+
+    expect(
+      within(screen.getByLabelText("Breadcrumb"))
+        .getAllByRole("listitem")
+        .map((item) => item.textContent),
+    ).toEqual(["Projects", "xwork"]);
+
+    act(() => {
+      useProjectsStore.setState((state) => ({
+        projects: state.projects.map((project) => ({ ...project, displayName: "XWork" })),
+      }));
+    });
+
+    expect(
+      within(screen.getByLabelText("Breadcrumb"))
+        .getAllByRole("listitem")
+        .map((item) => item.textContent),
+    ).toEqual(["Projects", "XWork"]);
   });
 });
 

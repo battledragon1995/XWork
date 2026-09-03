@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ProjectDto } from "@/bindings/projects/projects";
 import { IpcCallError } from "@/lib/ipc/ipc-error";
 import { listProjects, onProjectsChanged, type UnlistenFn } from "@/lib/ipc/projects";
-import { resetProjectsStore, useProjectsStore } from "./projects-store";
+import { readProjectCrumbLabel, resetProjectsStore, useProjectsStore } from "./projects-store";
 import { useProjects } from "./use-projects";
 
 // Replace the backend boundary so no case reaches Tauri, the filesystem or a real event.
@@ -169,6 +169,22 @@ describe("projects store lifecycle", () => {
     });
 
     expect(store().projects).toEqual([]);
+  });
+});
+
+describe("readProjectCrumbLabel", () => {
+  // Verify a route id is translated through the retained project snapshot.
+  it("returns the display name for a present project", () => {
+    useProjectsStore.setState({ projects: [PROJECT, OTHER] });
+
+    expect(readProjectCrumbLabel("9b1c")).toBe("recipe-api");
+  });
+
+  // Verify missing and absent route ids produce an inert crumb instead of exposing the id.
+  it.each([["missing"], [undefined]])("returns an empty label for %s", (projectId) => {
+    useProjectsStore.setState({ projects: [PROJECT] });
+
+    expect(readProjectCrumbLabel(projectId)).toBe("");
   });
 });
 

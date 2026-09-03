@@ -5,16 +5,20 @@ import type {
   ProjectChangedEventDto,
   ProjectDto,
   ProjectFolderSelectionDto,
+  ProjectGitStatusDto,
   RemoveProjectImpactDto,
   RemoveProjectResultDto,
 } from "@/bindings/projects/projects";
 import { IpcCallError } from "./ipc-error";
 import {
   addProject,
+  getProject,
+  getProjectGitStatus,
   getRemoveProjectImpact,
   listProjects,
   locateProjectFolder,
   onProjectsChanged,
+  openProject,
   openProjectFolder,
   removeProject,
   renameProject,
@@ -39,6 +43,18 @@ const PROJECT: ProjectDto = {
   availability: { status: "available" },
 };
 
+/** One clean worktree snapshot returned by the read-only Git command. */
+const GIT_STATUS: ProjectGitStatusDto = {
+  summary: {
+    projectId: "3f2a",
+    repositoryKind: "worktree",
+    head: { kind: "branch", name: "main" },
+    changedCount: 0,
+    untrackedCount: 0,
+  },
+  changes: [],
+};
+
 beforeEach(() => {
   vi.resetAllMocks();
 });
@@ -58,6 +74,57 @@ describe("listProjects", () => {
 
     await expect(listProjects("xw")).resolves.toEqual([]);
     expect(invokeMock).toHaveBeenCalledExactlyOnceWith("list_projects", { search: "xw" });
+  });
+});
+
+describe("project overview reads", () => {
+  // Verify the explicit open uses the mutating read command and preserves its typed DTO.
+  it("calls open_project with the project id", async () => {
+    invokeMock.mockResolvedValue(PROJECT);
+
+    await expect(openProject("3f2a")).resolves.toEqual(PROJECT);
+    expect(invokeMock).toHaveBeenCalledExactlyOnceWith("open_project", { projectId: "3f2a" });
+  });
+
+  // Verify metadata refresh uses the read-only command and the same camelCase argument.
+  it("calls get_project with the project id", async () => {
+    invokeMock.mockResolvedValue(PROJECT);
+
+    await expect(getProject("3f2a")).resolves.toEqual(PROJECT);
+    expect(invokeMock).toHaveBeenCalledExactlyOnceWith("get_project", { projectId: "3f2a" });
+  });
+
+  // Verify Git status reaches only the established read command and returns its generated DTO.
+  it("calls get_project_git_status with the project id", async () => {
+    invokeMock.mockResolvedValue(GIT_STATUS);
+
+    await expect(getProjectGitStatus("3f2a")).resolves.toEqual(GIT_STATUS);
+    expect(invokeMock).toHaveBeenCalledExactlyOnceWith("get_project_git_status", {
+      projectId: "3f2a",
+    });
+  });
+
+  // Verify generated snake_case error fields survive normalization for the Git wrapper.
+  it("preserves a typed Git inspection error", async () => {
+    invokeMock.mockRejectedValue({ code: "gitInspectionFailed", project_id: "3f2a" });
+
+    const error = await getProjectGitStatus("3f2a").catch((thrown: unknown) => thrown);
+
+    expect(error).toBeInstanceOf(IpcCallError);
+    expect((error as IpcCallError<{ code: string }>).command).toBe("get_project_git_status");
+    expect((error as IpcCallError<{ code: string }>).payload).toEqual({
+      code: "gitInspectionFailed",
+      project_id: "3f2a",
+    });
+  });
+
+  // Verify unknown read failures remain unclassified at the IPC boundary.
+  it("keeps an unknown overview rejection as a null payload", async () => {
+    invokeMock.mockRejectedValue("boom");
+
+    const error = await openProject("3f2a").catch((thrown: unknown) => thrown);
+
+    expect((error as IpcCallError<{ code: string }>).payload).toBeNull();
   });
 });
 

@@ -3,6 +3,7 @@ import type {
   ProjectChangedEventDto,
   ProjectDto,
   ProjectFolderSelectionDto,
+  ProjectGitStatusDto,
   ProjectsError,
   RemoveProjectImpactDto,
   RemoveProjectResultDto,
@@ -33,6 +34,21 @@ export function listProjects(search?: string): Promise<ProjectDto[]> {
     "list_projects",
     search === undefined ? undefined : { search },
   );
+}
+
+// Record that one project was opened and return its latest metadata snapshot.
+export function openProject(projectId: string): Promise<ProjectDto> {
+  return invokeProjects<ProjectDto>("open_project", { projectId });
+}
+
+// Read one project's latest metadata without advancing its last-opened timestamp.
+export function getProject(projectId: string): Promise<ProjectDto> {
+  return invokeProjects<ProjectDto>("get_project", { projectId });
+}
+
+// Read the current repository summary and visible worktree changes for one project.
+export function getProjectGitStatus(projectId: string): Promise<ProjectGitStatusDto> {
+  return invokeProjects<ProjectGitStatusDto>("get_project_git_status", { projectId });
 }
 
 // Open the native folder picker and register the chosen folder. Cancellation is a result,

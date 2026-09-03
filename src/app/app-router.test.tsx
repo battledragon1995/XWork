@@ -5,7 +5,7 @@ import { userEvent } from "@testing-library/user-event";
 import { createMemoryRouter, RouterProvider } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ProjectDto } from "@/bindings/projects/projects";
-import { listProjects } from "@/lib/ipc/projects";
+import { getProjectGitStatus, listProjects, openProject } from "@/lib/ipc/projects";
 import { AppErrorBoundary } from "./app-error-boundary";
 import { AppProviders } from "./app-providers";
 import { createAppRouter } from "./app-router";
@@ -18,10 +18,13 @@ import { resetQuitStore, useQuitStore } from "./quit-store";
 // real filesystem read or a native dialog into the next one.
 vi.mock("@/lib/ipc/projects", () => ({
   addProject: vi.fn(async () => ({ outcome: "cancelled" })),
+  getProject: vi.fn(),
+  getProjectGitStatus: vi.fn(),
   getRemoveProjectImpact: vi.fn(),
   listProjects: vi.fn(async () => []),
   locateProjectFolder: vi.fn(async () => ({ outcome: "cancelled" })),
   onProjectsChanged: vi.fn(async () => () => {}),
+  openProject: vi.fn(),
   openProjectFolder: vi.fn(),
   removeProject: vi.fn(),
   renameProject: vi.fn(),
@@ -29,6 +32,8 @@ vi.mock("@/lib/ipc/projects", () => ({
 }));
 
 const listProjectsMock = vi.mocked(listProjects);
+const openProjectMock = vi.mocked(openProject);
+const getProjectGitStatusMock = vi.mocked(getProjectGitStatus);
 
 /** One registered project, so the index route settles on its Home branch. */
 const PROJECT: ProjectDto = {
@@ -46,6 +51,17 @@ beforeEach(() => {
   resetQuitStore();
   resetProjectsStore();
   listProjectsMock.mockResolvedValue([PROJECT]);
+  openProjectMock.mockResolvedValue(PROJECT);
+  getProjectGitStatusMock.mockResolvedValue({
+    summary: {
+      projectId: "3f2a",
+      repositoryKind: "worktree",
+      head: { kind: "branch", name: "main" },
+      changedCount: 0,
+      untrackedCount: 0,
+    },
+    changes: [],
+  });
 });
 
 afterEach(() => {
@@ -123,12 +139,13 @@ describe("createAppRouter", () => {
     expect(screen.getByRole("link", { name: "Home" })).toHaveAttribute("aria-current", "page");
   });
 
-  // Verify the reserved project detail route renders without owning project data.
-  it("reserves the project detail route for FE-005", () => {
-    renderAt("/projects/xwork");
+  // Verify the project detail route now mounts the real overview feature.
+  it("renders the project detail route as ProjectOverviewRoute", async () => {
+    renderAt("/projects/3f2a");
 
-    expect(screen.getByRole("heading", { level: 1, name: "Project Overview" })).toBeInTheDocument();
-    expect(screen.getByText("This area arrives with FE-005.")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { level: 1, name: "xwork" })).toBeInTheDocument();
+    expect(screen.getByText("Working tree is clean.")).toBeInTheDocument();
+    expect(screen.queryByText("This area arrives with FE-005.")).not.toBeInTheDocument();
   });
 
   // Verify the reserved session route renders and keeps the opaque identifier untouched.
@@ -140,9 +157,10 @@ describe("createAppRouter", () => {
     expect(readBreadcrumb()).toEqual(["Session", "9f3a-B7 c"]);
   });
 
-  // Verify the breadcrumb of a matched area reflects the route table, not a store.
-  it("builds the breadcrumb from the matched route", () => {
-    renderAt("/projects/xwork");
+  // Verify the project route translates its opaque id through the project snapshot.
+  it("builds the project breadcrumb from the display name", async () => {
+    renderAt("/projects/3f2a");
+    await screen.findByRole("heading", { level: 1, name: "xwork" });
 
     expect(readBreadcrumb()).toEqual(["Projects", "xwork"]);
   });

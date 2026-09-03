@@ -3,6 +3,7 @@ import { useEffect } from "react";
 import { useLocation, useMatches } from "react-router";
 import { Highlight, HighlightItem } from "@/components/animate-ui/primitives/effects/highlight";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { useProjectsStore } from "@/features/projects/projects-store";
 import { cn } from "@/lib/utils/cn";
 import { AppMenu } from "./app-menu";
 import type { RouteCrumbHandle } from "./app-router";
@@ -33,6 +34,9 @@ function useRouteCrumbs(): string[] {
 // Render the current route context as a labelled list. It is deliberately not a `nav`
 // landmark so the sidebar stays the single navigation landmark of the shell.
 function Breadcrumb() {
+  // The route handle reads the retained snapshot imperatively; this subscription makes a
+  // rename recompute that handle without acquiring another projects-store consumer.
+  useProjectsStore((state) => state.projects);
   const crumbs = useRouteCrumbs();
 
   return (

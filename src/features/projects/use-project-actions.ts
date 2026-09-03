@@ -28,6 +28,8 @@ export interface RemoveProjectTarget {
 export interface ProjectActionsOptions {
   /** Called after a successful removal, so the caller can move focus off the destroyed card. */
   onRemoved?(): void;
+  /** Called when opening the root proves the displayed availability is stale. */
+  onUnavailable?(): void;
 }
 
 /** Everything the route needs to run the six per-project commands and host both dialogs. */
@@ -68,7 +70,7 @@ export function useProjectActions(options: ProjectActionsOptions = {}): ProjectA
   const [failure, setFailure] = useState<ProjectActionFailure | null>(null);
   const [renameTarget, setRenameTarget] = useState<ProjectDto | null>(null);
   const [removeTarget, setRemoveTarget] = useState<RemoveProjectTarget | null>(null);
-  const { onRemoved } = options;
+  const { onRemoved, onUnavailable } = options;
 
   /**
    * Every operation records the token it started with and publishes only while it still
@@ -261,10 +263,14 @@ export function useProjectActions(options: ProjectActionsOptions = {}): ProjectA
           return;
         }
 
+        if (projectsErrorOf(rejection)?.code === "projectUnavailable") {
+          onUnavailable?.();
+        }
+
         publishFailure(rejection, project, "openFolder");
       }
     },
-    [begin, publishFailure, settle],
+    [begin, onUnavailable, publishFailure, settle],
   );
 
   const locateFolder = useCallback(

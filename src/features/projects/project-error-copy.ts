@@ -12,6 +12,12 @@ export const INTEGRATION_MESSAGE =
 /** Copy for the one list failure that is worth another attempt. */
 export const LOAD_FAILED_MESSAGE = "XWork couldn't load your projects.";
 
+/** Copy for a retryable failure while opening an overview for the first time. */
+export const OVERVIEW_OPEN_FAILED_MESSAGE = "XWork couldn't open this project.";
+
+/** Copy for a retryable metadata refresh that keeps the previous overview visible. */
+export const OVERVIEW_REFRESH_FAILED_MESSAGE = "XWork couldn't refresh this project.";
+
 /** Copy shared by the two Add Project failures that happen after a folder was accepted. */
 const ADD_SAVE_FAILED_MESSAGE = "XWork couldn't save the project. Try again.";
 
@@ -48,6 +54,19 @@ export interface ProjectListFailure {
   kind: "retryable" | "integration";
   message: string;
 }
+
+/** One failed project metadata read and the route-level recovery it permits. */
+export type ProjectReadFailure =
+  | { kind: "retryable"; message: string }
+  | { kind: "gone" }
+  | { kind: "integration"; message: string };
+
+/** One failed Git snapshot read and the route-level recovery it permits. */
+export type ProjectGitFailure =
+  | { kind: "retryable"; message: string }
+  | { kind: "unavailable" }
+  | { kind: "gone" }
+  | { kind: "integration"; message: string };
 
 /** One failed attempt to register a folder, plus the recovery it allows. */
 export type AddProjectFailure =
@@ -87,6 +106,53 @@ export function classifyListFailure(rejection: unknown): ProjectListFailure {
   return error?.code === "persistenceFailed"
     ? { kind: "retryable", message: LOAD_FAILED_MESSAGE }
     : { kind: "integration", message: INTEGRATION_MESSAGE };
+}
+
+/** Build the retryable Git copy with the current display name. */
+export function gitStatusFailedMessage(name: string): string {
+  return `XWork couldn't read Git status for ${name}.`;
+}
+
+/** Classify an initial open or later metadata refresh without guessing unknown payloads. */
+export function classifyProjectReadFailure(
+  rejection: unknown,
+  mode: "open" | "refresh",
+): ProjectReadFailure {
+  const error = projectsErrorOf(rejection);
+
+  switch (error?.code) {
+    case "projectNotFound":
+    case "removalInProgress":
+      return { kind: "gone" };
+    case "persistenceFailed":
+      return {
+        kind: "retryable",
+        message: mode === "open" ? OVERVIEW_OPEN_FAILED_MESSAGE : OVERVIEW_REFRESH_FAILED_MESSAGE,
+      };
+    case "clockFailed":
+      return mode === "open"
+        ? { kind: "retryable", message: OVERVIEW_OPEN_FAILED_MESSAGE }
+        : { kind: "integration", message: INTEGRATION_MESSAGE };
+    default:
+      return { kind: "integration", message: INTEGRATION_MESSAGE };
+  }
+}
+
+/** Classify a read-only Git rejection into retry, metadata refresh, navigation, or restart. */
+export function classifyGitFailure(rejection: unknown, name: string): ProjectGitFailure {
+  const error = projectsErrorOf(rejection);
+
+  switch (error?.code) {
+    case "gitInspectionFailed":
+      return { kind: "retryable", message: gitStatusFailedMessage(name) };
+    case "projectUnavailable":
+      return { kind: "unavailable" };
+    case "projectNotFound":
+    case "removalInProgress":
+      return { kind: "gone" };
+    default:
+      return { kind: "integration", message: INTEGRATION_MESSAGE };
+  }
 }
 
 /**

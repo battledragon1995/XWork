@@ -1,6 +1,8 @@
 import { createMemoryRouter, type Params } from "react-router";
 import { HomeRoute } from "@/features/home/home-route";
+import { ProjectOverviewRoute } from "@/features/projects/project-overview-route";
 import { ProjectsRoute } from "@/features/projects/projects-route";
+import { readProjectCrumbLabel } from "@/features/projects/projects-store";
 import { AppErrorBoundary } from "./app-error-boundary";
 import { AppShell } from "./app-shell";
 import { AreaPlaceholder, NotFoundPlaceholder } from "./area-placeholder";
@@ -39,9 +41,9 @@ export function createAppRouter(initialEntries: string[] = ["/"]) {
           },
           {
             path: "projects/:projectId",
-            element: <AreaPlaceholder area="Project Overview" arrivesWith="FE-005" />,
+            element: <ProjectOverviewRoute />,
             errorElement: <AppErrorBoundary />,
-            handle: crumbs((params) => ["Projects", params.projectId ?? ""]),
+            handle: crumbs((params) => ["Projects", readProjectCrumbLabel(params.projectId)]),
           },
           {
             path: "notes",
