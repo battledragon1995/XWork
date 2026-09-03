@@ -33,7 +33,7 @@ Trừ scaffold và chuẩn bị phát hành, một lát cắt chỉ hoàn thành
 | 2 | Scaffold desktop/backend — **đã hoàn thành** | Tauri 2, Rust toolchain, CI desktop | Bọc SPA hiện có trong desktop runtime | 1 |
 | 3 | Lifecycle và application shell — **đã hoàn thành** | `BE-002`, `BE-001` | `FE-001` | 2 |
 | 4 | Projects và Welcome — **đã hoàn thành** | `BE-003` | `FE-002`, `FE-004`; mở rộng `FE-001` | 3 |
-| 5 | Git status và Project Overview | `BE-004` | `FE-005` | 4 |
+| 5 | Git status và Project Overview — **đã hoàn thành** | `BE-004` | `FE-005` | 4 |
 | 6 | Settings nền tảng | `BE-008` | `FE-011`, `FE-012`; mở rộng `FE-001` | 3 |
 | 7 | CLI profiles | `BE-006` | `FE-013` | 4, 6 |
 | 8 | Session, tab và pane | `BE-005` | `FE-006`, `FE-007` | 4, 7 |
