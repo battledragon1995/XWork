@@ -4,6 +4,10 @@ use crate::projects::{
     ProjectBackupRecordV1, ProjectCommittedProjection, ProjectImportMap, ProjectImportPlan,
     ProjectService, ProjectsError,
 };
+use crate::settings::{
+    SettingsBackupSection, SettingsCommittedProjection, SettingsError, SettingsRestorePlan,
+    SettingsService,
+};
 
 /// Adapts Projects to the typed backup participant contract of `BE-012`.
 ///
@@ -67,5 +71,53 @@ impl ProjectsDataParticipant {
         source_project_id: &str,
     ) -> Option<&'a str> {
         import_map.resolve(source_project_id)
+    }
+}
+
+/// Adapts Settings to the typed backup participant contract of `BE-012`.
+pub struct SettingsDataParticipant {
+    service: SettingsService,
+}
+
+impl SettingsDataParticipant {
+    /// Creates the Settings participant around the managed settings service.
+    pub fn new(service: SettingsService) -> Self {
+        Self { service }
+    }
+
+    /// Exports persisted Settings inside the coordinator-owned transaction.
+    pub fn export(&self, tx: &Transaction<'_>) -> Result<SettingsBackupSection, SettingsError> {
+        SettingsService::export_persisted_settings_in(tx)
+    }
+
+    /// Validates incoming Settings and builds an owned restore plan.
+    pub fn prepare_restore(
+        &self,
+        tx: &Transaction<'_>,
+        incoming: &SettingsBackupSection,
+    ) -> Result<SettingsRestorePlan, SettingsError> {
+        SettingsService::prepare_settings_restore_in(tx, incoming)
+    }
+
+    /// Applies one prepared Settings restore without a nested transaction.
+    pub fn apply_restore(
+        &self,
+        tx: &Transaction<'_>,
+        plan: &SettingsRestorePlan,
+    ) -> Result<SettingsCommittedProjection, SettingsError> {
+        SettingsService::apply_settings_restore_in(tx, plan)
+    }
+
+    /// Resets persisted Settings inside the shared coordinator transaction.
+    pub fn apply_reset(
+        &self,
+        tx: &Transaction<'_>,
+    ) -> Result<SettingsCommittedProjection, SettingsError> {
+        SettingsService::reset_settings_in(tx)
+    }
+
+    /// Publishes one already committed Settings projection to the owner cache.
+    pub fn publish_after_commit(&self, committed: SettingsCommittedProjection) {
+        self.service.publish_data_change(committed);
     }
 }

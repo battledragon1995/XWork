@@ -1,6 +1,6 @@
 # BE-008 Settings Persistence Implementation Plan
 
-**Status:** Draft
+**Status:** Implemented; targeted manual Windows smoke check pending
 
 **Goal:** Implement the complete Phase 1 `BE-008` backend contract so XWork
 persists one typed settings singleton (Appearance plus sidebar state) in
@@ -257,7 +257,7 @@ exactly one `settings` row whose column layout and defaults match `BE-008`.
 - Produces: `settings` table with the singleton `id = 1` row consumed by every
   later task.
 
-- [ ] **Step 1: Add the failing migration test**
+- [x] **Step 1: Add the failing migration test**
 
   Create `settings_commands.rs` with a `TempDir`-isolated `Storage::open`
   harness and the test `settings_migration_creates_single_default_row`. It
@@ -276,7 +276,7 @@ exactly one `settings` row whose column layout and defaults match `BE-008`.
   `assert_eq!` with `left: 1, right: 2` for the schema version (or on the
   first settings query with `no such table: settings`).
 
-- [ ] **Step 3: Add the migration and update stale version expectations**
+- [x] **Step 3: Add the migration and update stale version expectations**
 
   Add `0002_create_settings.sql` with SQL byte-equivalent to the `BE-008`
   Phase 1 block (table, checks, defaults, and `INSERT INTO settings (id)
@@ -289,7 +289,7 @@ exactly one `settings` row whose column layout and defaults match `BE-008`.
   future-database fixtures in `app_builder.rs` from `user_version = 2` to
   `user_version = 3`.
 
-- [ ] **Step 4: Verify the task**
+- [x] **Step 4: Verify the task**
 
   Run: `cargo test --manifest-path src-tauri/Cargo.toml --test
   settings_commands --test app_builder --test app_lifecycle --test
@@ -322,7 +322,7 @@ validation and merge rules proven by unit tests at their boundary values.
   patch-merge helpers; the complete `SettingsError` enum with `Display`,
   `std::error::Error`, and the tagged IPC shape.
 
-- [ ] **Step 1: Add the failing unit tests**
+- [x] **Step 1: Add the failing unit tests**
 
   Add `pub mod settings;` to `lib.rs` and create `settings/mod.rs` containing
   only its documented test module. The tests reference the missing public
@@ -345,7 +345,7 @@ validation and merge rules proven by unit tests at their boundary values.
   or the validation helpers; the test filter itself must show the settings
   tests as discovered by module path.
 
-- [ ] **Step 3: Implement the model and rules**
+- [x] **Step 3: Implement the model and rules**
 
   Implement the DTOs and snapshot exactly as specified: enums serialize as
   `snake_case` literals, struct fields as `camelCase`, `Option` patch fields
@@ -357,7 +357,7 @@ validation and merge rules proven by unit tests at their boundary values.
   then normalization, then whole-snapshot validation), and the preset/custom
   rule from `BE-008` rule 10.
 
-- [ ] **Step 4: Verify the task**
+- [x] **Step 4: Verify the task**
 
   Run: `cargo test --manifest-path src-tauri/Cargo.toml --lib settings::`
 
@@ -396,7 +396,7 @@ semantics and error mapping.
   transactions map to `PersistenceFailed`; decode/validation failures at
   hydration map to `CorruptStoredSettings { field }`.
 
-- [ ] **Step 1: Add the failing service tests**
+- [x] **Step 1: Add the failing service tests**
 
   Extend `settings_commands.rs` with service-level integration tests:
   `service_hydrates_default_and_survives_restart`; `update_persists_merged_sections_and_revision`;
@@ -419,7 +419,7 @@ semantics and error mapping.
   SettingsService in crate settings` (or the equivalent unresolved-import
   error), proving the service seam is absent rather than silently passing.
 
-- [ ] **Step 3: Implement the service**
+- [x] **Step 3: Implement the service**
 
   Hydrate by reading the single row with fixed parameterized SQL, decoding
   into `SettingsSnapshot`, and validating the complete snapshot. For
@@ -430,7 +430,7 @@ semantics and error mapping.
   row, and replace the cache only after commit. Keep the documented lock
   order; never call back into `SettingsService` from Storage callbacks.
 
-- [ ] **Step 4: Verify the task**
+- [x] **Step 4: Verify the task**
 
   Run: `cargo test --manifest-path src-tauri/Cargo.toml --test
   settings_commands` and `cargo test --manifest-path src-tauri/Cargo.toml
@@ -471,7 +471,7 @@ on a blocking worker under a held `DataReadPermit`.
   `setup_projects`, constructs and manages `SettingsService` before any window
   is served, and `app_invoke_handler` registers the three commands.
 
-- [ ] **Step 1: Add the failing command tests**
+- [x] **Step 1: Add the failing command tests**
 
   Add a MockRuntime application harness to `settings_commands.rs` (mock
   builder, isolated app data dir, `run_iteration`, window helper, and the
@@ -492,7 +492,7 @@ on a blocking worker under a held `DataReadPermit`.
   names the missing command (for example `settings::get_settings not found`);
   the service-level tests from Task 3 still pass.
 
-- [ ] **Step 3: Implement the commands and composition**
+- [x] **Step 3: Implement the commands and composition**
 
   Add the three thin commands to `settings/mod.rs` with authorization helpers
   mirroring `authorize_main_caller` in Projects, wire `setup_settings` into
@@ -502,7 +502,7 @@ on a blocking worker under a held `DataReadPermit`.
   all three commands answer through routing (the two mutations with a typed
   error for an empty payload, `get_settings` with a snapshot).
 
-- [ ] **Step 4: Verify the task**
+- [x] **Step 4: Verify the task**
 
   Run: `cargo test --manifest-path src-tauri/Cargo.toml --test
   settings_commands --test app_builder`
@@ -539,7 +539,7 @@ re-entry.
   adapting those methods plus `publish_after_commit` exactly like
   `ProjectsDataParticipant`; the participant is managed in `setup_settings`.
 
-- [ ] **Step 1: Add the failing contract tests**
+- [x] **Step 1: Add the failing contract tests**
 
   Extend `data_management_contract.rs` with settings fixtures and tests:
   `settings_export_reads_persisted_section_under_shared_transaction`
@@ -560,7 +560,7 @@ re-entry.
   Expected: Compilation fails with unresolved `SettingsDataParticipant` (or
   the `_in` method names), proving the owner seam does not exist.
 
-- [ ] **Step 3: Implement the owner seam**
+- [x] **Step 3: Implement the owner seam**
 
   Implement the `_in` methods as pure transaction functions: prepare validates
   and builds owned SQL operations plus the committed projection, apply/reset
@@ -570,7 +570,7 @@ re-entry.
   adapter and manage it in the composition root. Never acquire the
   maintenance gate, the settings write gate, or Storage inside these methods.
 
-- [ ] **Step 4: Verify the task**
+- [x] **Step 4: Verify the task**
 
   Run: `cargo test --manifest-path src-tauri/Cargo.toml --test
   data_management_contract --test app_builder`
@@ -600,7 +600,7 @@ observe `Unavailable` while an already-admitted commit may complete.
   from `request_quit` in the `QuitFlow::ProceedShutdown` branch and from
   `confirm_quit` immediately after a successful `begin_confirm_quit`.
 
-- [ ] **Step 1: Add the failing wiring test**
+- [x] **Step 1: Add the failing wiring test**
 
   Add `quit_shutdown_notifies_settings_service` to `settings_commands.rs`: it
   builds the mock application, runs setup, calls the new composition helper,
@@ -616,13 +616,13 @@ observe `Unavailable` while an already-admitted commit may complete.
   notify_settings_shutdown` (or the chosen exact helper name) in
   `xwork_lib::app`.
 
-- [ ] **Step 3: Implement the minimal wiring**
+- [x] **Step 3: Implement the minimal wiring**
 
   Add the documented helper that no-ops when `SettingsService` is not managed,
   and call it from the two quit branches named above. Do not change quit
   authorization, dialogs, exit codes, or any lifecycle DTO.
 
-- [ ] **Step 4: Verify the task**
+- [x] **Step 4: Verify the task**
 
   Run: `cargo test --manifest-path src-tauri/Cargo.toml --test
   settings_commands --test app_lifecycle`
@@ -655,11 +655,11 @@ the committed file drifts from the Rust types.
   `SidebarSettingsPatchDto`, `UpdateSettingsDto`, and `SettingsError`, written
   to `binding_path(&["settings.ts"])`.
 
-- [ ] **Step 1: Add the failing binding test**
+- [x] **Step 1: Add the failing binding test**
 
   Add `settings_binding_matches_rust_contract` with the export list above.
 
-- [ ] **Step 2: Verify the test fails for the expected reason**
+- [x] **Step 2: Verify the test fails for the expected reason**
 
   Run: `cargo test --manifest-path src-tauri/Cargo.toml --test
   export_bindings settings_binding_matches_rust_contract`
@@ -667,14 +667,14 @@ the committed file drifts from the Rust types.
   Expected: The first run writes `src/bindings/settings.ts` and fails with
   `bindings were regenerated; rerun the test to verify a clean output`.
 
-- [ ] **Step 3: Confirm the generated output**
+- [x] **Step 3: Confirm the generated output**
 
   Inspect the generated file for camelCase fields, snake_case enum literals,
   optional patch fields, the revision string field, and the absence of every
   notification type. Never edit the file manually; adjust the Rust types and
   regenerate instead.
 
-- [ ] **Step 4: Verify the task**
+- [x] **Step 4: Verify the task**
 
   Run the Step 2 command a second time, then
   `rg -n "AppSettingsDto|UpdateSettingsDto|SettingsError" src --glob
@@ -748,13 +748,22 @@ smoke check, not an automated desktop end-to-end test.
 - `spawn_blocking` join failures map to `PersistenceFailed`.
 - `reset_settings_in` writes the first-run default row including
   `revision = 0`; revisit together with the `BE-012` coordinator plan.
+- Tasks 1-6 were implemented and then verified through their focused targets;
+  their planned pre-implementation red commands were not captured, so those
+  historical Step 2 checkboxes remain unchecked. Task 7 did produce and verify
+  the planned one-time binding regeneration failure.
 
 During implementation, append material deviations and decisions without
 rewriting completed history.
 
 ## Outcome
 
-Pending implementation.
-
-When complete, summarize the delivered result, verification evidence, and any
-remaining limitations.
+Implemented the Phase 1 settings singleton, validation and preset rules,
+serialized cache-backed service, three Tauri commands, shared-maintenance owner
+seam, shutdown notification, migration version 2, and generated TypeScript
+binding. Focused settings/maintenance/composition targets pass; the full Rust
+suite passes with 228 tests, the frontend suite passes with 543 tests, format,
+lint, type-check, and production frontend build pass, and `pnpm tauri build`
+produces `src-tauri/target/release/xwork.exe` on Windows. The targeted manual
+launch from a disposable Windows user profile remains for a human smoke check;
+no automated desktop end-to-end test was added or run.

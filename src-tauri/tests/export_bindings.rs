@@ -12,6 +12,12 @@ use xwork_lib::projects::{
     ProjectGitSummaryDto, ProjectUnavailableReasonDto, ProjectsError, RemoveProjectImpactDto,
     RemoveProjectResultDto,
 };
+use xwork_lib::settings::{
+    AppSettingsDto, AppearanceSettingsDto, AppearanceSettingsPatchDto, GeneralSettingsDto,
+    InterfaceColorsDto, InterfaceLanguageDto, InterfaceThemeColorsDto, SettingsError,
+    SidebarSettingsDto, SidebarSettingsPatchDto, TerminalPaletteDto, ThemeModeDto, ThemePresetDto,
+    UpdateSettingsDto,
+};
 
 /// Generates the complete lifecycle binding in its stable contract order.
 fn generated_lifecycle_binding() -> String {
@@ -64,6 +70,33 @@ fn generated_projects_binding() -> String {
     .join("\n")
 }
 
+/// Generates the complete Phase 1 Settings binding in stable contract order.
+fn generated_settings_binding() -> String {
+    let config = Config::default();
+    [
+        InterfaceLanguageDto::export_to_string(&config)
+            .expect("InterfaceLanguageDto should export"),
+        ThemeModeDto::export_to_string(&config).expect("ThemeModeDto should export"),
+        ThemePresetDto::export_to_string(&config).expect("ThemePresetDto should export"),
+        InterfaceColorsDto::export_to_string(&config).expect("InterfaceColorsDto should export"),
+        InterfaceThemeColorsDto::export_to_string(&config)
+            .expect("InterfaceThemeColorsDto should export"),
+        TerminalPaletteDto::export_to_string(&config).expect("TerminalPaletteDto should export"),
+        GeneralSettingsDto::export_to_string(&config).expect("GeneralSettingsDto should export"),
+        AppearanceSettingsDto::export_to_string(&config)
+            .expect("AppearanceSettingsDto should export"),
+        SidebarSettingsDto::export_to_string(&config).expect("SidebarSettingsDto should export"),
+        AppSettingsDto::export_to_string(&config).expect("AppSettingsDto should export"),
+        AppearanceSettingsPatchDto::export_to_string(&config)
+            .expect("AppearanceSettingsPatchDto should export"),
+        SidebarSettingsPatchDto::export_to_string(&config)
+            .expect("SidebarSettingsPatchDto should export"),
+        UpdateSettingsDto::export_to_string(&config).expect("UpdateSettingsDto should export"),
+        SettingsError::export_to_string(&config).expect("SettingsError should export"),
+    ]
+    .join("\n")
+}
+
 /// Returns one generated binding output path under the frontend bindings root.
 fn binding_path(relative: &[&str]) -> PathBuf {
     let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -107,4 +140,10 @@ fn projects_binding_matches_rust_contract() {
         binding_path(&["projects", "projects.ts"]),
         generated_projects_binding(),
     );
+}
+
+/// Regenerates the Settings binding and fails once whenever it is stale.
+#[test]
+fn settings_binding_matches_rust_contract() {
+    assert_binding_is_current(binding_path(&["settings.ts"]), generated_settings_binding());
 }

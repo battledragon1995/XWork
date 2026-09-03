@@ -1,18 +1,23 @@
 use std::{
     path::{Path, PathBuf},
     pin::Pin,
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, mpsc},
     task::{Context, Poll, Waker},
+    time::Duration,
 };
 
 use tempfile::TempDir;
 use tokio::sync::Barrier;
-use xwork_lib::app::data_participants::ProjectsDataParticipant;
+use xwork_lib::app::data_participants::{ProjectsDataParticipant, SettingsDataParticipant};
 use xwork_lib::projects::{
     CURRENT_PATH_IDENTITY, NoProjectRuntimeGuard, ProjectBackupRecordV1, ProjectChangedEventDto,
     ProjectClock, ProjectCommittedProjection, ProjectDto, ProjectEventSink,
     ProjectFolderSelectionDto, ProjectFuture, ProjectIdFactory, ProjectImportPlan, ProjectPlatform,
     ProjectService, ProjectsError,
+};
+use xwork_lib::settings::{
+    AppearanceSettingsPatchDto, SettingsBackupSection, SettingsError, SettingsService,
+    SettingsSnapshot, SidebarSettingsPatchDto, ThemePresetDto, UpdateSettingsDto,
 };
 use xwork_lib::shared::DataMaintenanceGate;
 use xwork_lib::storage::Storage;
@@ -131,6 +136,56 @@ struct Harness {
     gate: DataMaintenanceGate,
     workspace: TempDir,
     _app_data: TempDir,
+}
+
+/// Owns an isolated Settings participant and its coordinator seams.
+struct SettingsHarness {
+    service: SettingsService,
+    participant: SettingsDataParticipant,
+    storage: Storage,
+    gate: DataMaintenanceGate,
+    _app_data: TempDir,
+}
+
+impl SettingsHarness {
+    /// Builds Settings against an isolated migrated database.
+    fn new() -> Self {
+        let app_data = TempDir::new().expect("the temporary app data should be created");
+        let storage = Storage::open(app_data.path()).expect("isolated storage should open");
+        let gate = DataMaintenanceGate::new();
+        let service = SettingsService::new(storage.clone(), gate.clone())
+            .expect("default settings should hydrate");
+        Self {
+            participant: SettingsDataParticipant::new(service.clone()),
+            service,
+            storage,
+            gate,
+            _app_data: app_data,
+        }
+    }
+
+    /// Returns one valid non-default backup section for restore tests.
+    fn incoming(&self) -> SettingsBackupSection {
+        let paper = self
+            .service
+            .update(&UpdateSettingsDto {
+                appearance: Some(AppearanceSettingsPatchDto {
+                    theme_preset: Some(ThemePresetDto::Paper),
+                    ..Default::default()
+                }),
+                sidebar: None,
+            })
+            .expect("the paper fixture should be valid")
+            .appearance;
+        SettingsBackupSection {
+            appearance: paper,
+            sidebar: xwork_lib::settings::SidebarSettingsDto {
+                width_px: 350,
+                collapsed: true,
+            },
+            notification_settings: None,
+        }
+    }
 }
 
 impl Harness {
@@ -596,4 +651,223 @@ fn projects_write_permit_blocks_ordinary_mutation() {
         tauri::async_runtime::block_on(harness.service.rename_project(&project.id, "Blocked"))
             .expect("the mutation should proceed after maintenance finishes");
     assert_eq!(renamed.display_name, "Blocked");
+}
+
+/// Verifies settings export reads the persisted Phase 1 section in one transaction.
+#[test]
+fn settings_export_reads_persisted_section_under_shared_transaction() {
+    let harness = SettingsHarness::new();
+    let incoming = harness.incoming();
+    harness
+        .service
+        .update(&UpdateSettingsDto {
+            appearance: None,
+            sidebar: Some(SidebarSettingsPatchDto {
+                width_px: Some(incoming.sidebar.width_px),
+                collapsed: Some(incoming.sidebar.collapsed),
+            }),
+        })
+        .expect("the sidebar fixture should commit");
+
+    let exported = harness
+        .storage
+        .with_transaction(
+            // Exports through the participant without opening nested storage.
+            |transaction| harness.participant.export(transaction),
+        )
+        .expect("settings export should commit its read transaction");
+    assert_eq!(exported.appearance, incoming.appearance);
+    assert_eq!(exported.sidebar, incoming.sidebar);
+    assert_eq!(exported.notification_settings, None);
+}
+
+/// Verifies owner APIs do not re-enter the maintenance gate while write admission is held.
+#[test]
+fn settings_owner_apis_work_while_write_permit_is_held() {
+    let harness = SettingsHarness::new();
+    let incoming = harness.incoming();
+    let write_permit = tauri::async_runtime::block_on(harness.gate.write_permit());
+    let projection = harness
+        .storage
+        .with_transaction(
+            // Runs the complete owner sequence inside the coordinator transaction.
+            |transaction| {
+                let _exported = harness.participant.export(transaction)?;
+                let plan = harness
+                    .participant
+                    .prepare_restore(transaction, &incoming)?;
+                harness.participant.apply_restore(transaction, &plan)
+            },
+        )
+        .expect("owner APIs should not wait on the already-held gate");
+    harness.participant.publish_after_commit(projection);
+    drop(write_permit);
+    assert_eq!(
+        harness
+            .service
+            .snapshot()
+            .expect("the projection should publish")
+            .sidebar,
+        incoming.sidebar
+    );
+}
+
+/// Verifies invalid restore input is rejected before any row is written.
+#[test]
+fn settings_restore_prepare_rejects_invalid_section_without_writes() {
+    let harness = SettingsHarness::new();
+    let mut incoming = harness.incoming();
+    let before = harness
+        .service
+        .snapshot()
+        .expect("the cache should be readable");
+    incoming.appearance.interface_font_size_px = 11;
+
+    let error = harness
+        .storage
+        .with_transaction(
+            // Calls prepare only so invalid input cannot reach an apply operation.
+            |transaction| harness.participant.prepare_restore(transaction, &incoming),
+        )
+        .expect_err("the invalid restore section should be rejected");
+    assert!(matches!(error, SettingsError::ValueOutOfRange { .. }));
+    let persisted = harness
+        .storage
+        .with_transaction(
+            // Re-exports after rejection to prove the row stayed at the fixture baseline.
+            |transaction| harness.participant.export(transaction),
+        )
+        .expect("the unchanged row should remain readable");
+    assert_eq!(persisted.appearance, before.appearance);
+    assert_eq!(harness.service.snapshot(), Ok(before));
+}
+
+/// Verifies a coordinator rollback does not publish or persist its prepared projection.
+#[test]
+fn settings_coordinator_rollback_publishes_nothing() {
+    let harness = SettingsHarness::new();
+    let incoming = harness.incoming();
+    let before = harness
+        .service
+        .snapshot()
+        .expect("the cache should be readable");
+    let error = harness
+        .storage
+        .with_transaction(
+            // Applies inside the transaction and then injects a coordinator failure.
+            |transaction| {
+                let plan = harness
+                    .participant
+                    .prepare_restore(transaction, &incoming)?;
+                let _projection = harness.participant.apply_restore(transaction, &plan)?;
+                Err::<(), SettingsError>(SettingsError::PersistenceFailed)
+            },
+        )
+        .expect_err("the injected coordinator error should roll back");
+    assert_eq!(error, SettingsError::PersistenceFailed);
+    assert_eq!(harness.service.snapshot(), Ok(before.clone()));
+    let exported = harness
+        .storage
+        .with_transaction(
+            // Reads the row after rollback through the same owner contract.
+            |transaction| harness.participant.export(transaction),
+        )
+        .expect("the rolled-back row should remain readable");
+    assert_eq!(exported.appearance, before.appearance);
+    assert_eq!(exported.sidebar, before.sidebar);
+}
+
+/// Verifies commit publication replaces the cache only after the transaction succeeds.
+#[test]
+fn settings_commit_publishes_prepared_projection() {
+    let harness = SettingsHarness::new();
+    let incoming = harness.incoming();
+    let before = harness
+        .service
+        .snapshot()
+        .expect("the cache should be readable");
+    let projection = harness
+        .storage
+        .with_transaction(
+            // Prepares and applies one restore under the coordinator transaction.
+            |transaction| {
+                let plan = harness
+                    .participant
+                    .prepare_restore(transaction, &incoming)?;
+                harness.participant.apply_restore(transaction, &plan)
+            },
+        )
+        .expect("the restore transaction should commit");
+    assert_eq!(harness.service.snapshot(), Ok(before));
+    harness.participant.publish_after_commit(projection);
+    let published = harness
+        .service
+        .snapshot()
+        .expect("the cache should be replaced");
+    assert_eq!(published.appearance, incoming.appearance);
+    assert_eq!(published.sidebar, incoming.sidebar);
+}
+
+/// Verifies coordinator reset writes and publishes the exact first-run row.
+#[test]
+fn settings_reset_writes_default_row() {
+    let harness = SettingsHarness::new();
+    let _incoming = harness.incoming();
+    let projection = harness
+        .storage
+        .with_transaction(
+            // Resets the singleton without entering Storage again.
+            |transaction| harness.participant.apply_reset(transaction),
+        )
+        .expect("the settings reset should commit");
+    harness.participant.publish_after_commit(projection);
+    assert_eq!(harness.service.snapshot(), Ok(SettingsSnapshot::defaults()));
+    let exported = harness
+        .storage
+        .with_transaction(
+            // Exports the committed reset row for a persistence assertion.
+            |transaction| harness.participant.export(transaction),
+        )
+        .expect("the reset row should be readable");
+    assert_eq!(exported.appearance, SettingsSnapshot::defaults().appearance);
+    assert_eq!(exported.sidebar, SettingsSnapshot::defaults().sidebar);
+}
+
+/// Verifies a held maintenance write permit blocks an ordinary settings mutation.
+#[test]
+fn settings_mutation_is_blocked_by_write_permit() {
+    let harness = SettingsHarness::new();
+    let write_permit = tauri::async_runtime::block_on(harness.gate.write_permit());
+    let service = harness.service.clone();
+    let (sender, receiver) = mpsc::channel();
+    let worker = std::thread::spawn(move || {
+        let result = service.update(&UpdateSettingsDto {
+            appearance: None,
+            sidebar: Some(SidebarSettingsPatchDto {
+                width_px: Some(310),
+                collapsed: None,
+            }),
+        });
+        sender
+            .send(result)
+            .expect("the result receiver should remain open");
+    });
+
+    assert!(receiver.recv_timeout(Duration::from_millis(100)).is_err());
+    assert_eq!(
+        harness
+            .service
+            .snapshot()
+            .expect("reads should remain available")
+            .sidebar
+            .width_px,
+        280
+    );
+    drop(write_permit);
+    let updated = receiver
+        .recv_timeout(Duration::from_secs(2))
+        .expect("the mutation should finish after maintenance")
+        .expect("the admitted mutation should commit");
+    worker.join().expect("the mutation thread should join");
+    assert_eq!(updated.sidebar.width_px, 310);
 }

@@ -180,8 +180,11 @@ fn migration_creates_projects_schema() {
     let directory = tempfile::TempDir::new().expect("the temporary directory should be created");
     let storage = Storage::open(directory.path()).expect("storage should open");
 
-    assert_eq!(schema_version(&storage), 1);
-    assert_eq!(schema_object_names(&storage, "table"), vec!["projects"]);
+    assert_eq!(schema_version(&storage), 2);
+    assert_eq!(
+        schema_object_names(&storage, "table"),
+        vec!["projects", "settings"]
+    );
     assert_eq!(
         schema_object_names(&storage, "index"),
         vec!["idx_projects_list_order"]
@@ -210,8 +213,11 @@ fn migration_creates_projects_schema() {
     // Reopening must not rerun the migration or change the committed schema version.
     drop(storage);
     let reopened = Storage::open(directory.path()).expect("storage should reopen");
-    assert_eq!(schema_version(&reopened), 1);
-    assert_eq!(schema_object_names(&reopened, "table"), vec!["projects"]);
+    assert_eq!(schema_version(&reopened), 2);
+    assert_eq!(
+        schema_object_names(&reopened, "table"),
+        vec!["projects", "settings"]
+    );
 }
 
 /// Verifies that the migrated table enforces every documented constraint.

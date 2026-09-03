@@ -8,6 +8,7 @@ use crate::{
         NoProjectRuntimeGuard, ProjectEventSink, ProjectPlatform, ProjectService,
         TauriProjectEventSink, TauriProjectPlatform,
     },
+    settings::SettingsService,
     shared::DataMaintenanceGate,
     storage::Storage,
 };
@@ -16,7 +17,7 @@ pub mod data_participants;
 pub mod lifecycle;
 pub mod tray;
 
-use data_participants::ProjectsDataParticipant;
+use data_participants::{ProjectsDataParticipant, SettingsDataParticipant};
 use lifecycle::{AppLifecycleError, AppLifecycleState, AppRuntime, EmptyAppRuntime};
 
 /// Describes whether a native close event should be intercepted.
@@ -133,6 +134,14 @@ pub fn official_plugins_initialized<R: Runtime>(app: &AppHandle<R>) -> bool {
         && app.try_state::<tauri_plugin_opener::Opener<R>>().is_some()
 }
 
+/// Notifies managed Settings state that application shutdown has begun.
+#[doc(hidden)]
+pub fn notify_settings_shutdown<R: Runtime>(app: &AppHandle<R>) {
+    if let Some(service) = app.try_state::<SettingsService>() {
+        service.begin_shutdown();
+    }
+}
+
 /// Builds the native dialog and opener adapters used by production startup.
 fn native_project_collaborators<R: Runtime>(app: &AppHandle<R>) -> ProjectCollaborators {
     (
@@ -161,7 +170,10 @@ fn app_invoke_handler<R: Runtime>() -> impl Fn(tauri::ipc::Invoke<R>) -> bool + 
         crate::projects::commands::locate_project_folder,
         crate::projects::commands::open_project_folder,
         crate::projects::commands::get_remove_project_impact,
-        crate::projects::commands::remove_project
+        crate::projects::commands::remove_project,
+        crate::settings::get_settings,
+        crate::settings::update_settings,
+        crate::settings::restore_appearance_defaults
     ]
 }
 
@@ -190,7 +202,8 @@ where
                     None => app.path().app_data_dir()?,
                 };
                 let storage = setup_storage(app, app_data_dir)?;
-                setup_projects(app, storage, project_collaborators);
+                setup_projects(app, storage.clone(), project_collaborators);
+                setup_settings(app, storage)?;
                 app.manage(AppLifecycleState::new(runtime));
                 attach_tray(app.handle())?;
                 Ok(())
@@ -258,4 +271,16 @@ where
     app.manage(ProjectsDataParticipant::new(service.clone()));
     app.manage(service);
     app.manage(gate);
+}
+
+/// Hydrates and manages Settings with the process-wide maintenance gate.
+fn setup_settings<R: Runtime>(
+    app: &mut App<R>,
+    storage: Storage,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let gate = app.state::<DataMaintenanceGate>().inner().clone();
+    let service = SettingsService::new(storage, gate)?;
+    app.manage(SettingsDataParticipant::new(service.clone()));
+    app.manage(service);
+    Ok(())
 }
