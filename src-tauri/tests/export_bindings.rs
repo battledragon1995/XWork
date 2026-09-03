@@ -5,9 +5,14 @@ use xwork_lib::app::lifecycle::{
     AppLifecycleError, LifecycleEvent, QuitRequestDto, QuitSummaryDto, SessionNavigationDto,
     TrayOperation, WindowOperation,
 };
+use xwork_lib::projects::{
+    InvalidProjectFolderReasonDto, ProjectAvailabilityDto, ProjectChangeKindDto,
+    ProjectChangedEventDto, ProjectDto, ProjectFolderSelectionDto, ProjectUnavailableReasonDto,
+    ProjectsError, RemoveProjectImpactDto, RemoveProjectResultDto,
+};
 
 /// Generates the complete lifecycle binding in its stable contract order.
-fn generated_binding() -> String {
+fn generated_lifecycle_binding() -> String {
     let config = Config::default();
     [
         QuitSummaryDto::export_to_string(&config).expect("QuitSummaryDto should export"),
@@ -22,20 +27,46 @@ fn generated_binding() -> String {
     .join("\n")
 }
 
-/// Returns the only generated lifecycle binding output path.
-fn binding_path() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("..")
-        .join("src")
-        .join("bindings")
-        .join("app-lifecycle.ts")
+/// Generates the complete Projects binding in its stable contract order.
+fn generated_projects_binding() -> String {
+    let config = Config::default();
+    [
+        ProjectUnavailableReasonDto::export_to_string(&config)
+            .expect("ProjectUnavailableReasonDto should export"),
+        ProjectAvailabilityDto::export_to_string(&config)
+            .expect("ProjectAvailabilityDto should export"),
+        ProjectDto::export_to_string(&config).expect("ProjectDto should export"),
+        ProjectFolderSelectionDto::export_to_string(&config)
+            .expect("ProjectFolderSelectionDto should export"),
+        RemoveProjectImpactDto::export_to_string(&config)
+            .expect("RemoveProjectImpactDto should export"),
+        RemoveProjectResultDto::export_to_string(&config)
+            .expect("RemoveProjectResultDto should export"),
+        ProjectChangeKindDto::export_to_string(&config)
+            .expect("ProjectChangeKindDto should export"),
+        ProjectChangedEventDto::export_to_string(&config)
+            .expect("ProjectChangedEventDto should export"),
+        InvalidProjectFolderReasonDto::export_to_string(&config)
+            .expect("InvalidProjectFolderReasonDto should export"),
+        ProjectsError::export_to_string(&config).expect("ProjectsError should export"),
+    ]
+    .join("\n")
 }
 
-/// Regenerates the binding and fails once whenever committed output is stale.
-#[test]
-fn lifecycle_binding_matches_rust_contract() {
-    let path = binding_path();
-    let generated = generated_binding();
+/// Returns one generated binding output path under the frontend bindings root.
+fn binding_path(relative: &[&str]) -> PathBuf {
+    let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("src")
+        .join("bindings");
+    for segment in relative {
+        path = path.join(segment);
+    }
+    path
+}
+
+/// Rewrites stale generated output once and fails so the next run verifies it.
+fn assert_binding_is_current(path: PathBuf, generated: String) {
     let current = fs::read_to_string(&path).ok();
 
     if current.as_deref() != Some(generated.as_str()) {
@@ -47,4 +78,22 @@ fn lifecycle_binding_matches_rust_contract() {
         fs::write(&path, generated).expect("the generated binding should be written");
         panic!("bindings were regenerated; rerun the test to verify a clean output");
     }
+}
+
+/// Regenerates the binding and fails once whenever committed output is stale.
+#[test]
+fn lifecycle_binding_matches_rust_contract() {
+    assert_binding_is_current(
+        binding_path(&["app-lifecycle.ts"]),
+        generated_lifecycle_binding(),
+    );
+}
+
+/// Regenerates the Projects binding and fails once whenever it is stale.
+#[test]
+fn projects_binding_matches_rust_contract() {
+    assert_binding_is_current(
+        binding_path(&["projects", "projects.ts"]),
+        generated_projects_binding(),
+    );
 }

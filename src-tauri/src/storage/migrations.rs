@@ -10,7 +10,11 @@ pub(crate) struct Migration {
 }
 
 /// Lists the business-schema migrations supported by this binary.
-pub(crate) const MIGRATIONS: &[Migration] = &[];
+pub(crate) const MIGRATIONS: &[Migration] = &[Migration {
+    version: 1,
+    name: "create_projects",
+    sql: include_str!("../../migrations/0001_create_projects.sql"),
+}];
 
 /// Applies every missing migration after validating the complete registry.
 pub(crate) fn run_migrations(

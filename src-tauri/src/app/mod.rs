@@ -4,12 +4,19 @@ use tauri::{App, AppHandle, Builder, Manager, Runtime, WebviewWindow, WindowEven
 
 use crate::{
     platform::window::{bring_to_front, hide_window},
+    projects::{
+        NoProjectRuntimeGuard, ProjectEventSink, ProjectPlatform, ProjectService,
+        TauriProjectEventSink, TauriProjectPlatform,
+    },
+    shared::DataMaintenanceGate,
     storage::Storage,
 };
 
+pub mod data_participants;
 pub mod lifecycle;
 pub mod tray;
 
+use data_participants::ProjectsDataParticipant;
 use lifecycle::{AppLifecycleError, AppLifecycleState, AppRuntime, EmptyAppRuntime};
 
 /// Describes whether a native close event should be intercepted.
@@ -19,6 +26,10 @@ pub enum CloseDecision {
     HideToTray,
     AllowClose,
 }
+
+/// Supplies the platform and event adapters injected into `ProjectService`.
+#[doc(hidden)]
+pub type ProjectCollaborators = (Arc<dyn ProjectPlatform>, Arc<dyn ProjectEventSink>);
 
 /// Applies the desktop application's composition to a Tauri builder.
 pub fn configure<R: Runtime>(builder: Builder<R>) -> Builder<R> {
@@ -33,11 +44,12 @@ pub fn configure<R: Runtime>(builder: Builder<R>) -> Builder<R> {
         },
     ));
 
-    configure_lifecycle(
+    configure_app(
         builder,
         None,
         Arc::new(EmptyAppRuntime),
         tray::attach_native_tray,
+        native_project_collaborators,
     )
 }
 
@@ -47,9 +59,13 @@ pub fn configure_with_app_data_dir<R: Runtime>(
     builder: Builder<R>,
     app_data_dir: PathBuf,
 ) -> Builder<R> {
-    builder.setup(
-        // Uses the caller-owned isolated path while exercising the production setup helper.
-        move |app| setup_storage(app, app_data_dir),
+    configure_app(
+        builder,
+        Some(app_data_dir),
+        Arc::new(EmptyAppRuntime),
+        // Skips native tray attachment because these tests observe setup only.
+        |_app| Ok(()),
+        native_project_collaborators,
     )
 }
 
@@ -65,7 +81,34 @@ where
     R: Runtime,
     F: FnOnce(&AppHandle<R>) -> Result<(), AppLifecycleError> + Send + 'static,
 {
-    configure_lifecycle(builder, Some(app_data_dir), runtime, attach_tray)
+    configure_app(
+        builder,
+        Some(app_data_dir),
+        runtime,
+        attach_tray,
+        native_project_collaborators,
+    )
+}
+
+/// Applies composition with isolated storage and fake Projects collaborators.
+#[doc(hidden)]
+pub fn configure_with_projects_for_tests<R, C>(
+    builder: Builder<R>,
+    app_data_dir: PathBuf,
+    project_collaborators: C,
+) -> Builder<R>
+where
+    R: Runtime,
+    C: FnOnce(&AppHandle<R>) -> ProjectCollaborators + Send + 'static,
+{
+    configure_app(
+        builder,
+        Some(app_data_dir),
+        Arc::new(EmptyAppRuntime),
+        // Skips native tray attachment because these tests observe Projects only.
+        |_app| Ok(()),
+        project_collaborators,
+    )
 }
 
 /// Applies close-to-tray semantics to the exact main webview window.
@@ -80,44 +123,78 @@ pub fn apply_close_requested<R: Runtime>(
     Ok(CloseDecision::HideToTray)
 }
 
-/// Creates the single lifecycle command router shared by production and tests.
-fn lifecycle_invoke_handler<R: Runtime>() -> impl Fn(tauri::ipc::Invoke<R>) -> bool + Send + Sync {
+/// Reports whether both official Rust-only plugins are initialized.
+///
+/// The check reads the state each plugin publishes during initialization, so it
+/// observes registration without invoking any native dialog or file manager.
+#[doc(hidden)]
+pub fn official_plugins_initialized<R: Runtime>(app: &AppHandle<R>) -> bool {
+    app.try_state::<tauri_plugin_dialog::Dialog<R>>().is_some()
+        && app.try_state::<tauri_plugin_opener::Opener<R>>().is_some()
+}
+
+/// Builds the native dialog and opener adapters used by production startup.
+fn native_project_collaborators<R: Runtime>(app: &AppHandle<R>) -> ProjectCollaborators {
+    (
+        Arc::new(TauriProjectPlatform::new(app.clone())),
+        Arc::new(TauriProjectEventSink::new(app.clone())),
+    )
+}
+
+/// Creates the single command router shared by production and tests.
+fn app_invoke_handler<R: Runtime>() -> impl Fn(tauri::ipc::Invoke<R>) -> bool + Send + Sync {
     tauri::generate_handler![
         lifecycle::hide_main_window,
         lifecycle::minimize_main_window,
         lifecycle::toggle_main_window_maximized,
         lifecycle::request_quit,
         lifecycle::cancel_quit,
-        lifecycle::confirm_quit
+        lifecycle::confirm_quit,
+        crate::projects::commands::list_projects,
+        crate::projects::commands::get_project,
+        crate::projects::commands::add_project,
+        crate::projects::commands::rename_project,
+        crate::projects::commands::set_project_pinned,
+        crate::projects::commands::open_project,
+        crate::projects::commands::locate_project_folder,
+        crate::projects::commands::open_project_folder,
+        crate::projects::commands::get_remove_project_impact,
+        crate::projects::commands::remove_project
     ]
 }
 
-/// Wires storage, lifecycle state, tray attachment, commands, and close handling.
-fn configure_lifecycle<R, F>(
+/// Wires storage, Projects, lifecycle state, tray attachment, and close handling.
+fn configure_app<R, F, C>(
     builder: Builder<R>,
     app_data_dir: Option<PathBuf>,
     runtime: Arc<dyn AppRuntime>,
     attach_tray: F,
+    project_collaborators: C,
 ) -> Builder<R>
 where
     R: Runtime,
     F: FnOnce(&AppHandle<R>) -> Result<(), AppLifecycleError> + Send + 'static,
+    C: FnOnce(&AppHandle<R>) -> ProjectCollaborators + Send + 'static,
 {
     builder
+        // Both official plugins are driven from Rust; no webview receives their commands.
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_opener::init())
         .setup(
-            // Publishes state only after storage opens, then attaches the required tray.
+            // Publishes state only after storage migrates, then attaches the required tray.
             move |app| {
                 let app_data_dir = match app_data_dir {
                     Some(path) => path,
                     None => app.path().app_data_dir()?,
                 };
-                setup_storage(app, app_data_dir)?;
+                let storage = setup_storage(app, app_data_dir)?;
+                setup_projects(app, storage, project_collaborators);
                 app.manage(AppLifecycleState::new(runtime));
                 attach_tray(app.handle())?;
                 Ok(())
             },
         )
-        .invoke_handler(lifecycle_invoke_handler())
+        .invoke_handler(app_invoke_handler())
         .on_window_event(
             // Intercepts native close only for main while shutdown is not in progress.
             |window, event| {
@@ -153,8 +230,30 @@ where
 fn setup_storage<R: Runtime>(
     app: &mut App<R>,
     app_data_dir: PathBuf,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<Storage, Box<dyn std::error::Error>> {
     let storage = Storage::open(&app_data_dir)?;
-    app.manage(storage);
-    Ok(())
+    app.manage(storage.clone());
+    Ok(storage)
+}
+
+/// Creates the single maintenance gate and the managed Projects capability.
+fn setup_projects<R, C>(app: &mut App<R>, storage: Storage, project_collaborators: C)
+where
+    R: Runtime,
+    C: FnOnce(&AppHandle<R>) -> ProjectCollaborators,
+{
+    // Exactly one gate exists per process; `BE-005` and `BE-012` reuse this instance.
+    let gate = DataMaintenanceGate::new();
+    let (platform, events) = project_collaborators(app.handle());
+    let service = ProjectService::new(
+        storage,
+        gate.clone(),
+        platform,
+        // Stage 4 has no session runtime, so removal closes nothing yet.
+        Arc::new(NoProjectRuntimeGuard),
+        events,
+    );
+    app.manage(ProjectsDataParticipant::new(service.clone()));
+    app.manage(service);
+    app.manage(gate);
 }
