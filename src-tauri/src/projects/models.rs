@@ -5,6 +5,87 @@ use ts_rs::TS;
 
 use super::error::ProjectsError;
 
+/// Summarizes the repository and visible changes for one project.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+#[ts(export_to = "projects/projects.ts")]
+pub struct ProjectGitSummaryDto {
+    pub project_id: String,
+    pub repository_kind: GitRepositoryKindDto,
+    pub head: Option<GitHeadDto>,
+    pub changed_count: u32,
+    pub untracked_count: u32,
+}
+
+/// Returns a Git summary together with its stable, project-relative entries.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+#[ts(export_to = "projects/projects.ts")]
+pub struct ProjectGitStatusDto {
+    pub summary: ProjectGitSummaryDto,
+    pub changes: Vec<GitFileChangeDto>,
+}
+
+/// Distinguishes a plain folder, worktree, and bare repository.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+#[ts(export_to = "projects/projects.ts")]
+pub enum GitRepositoryKindDto {
+    NotRepository,
+    Worktree,
+    Bare,
+}
+
+/// Describes the branch, unborn branch, or detached commit at HEAD.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+#[ts(tag = "kind", rename_all = "camelCase")]
+#[ts(export_to = "projects/projects.ts")]
+pub enum GitHeadDto {
+    Branch {
+        name: String,
+    },
+    Unborn {
+        name: String,
+    },
+    Detached {
+        #[serde(rename = "shortOid")]
+        #[ts(rename = "shortOid")]
+        short_oid: String,
+    },
+}
+
+/// Describes one deduplicated path in a detailed Git snapshot.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+#[ts(export_to = "projects/projects.ts")]
+pub struct GitFileChangeDto {
+    pub path: String,
+    pub previous_path: Option<String>,
+    pub change: GitFileChangeKindDto,
+    pub is_directory: bool,
+}
+
+/// Classifies the highest-priority visible change for one path.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase")]
+#[ts(export_to = "projects/projects.ts")]
+pub enum GitFileChangeKindDto {
+    Added,
+    Modified,
+    Deleted,
+    Renamed,
+    Copied,
+    TypeChanged,
+    Untracked,
+    Conflicted,
+}
+
 /// Bounds the display name in Unicode scalar values after trimming.
 const DISPLAY_NAME_MAX_LENGTH: usize = 255;
 

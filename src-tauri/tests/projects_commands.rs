@@ -1,5 +1,6 @@
 use std::{
     path::{Path, PathBuf},
+    process::Command,
     sync::{
         Arc, Mutex,
         atomic::{AtomicUsize, Ordering},
@@ -592,6 +593,25 @@ fn add_project(application: &TestApplication, name: &str) -> Value {
     outcome["project"].clone()
 }
 
+/// Runs Git only to arrange a temporary public-command fixture.
+fn arrange_git(root: &Path, arguments: &[&str]) {
+    let output = Command::new("git")
+        .args(arguments)
+        .current_dir(root)
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .env("GIT_AUTHOR_NAME", "XWork Test")
+        .env("GIT_AUTHOR_EMAIL", "xwork@example.invalid")
+        .env("GIT_COMMITTER_NAME", "XWork Test")
+        .env("GIT_COMMITTER_EMAIL", "xwork@example.invalid")
+        .output()
+        .expect("git.exe is required to arrange command fixtures");
+    assert!(
+        output.status.success(),
+        "fixture command failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
 /// Builds one command payload from a project identifier.
 type PayloadBuilder = fn(&str) -> Value;
 
@@ -605,6 +625,14 @@ struct CommandCase {
 const MAIN_ONLY_COMMANDS: &[CommandCase] = &[
     CommandCase {
         name: "get_project",
+        payload: payload_with_id,
+    },
+    CommandCase {
+        name: "get_project_git_summary",
+        payload: payload_with_id,
+    },
+    CommandCase {
+        name: "get_project_git_status",
         payload: payload_with_id,
     },
     CommandCase {
@@ -1051,4 +1079,81 @@ fn remove_uses_the_empty_stage_four_runtime_guard() {
         .expect("the empty guard should stay idempotent");
 
     assert_eq!(impact, ProjectRuntimeImpact::default());
+}
+
+/// Verifies both public Git commands return typed fresh snapshots for one project.
+#[test]
+fn git_commands_return_summary_and_detail_without_updating_project_metadata() {
+    let application = TestApplication::new();
+    let root = application.folder("repository");
+    arrange_git(&root, &["init", "--initial-branch=main"]);
+    std::fs::write(root.join("tracked.txt"), b"original")
+        .expect("the tracked fixture should be written");
+    arrange_git(&root, &["add", "tracked.txt"]);
+    arrange_git(&root, &["commit", "-m", "initial"]);
+    application.observations.queue_selection(root.clone());
+    let main = application.window("main");
+    let selected =
+        invoke(&main, "add_project", json!({})).expect("the repository project should be added");
+    let project = selected["project"].clone();
+    let project_id = project["id"]
+        .as_str()
+        .expect("the project identifier should be text");
+    std::fs::write(root.join("tracked.txt"), b"changed")
+        .expect("the worktree fixture should change");
+
+    let summary = invoke(
+        &main,
+        "get_project_git_summary",
+        json!({ "projectId": project_id }),
+    )
+    .expect("the Git summary should succeed");
+    let detail = invoke(
+        &main,
+        "get_project_git_status",
+        json!({ "projectId": project_id }),
+    )
+    .expect("the Git detail should succeed");
+
+    assert_eq!(summary["projectId"], project_id);
+    assert_eq!(summary["repositoryKind"], "worktree");
+    assert_eq!(summary["head"], json!({ "kind": "branch", "name": "main" }));
+    assert_eq!(summary["changedCount"], 1);
+    assert_eq!(detail["summary"], summary);
+    assert_eq!(detail["changes"].as_array().map(Vec::len), Some(1));
+    assert_eq!(detail["changes"][0]["path"], "tracked.txt");
+    assert_eq!(detail["changes"][0]["change"], "modified");
+
+    let after = invoke(&main, "get_project", json!({ "projectId": project_id }))
+        .expect("project metadata should remain readable");
+    assert_eq!(after, project);
+    assert!(!root.join(".git/index.lock").exists());
+}
+
+/// Verifies an exact-root plain folder is a successful non-repository result.
+#[test]
+fn git_commands_do_not_discover_a_repository_from_the_parent() {
+    let application = TestApplication::new();
+    let parent = application.folder("parent-repository");
+    arrange_git(&parent, &["init", "--initial-branch=main"]);
+    let child = parent.join("child");
+    std::fs::create_dir(&child).expect("the project child should be created");
+    application.observations.queue_selection(child);
+    let main = application.window("main");
+    let selected =
+        invoke(&main, "add_project", json!({})).expect("the child project should be added");
+    let project_id = selected["project"]["id"]
+        .as_str()
+        .expect("the project identifier should be text");
+
+    let summary = invoke(
+        &main,
+        "get_project_git_summary",
+        json!({ "projectId": project_id }),
+    )
+    .expect("the plain folder summary should succeed");
+
+    assert_eq!(summary["repositoryKind"], "notRepository");
+    assert_eq!(summary["head"], Value::Null);
+    assert_eq!(summary["changedCount"], 0);
 }

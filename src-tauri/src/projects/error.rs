@@ -52,6 +52,9 @@ pub enum ProjectsError {
     },
     RuntimeInspectionFailed,
     RuntimeCleanupFailed,
+    GitInspectionFailed {
+        project_id: String,
+    },
     OpenFolderFailed,
     ClockFailed,
     PersistenceFailed,
@@ -77,6 +80,7 @@ impl Display for ProjectsError {
             }
             Self::RuntimeInspectionFailed => "the project runtime impact could not be inspected",
             Self::RuntimeCleanupFailed => "the project runtime could not be closed",
+            Self::GitInspectionFailed { .. } => "the Git repository could not be inspected",
             Self::OpenFolderFailed => "the project root could not be opened",
             Self::ClockFailed => "the system clock did not provide a valid timestamp",
             Self::PersistenceFailed => "the project database operation failed",

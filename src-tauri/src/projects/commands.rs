@@ -2,7 +2,8 @@ use tauri::{Runtime, State, WebviewWindow};
 
 use super::error::ProjectsError;
 use super::models::{
-    ProjectDto, ProjectFolderSelectionDto, RemoveProjectImpactDto, RemoveProjectResultDto,
+    ProjectDto, ProjectFolderSelectionDto, ProjectGitStatusDto, ProjectGitSummaryDto,
+    RemoveProjectImpactDto, RemoveProjectResultDto,
 };
 use super::service::ProjectService;
 
@@ -51,6 +52,30 @@ pub(crate) async fn get_project<R: Runtime>(
     authorize_main_caller(window.label())?;
     let service = take_service(state);
     service.get_project(&project_id).await
+}
+
+/// Returns the current read-only Git summary for one project.
+#[tauri::command]
+pub(crate) async fn get_project_git_summary<R: Runtime>(
+    window: WebviewWindow<R>,
+    project_id: String,
+    state: State<'_, ProjectService>,
+) -> Result<ProjectGitSummaryDto, ProjectsError> {
+    authorize_main_caller(window.label())?;
+    let service = take_service(state);
+    service.git_summary(&project_id).await
+}
+
+/// Returns the current read-only Git status and change list for one project.
+#[tauri::command]
+pub(crate) async fn get_project_git_status<R: Runtime>(
+    window: WebviewWindow<R>,
+    project_id: String,
+    state: State<'_, ProjectService>,
+) -> Result<ProjectGitStatusDto, ProjectsError> {
+    authorize_main_caller(window.label())?;
+    let service = take_service(state);
+    service.git_status(&project_id).await
 }
 
 /// Selects and registers an existing project folder.

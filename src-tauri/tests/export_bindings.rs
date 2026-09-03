@@ -6,9 +6,11 @@ use xwork_lib::app::lifecycle::{
     TrayOperation, WindowOperation,
 };
 use xwork_lib::projects::{
+    GitFileChangeDto, GitFileChangeKindDto, GitHeadDto, GitRepositoryKindDto,
     InvalidProjectFolderReasonDto, ProjectAvailabilityDto, ProjectChangeKindDto,
-    ProjectChangedEventDto, ProjectDto, ProjectFolderSelectionDto, ProjectUnavailableReasonDto,
-    ProjectsError, RemoveProjectImpactDto, RemoveProjectResultDto,
+    ProjectChangedEventDto, ProjectDto, ProjectFolderSelectionDto, ProjectGitStatusDto,
+    ProjectGitSummaryDto, ProjectUnavailableReasonDto, ProjectsError, RemoveProjectImpactDto,
+    RemoveProjectResultDto,
 };
 
 /// Generates the complete lifecycle binding in its stable contract order.
@@ -38,6 +40,15 @@ fn generated_projects_binding() -> String {
         ProjectDto::export_to_string(&config).expect("ProjectDto should export"),
         ProjectFolderSelectionDto::export_to_string(&config)
             .expect("ProjectFolderSelectionDto should export"),
+        GitRepositoryKindDto::export_to_string(&config)
+            .expect("GitRepositoryKindDto should export"),
+        GitHeadDto::export_to_string(&config).expect("GitHeadDto should export"),
+        GitFileChangeKindDto::export_to_string(&config)
+            .expect("GitFileChangeKindDto should export"),
+        GitFileChangeDto::export_to_string(&config).expect("GitFileChangeDto should export"),
+        ProjectGitSummaryDto::export_to_string(&config)
+            .expect("ProjectGitSummaryDto should export"),
+        ProjectGitStatusDto::export_to_string(&config).expect("ProjectGitStatusDto should export"),
         RemoveProjectImpactDto::export_to_string(&config)
             .expect("RemoveProjectImpactDto should export"),
         RemoveProjectResultDto::export_to_string(&config)

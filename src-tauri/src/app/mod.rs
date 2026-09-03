@@ -152,6 +152,8 @@ fn app_invoke_handler<R: Runtime>() -> impl Fn(tauri::ipc::Invoke<R>) -> bool + 
         lifecycle::confirm_quit,
         crate::projects::commands::list_projects,
         crate::projects::commands::get_project,
+        crate::projects::commands::get_project_git_summary,
+        crate::projects::commands::get_project_git_status,
         crate::projects::commands::add_project,
         crate::projects::commands::rename_project,
         crate::projects::commands::set_project_pinned,

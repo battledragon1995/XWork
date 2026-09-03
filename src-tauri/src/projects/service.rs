@@ -4,16 +4,18 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use tokio::sync::Mutex as AsyncMutex;
+use tokio::sync::{Mutex as AsyncMutex, Semaphore};
 
 use super::error::{InvalidProjectFolderReasonDto, ProjectsError};
+use super::git_status::{GitInspectionMode, GitReadSnapshot, GitStatusReader, GixGitStatusReader};
 use super::models::{
-    AvailableProjectRoot, ProjectAvailabilityDto, ProjectAvailabilitySnapshot,
-    ProjectBackupRecordV1, ProjectChangeKindDto, ProjectChangedEventDto,
-    ProjectCommittedProjection, ProjectDto, ProjectFolderSelectionDto, ProjectImportCounts,
-    ProjectImportMap, ProjectImportPlan, ProjectRow, ProjectUnavailableReasonDto,
-    RemoveProjectImpactDto, RemoveProjectResultDto, compare_list_order, matches_search,
-    normalize_display_name, normalize_search, validate_project_id,
+    AvailableProjectRoot, GitRepositoryKindDto, ProjectAvailabilityDto,
+    ProjectAvailabilitySnapshot, ProjectBackupRecordV1, ProjectChangeKindDto,
+    ProjectChangedEventDto, ProjectCommittedProjection, ProjectDto, ProjectFolderSelectionDto,
+    ProjectGitStatusDto, ProjectGitSummaryDto, ProjectImportCounts, ProjectImportMap,
+    ProjectImportPlan, ProjectRow, ProjectUnavailableReasonDto, RemoveProjectImpactDto,
+    RemoveProjectResultDto, compare_list_order, matches_search, normalize_display_name,
+    normalize_search, validate_project_id,
 };
 use super::platform::{
     ProjectClock, ProjectEventSink, ProjectIdFactory, ProjectPlatform, ProjectRuntimeGuard,
@@ -213,6 +215,52 @@ where
     }
 }
 
+/// Creates the only public error exposed for Git reader and worker failures.
+fn git_failure(project_id: &str) -> ProjectsError {
+    ProjectsError::GitInspectionFailed {
+        project_id: project_id.to_owned(),
+    }
+}
+
+/// Attaches the requested project identifier to an internal read snapshot.
+fn summary_from_snapshot(project_id: &str, snapshot: &GitReadSnapshot) -> ProjectGitSummaryDto {
+    ProjectGitSummaryDto {
+        project_id: project_id.to_owned(),
+        repository_kind: snapshot.repository_kind,
+        head: snapshot.head.clone(),
+        changed_count: snapshot.changed_count,
+        untracked_count: snapshot.untracked_count,
+    }
+}
+
+/// Rejects internally inconsistent reader output before constructing a public DTO.
+fn validate_git_snapshot(
+    snapshot: &GitReadSnapshot,
+    mode: GitInspectionMode,
+) -> Result<(), super::git_status::GitReadError> {
+    if snapshot.untracked_count > snapshot.changed_count {
+        return Err(super::git_status::GitReadError);
+    }
+    match snapshot.repository_kind {
+        GitRepositoryKindDto::NotRepository
+            if snapshot.head.is_none()
+                && snapshot.changed_count == 0
+                && snapshot.changes.is_empty() => {}
+        GitRepositoryKindDto::Bare
+            if snapshot.head.is_some()
+                && snapshot.changed_count == 0
+                && snapshot.changes.is_empty() => {}
+        GitRepositoryKindDto::Worktree
+            if snapshot.head.is_some()
+                && ((mode == GitInspectionMode::Summary && snapshot.changes.is_empty())
+                    || (mode == GitInspectionMode::Detail
+                        && usize::try_from(snapshot.changed_count).ok()
+                            == Some(snapshot.changes.len()))) => {}
+        _ => return Err(super::git_status::GitReadError),
+    }
+    Ok(())
+}
+
 /// Owns Projects orchestration for Tauri commands and backend consumers.
 #[derive(Clone)]
 pub struct ProjectService {
@@ -233,6 +281,10 @@ struct ServiceInner {
     mutation_gate: AsyncMutex<()>,
     /// Names every project whose removal already closed the admission gate.
     removals: Arc<Mutex<HashSet<String>>>,
+    /// Performs all repository reads behind a narrow synchronous seam.
+    git_reader: Arc<dyn GitStatusReader>,
+    /// Limits the entire application to two simultaneous Git scans.
+    git_scan_limit: Arc<Semaphore>,
 }
 
 impl ProjectService {
@@ -269,6 +321,34 @@ impl ProjectService {
         ids: Arc<dyn ProjectIdFactory>,
         identity: PathIdentity,
     ) -> Self {
+        Self::with_git_seams(
+            storage,
+            gate,
+            platform,
+            runtime_guard,
+            events,
+            clock,
+            ids,
+            identity,
+            Arc::new(GixGitStatusReader),
+            Arc::new(Semaphore::new(2)),
+        )
+    }
+
+    /// Creates a project service with deterministic Git collaborators for tests.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn with_git_seams(
+        storage: Storage,
+        gate: DataMaintenanceGate,
+        platform: Arc<dyn ProjectPlatform>,
+        runtime_guard: Arc<dyn ProjectRuntimeGuard>,
+        events: Arc<dyn ProjectEventSink>,
+        clock: Arc<dyn ProjectClock>,
+        ids: Arc<dyn ProjectIdFactory>,
+        identity: PathIdentity,
+        git_reader: Arc<dyn GitStatusReader>,
+        git_scan_limit: Arc<Semaphore>,
+    ) -> Self {
         Self {
             inner: Arc::new(ServiceInner {
                 storage,
@@ -281,6 +361,8 @@ impl ProjectService {
                 identity,
                 mutation_gate: AsyncMutex::new(()),
                 removals: Arc::new(Mutex::new(HashSet::new())),
+                git_reader,
+                git_scan_limit,
             }),
         }
     }
@@ -648,6 +730,69 @@ impl ProjectService {
             project_id: row.id,
             root_path: PathBuf::from(row.root_path),
         })
+    }
+
+    /// Resolves a project root and returns its current read-only Git summary.
+    pub async fn git_summary(
+        &self,
+        project_id: &str,
+    ) -> Result<ProjectGitSummaryDto, ProjectsError> {
+        let snapshot = self
+            .inspect_git(project_id, GitInspectionMode::Summary)
+            .await?;
+        Ok(summary_from_snapshot(project_id, &snapshot))
+    }
+
+    /// Resolves a project root and returns its current detailed Git status.
+    pub async fn git_status(&self, project_id: &str) -> Result<ProjectGitStatusDto, ProjectsError> {
+        let snapshot = self
+            .inspect_git(project_id, GitInspectionMode::Detail)
+            .await?;
+        let summary = summary_from_snapshot(project_id, &snapshot);
+        Ok(ProjectGitStatusDto {
+            summary,
+            changes: snapshot.changes,
+        })
+    }
+
+    /// Scans and revalidates one root, retrying one relocation race at most once.
+    async fn inspect_git(
+        &self,
+        project_id: &str,
+        mode: GitInspectionMode,
+    ) -> Result<GitReadSnapshot, ProjectsError> {
+        let mut root = self.available_root(project_id).await?.root_path;
+        for attempt in 0..2 {
+            let permit = self
+                .inner
+                .git_scan_limit
+                .clone()
+                .acquire_owned()
+                .await
+                .map_err(|_| git_failure(project_id))?;
+            let reader = self.inner.git_reader.clone();
+            let scan_root = root.clone();
+            let snapshot = tauri::async_runtime::spawn_blocking(move || {
+                // The owned permit remains in the worker even if the awaiting task is cancelled.
+                let _permit = permit;
+                reader.inspect(&scan_root, mode)
+            })
+            .await
+            .map_err(|_| git_failure(project_id))?
+            .map_err(|_| git_failure(project_id))?;
+            validate_git_snapshot(&snapshot, mode).map_err(|_| git_failure(project_id))?;
+
+            let current = self.available_root(project_id).await?.root_path;
+            if current == root {
+                return Ok(snapshot);
+            }
+            if attempt == 1 {
+                return Err(git_failure(project_id));
+            }
+            // Discard a snapshot from the old folder and rescan the newly located root once.
+            root = current;
+        }
+        Err(git_failure(project_id))
     }
 
     /// Reads every persisted project row in stable display order.
@@ -2766,5 +2911,271 @@ mod tests {
                 .expect("the list should be readable")
                 .is_empty()
         );
+    }
+
+    mod git_tests {
+        use std::{
+            path::Path,
+            sync::{
+                Arc, Condvar, Mutex,
+                atomic::{AtomicUsize, Ordering},
+            },
+        };
+
+        use tokio::sync::Semaphore;
+
+        use super::{Harness, run};
+        use crate::projects::service::test_support::FakeIdFactory;
+        use crate::projects::{
+            NoProjectRuntimeGuard,
+            git_status::{GitInspectionMode, GitReadError, GitReadSnapshot, GitStatusReader},
+            models::GitRepositoryKindDto,
+            service::{PathIdentity, ProjectService},
+        };
+
+        /// Returns a fixed snapshot while recording each worker entry.
+        struct RecordingReader {
+            calls: AtomicUsize,
+            failing: bool,
+        }
+
+        /// Parks scans so the two-permit concurrency ceiling can be observed exactly.
+        struct ParkingReader {
+            entered: AtomicUsize,
+            active: AtomicUsize,
+            maximum: AtomicUsize,
+            state: Mutex<(usize, bool)>,
+            changed: Condvar,
+        }
+
+        impl ParkingReader {
+            /// Creates a reader whose scans remain parked until explicitly released.
+            fn new() -> Self {
+                Self {
+                    entered: AtomicUsize::new(0),
+                    active: AtomicUsize::new(0),
+                    maximum: AtomicUsize::new(0),
+                    state: Mutex::new((0, false)),
+                    changed: Condvar::new(),
+                }
+            }
+
+            /// Waits until the requested number of workers have entered.
+            fn wait_for_entries(&self, expected: usize) {
+                let mut state = self
+                    .state
+                    .lock()
+                    .expect("the parking lock should be available");
+                while state.0 < expected {
+                    state = self
+                        .changed
+                        .wait(state)
+                        .expect("the parking lock should remain available");
+                }
+            }
+
+            /// Releases every parked worker and all later entries.
+            fn release(&self) {
+                let mut state = self
+                    .state
+                    .lock()
+                    .expect("the parking lock should be available");
+                state.1 = true;
+                self.changed.notify_all();
+            }
+        }
+
+        impl GitStatusReader for ParkingReader {
+            /// Records active concurrency and waits for the test-owned release.
+            fn inspect(
+                &self,
+                _root: &Path,
+                _mode: GitInspectionMode,
+            ) -> Result<GitReadSnapshot, GitReadError> {
+                self.entered.fetch_add(1, Ordering::SeqCst);
+                let active = self.active.fetch_add(1, Ordering::SeqCst) + 1;
+                self.maximum.fetch_max(active, Ordering::SeqCst);
+                let mut state = self
+                    .state
+                    .lock()
+                    .expect("the parking lock should be available");
+                state.0 += 1;
+                self.changed.notify_all();
+                while !state.1 {
+                    state = self
+                        .changed
+                        .wait(state)
+                        .expect("the parking lock should remain available");
+                }
+                drop(state);
+                self.active.fetch_sub(1, Ordering::SeqCst);
+                Ok(GitReadSnapshot {
+                    repository_kind: GitRepositoryKindDto::NotRepository,
+                    head: None,
+                    changed_count: 0,
+                    untracked_count: 0,
+                    changes: Vec::new(),
+                })
+            }
+        }
+
+        impl GitStatusReader for RecordingReader {
+            /// Records one scan and returns the configured safe result.
+            fn inspect(
+                &self,
+                _root: &Path,
+                _mode: GitInspectionMode,
+            ) -> Result<GitReadSnapshot, GitReadError> {
+                self.calls.fetch_add(1, Ordering::SeqCst);
+                if self.failing {
+                    return Err(GitReadError);
+                }
+                Ok(GitReadSnapshot {
+                    repository_kind: GitRepositoryKindDto::NotRepository,
+                    head: None,
+                    changed_count: 0,
+                    untracked_count: 0,
+                    changes: Vec::new(),
+                })
+            }
+        }
+
+        /// Returns a deliberately impossible worktree snapshot.
+        struct InconsistentReader;
+
+        impl GitStatusReader for InconsistentReader {
+            /// Produces counts that cannot match the empty detailed list.
+            fn inspect(
+                &self,
+                _root: &Path,
+                _mode: GitInspectionMode,
+            ) -> Result<GitReadSnapshot, GitReadError> {
+                Ok(GitReadSnapshot {
+                    repository_kind: GitRepositoryKindDto::Worktree,
+                    head: Some(crate::projects::models::GitHeadDto::Branch {
+                        name: "main".into(),
+                    }),
+                    changed_count: 1,
+                    untracked_count: 0,
+                    changes: Vec::new(),
+                })
+            }
+        }
+
+        /// Rebuilds the harness service around a deterministic Git reader and scan limit.
+        fn service_with_reader(
+            harness: &Harness,
+            reader: Arc<dyn GitStatusReader>,
+            limit: Arc<Semaphore>,
+        ) -> ProjectService {
+            ProjectService::with_git_seams(
+                harness.service.storage_for_tests(),
+                harness.gate.clone(),
+                harness.platform.clone(),
+                Arc::new(NoProjectRuntimeGuard),
+                harness.events.clone(),
+                harness.clock.clone(),
+                Arc::new(FakeIdFactory::new()),
+                PathIdentity::WindowsLike,
+                reader,
+                limit,
+            )
+        }
+
+        /// Verifies validation occurs before permit acquisition and reader entry.
+        #[test]
+        fn validation_precedes_the_scan_limit_and_reader() {
+            let harness = Harness::new();
+            let reader = Arc::new(RecordingReader {
+                calls: AtomicUsize::new(0),
+                failing: false,
+            });
+            let limit = Arc::new(Semaphore::new(2));
+            let service = service_with_reader(&harness, reader.clone(), limit.clone());
+
+            assert_eq!(
+                run(service.git_summary("not-an-id")),
+                Err(crate::projects::ProjectsError::InvalidProjectId)
+            );
+            assert_eq!(reader.calls.load(Ordering::SeqCst), 0);
+            assert_eq!(limit.available_permits(), 2);
+        }
+
+        /// Verifies public DTO attachment and sanitized reader failure mapping.
+        #[test]
+        fn service_attaches_the_project_id_and_sanitizes_reader_errors() {
+            let harness = Harness::new();
+            let project = harness.add_folder("XWork");
+            let reader = Arc::new(RecordingReader {
+                calls: AtomicUsize::new(0),
+                failing: false,
+            });
+            let service =
+                service_with_reader(&harness, reader.clone(), Arc::new(Semaphore::new(2)));
+
+            let summary = run(service.git_summary(&project.id))
+                .expect("the injected snapshot should succeed");
+            assert_eq!(summary.project_id, project.id);
+            assert_eq!(reader.calls.load(Ordering::SeqCst), 1);
+
+            let failing = Arc::new(RecordingReader {
+                calls: AtomicUsize::new(0),
+                failing: true,
+            });
+            let service =
+                service_with_reader(&harness, failing.clone(), Arc::new(Semaphore::new(2)));
+            assert_eq!(
+                run(service.git_status(&project.id)),
+                Err(crate::projects::ProjectsError::GitInspectionFailed {
+                    project_id: project.id.clone()
+                })
+            );
+            assert_eq!(failing.calls.load(Ordering::SeqCst), 1);
+
+            let service = service_with_reader(
+                &harness,
+                Arc::new(InconsistentReader),
+                Arc::new(Semaphore::new(2)),
+            );
+            assert_eq!(
+                run(service.git_status(&project.id)),
+                Err(crate::projects::ProjectsError::GitInspectionFailed {
+                    project_id: project.id.clone()
+                })
+            );
+        }
+
+        /// Verifies two scans enter while a third waits for a shared permit.
+        #[test]
+        fn scan_limit_admits_exactly_two_workers_at_once() {
+            let harness = Harness::new();
+            let project = harness.add_folder("XWork");
+            let reader = Arc::new(ParkingReader::new());
+            let limit = Arc::new(Semaphore::new(2));
+            let service = service_with_reader(&harness, reader.clone(), limit.clone());
+            let mut handles = Vec::new();
+            for _ in 0..3 {
+                let service = service.clone();
+                let project_id = project.id.clone();
+                handles.push(tauri::async_runtime::spawn(async move {
+                    service.git_summary(&project_id).await
+                }));
+            }
+
+            reader.wait_for_entries(2);
+            assert_eq!(reader.entered.load(Ordering::SeqCst), 2);
+            assert_eq!(reader.maximum.load(Ordering::SeqCst), 2);
+            assert_eq!(limit.available_permits(), 0);
+            reader.release();
+            for handle in handles {
+                run(handle)
+                    .expect("the scan task should join")
+                    .expect("the parked scan should succeed");
+            }
+
+            assert_eq!(reader.entered.load(Ordering::SeqCst), 3);
+            assert_eq!(reader.maximum.load(Ordering::SeqCst), 2);
+            assert_eq!(limit.available_permits(), 2);
+        }
     }
 }

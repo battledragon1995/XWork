@@ -1,5 +1,6 @@
 pub(crate) mod commands;
 mod error;
+mod git_status;
 mod models;
 mod platform;
 mod repository;
@@ -7,9 +8,10 @@ mod service;
 
 pub use error::{InvalidProjectFolderReasonDto, ProjectsError};
 pub use models::{
-    AvailableProjectRoot, ProjectAvailabilityDto, ProjectAvailabilitySnapshot,
-    ProjectBackupRecordV1, ProjectChangeKindDto, ProjectChangedEventDto,
-    ProjectCommittedProjection, ProjectDto, ProjectFolderSelectionDto, ProjectImportCounts,
+    AvailableProjectRoot, GitFileChangeDto, GitFileChangeKindDto, GitHeadDto, GitRepositoryKindDto,
+    ProjectAvailabilityDto, ProjectAvailabilitySnapshot, ProjectBackupRecordV1,
+    ProjectChangeKindDto, ProjectChangedEventDto, ProjectCommittedProjection, ProjectDto,
+    ProjectFolderSelectionDto, ProjectGitStatusDto, ProjectGitSummaryDto, ProjectImportCounts,
     ProjectImportMap, ProjectImportPlan, ProjectUnavailableReasonDto, RemoveProjectImpactDto,
     RemoveProjectResultDto,
 };

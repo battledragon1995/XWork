@@ -268,6 +268,8 @@ fn projects_composition_routes_lifecycle_and_projects_commands() {
 
     for command in [
         "get_project",
+        "get_project_git_summary",
+        "get_project_git_status",
         "add_project",
         "rename_project",
         "set_project_pinned",
