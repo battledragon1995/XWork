@@ -1,5 +1,7 @@
 import { Copy, Minus, Square, X } from "lucide-react";
 import type { ReactNode } from "react";
+import type { AppLifecycleError } from "@/bindings/app-lifecycle";
+import { HighlightItem } from "@/components/animate-ui/primitives/effects/highlight";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
@@ -8,7 +10,6 @@ import {
   toggleMainWindowMaximized,
 } from "@/lib/ipc/app-lifecycle";
 import { IpcCallError } from "@/lib/ipc/ipc-error";
-import type { AppLifecycleError } from "@/bindings/app-lifecycle";
 import { useShellStore, type WindowControl } from "./shell-store";
 
 /** Recovery copy for the one window failure the user can retry by clicking again. */
@@ -83,6 +84,7 @@ export function WindowControls() {
       </WindowControlButton>
       <WindowControlButton
         label="Close (hides to tray)"
+        isClose
         onClick={() => void runWindowCommand("close", hideMainWindow)}
       >
         <X aria-hidden="true" className="size-3.5" />
@@ -102,20 +104,31 @@ export function WindowControls() {
 }
 
 // Render one icon-only window action with a matching accessible name and tooltip.
-function WindowControlButton(props: { label: string; onClick: () => void; children: ReactNode }) {
+function WindowControlButton(props: {
+  label: string;
+  isClose?: boolean;
+  onClick: () => void;
+  children: ReactNode;
+}) {
   return (
     <Tooltip>
-      <TooltipTrigger asChild>
-        <Button
-          type="button"
-          variant="ghost"
-          aria-label={props.label}
-          onClick={props.onClick}
-          className="h-10 w-11 rounded-none text-body"
-        >
-          {props.children}
-        </Button>
-      </TooltipTrigger>
+      <HighlightItem asChild activeClassName={props.isClose ? "bg-error" : "bg-surface-card"}>
+        <TooltipTrigger asChild>
+          <Button
+            type="button"
+            variant="ghost"
+            aria-label={props.label}
+            onClick={props.onClick}
+            className={
+              props.isClose
+                ? "relative z-[1] h-10 w-11 rounded-none text-body data-[active=true]:text-on-primary [&:not([data-highlight])]:hover:bg-error [&:not([data-highlight])]:hover:text-on-primary active:bg-error active:text-on-primary"
+                : "relative z-[1] h-10 w-11 rounded-none text-body [&:not([data-highlight])]:hover:bg-surface-card active:bg-cream-strong"
+            }
+          >
+            {props.children}
+          </Button>
+        </TooltipTrigger>
+      </HighlightItem>
       <TooltipContent side="bottom">{props.label}</TooltipContent>
     </Tooltip>
   );

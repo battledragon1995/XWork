@@ -336,6 +336,23 @@ describe("SidebarResizeHandle", () => {
 });
 
 describe("AppSidebar hover highlight", () => {
+  // Verify collapsing under the pointer keeps one highlight attached to the renamed control.
+  // Its live size is checked in the manual animation smoke test because JSDOM has no layout.
+  it("keeps the hover highlight attached while collapsing", async () => {
+    stubReducedMotion(false);
+    const user = userEvent.setup();
+    renderShellAt();
+
+    const collapse = screen.getByRole("button", { name: "Collapse sidebar" });
+    await user.hover(collapse);
+    expect(queryHighlight()).not.toBeNull();
+
+    await user.click(collapse);
+
+    expect(screen.getByRole("button", { name: "Expand sidebar" })).toBeInTheDocument();
+    expect(document.querySelectorAll('[data-slot="motion-highlight"]')).toHaveLength(1);
+  });
+
   // Verify hovering an area entry hands the moving highlight to that entry.
   it("moves a highlight to the hovered area", async () => {
     stubReducedMotion(false);
@@ -358,7 +375,7 @@ describe("AppSidebar hover highlight", () => {
     await user.hover(screen.getByRole("link", { name: "Notes" }));
 
     expect(queryHighlight()).toBeNull();
-    expect(document.querySelector("[data-highlight]")).toBeNull();
+    expect(getSidebar().querySelector("[data-highlight]")).toBeNull();
     expect(screen.getByRole("link", { name: "Notes" })).toBeInTheDocument();
   });
 });

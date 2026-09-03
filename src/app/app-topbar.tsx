@@ -1,11 +1,13 @@
 import { Bell, Search } from "lucide-react";
 import { useEffect } from "react";
 import { useLocation, useMatches } from "react-router";
+import { Highlight, HighlightItem } from "@/components/animate-ui/primitives/effects/highlight";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils/cn";
 import { AppMenu } from "./app-menu";
 import type { RouteCrumbHandle } from "./app-router";
 import { COLLAPSED_SIDEBAR_WIDTH_PX, useShellStore } from "./shell-store";
+import { usePrefersReducedMotion } from "./use-prefers-reduced-motion";
 import { toggleMaximized, WindowControls } from "./window-controls";
 
 /** Elements that must never start a window drag or trigger the maximize double click. */
@@ -36,12 +38,14 @@ function Breadcrumb() {
   return (
     <ol
       aria-label="Breadcrumb"
+      data-tauri-drag-region
       className="flex min-w-0 items-center gap-1.5 overflow-hidden pl-3 text-[13px] whitespace-nowrap text-muted"
     >
       {crumbs.map((crumb, index) => (
         <li
           // The accumulated path is unique per crumb and stable across renders.
           key={crumbs.slice(0, index + 1).join("/")}
+          data-tauri-drag-region
           className="truncate not-first:before:mr-1.5 not-first:before:text-muted-soft not-first:before:content-['/'] last:font-medium last:text-ink"
         >
           {crumb}
@@ -70,6 +74,7 @@ export function AppTopbar(props: { onQuit: () => void; isCheckingQuit: boolean }
   const isResizing = useShellStore((state) => state.isSidebarResizing);
   const sidebarWidthPx = useShellStore((state) => state.sidebarWidthPx);
   const brandColumnPx = isCollapsed ? COLLAPSED_SIDEBAR_WIDTH_PX : sidebarWidthPx;
+  const prefersReducedMotion = usePrefersReducedMotion();
 
   useClearWindowFailureOnRouteChange();
 
@@ -83,12 +88,28 @@ export function AppTopbar(props: { onQuit: () => void; isCheckingQuit: boolean }
     void toggleMaximized();
   }
 
+  // Native window dragging can take over before the webview performs its usual focus change.
+  // Clear the previously clicked control first so its focus tooltip cannot reopen mid-drag.
+  function handleDragRegionPointerDown(event: React.PointerEvent<HTMLElement>) {
+    if (
+      event.button !== 0 ||
+      (event.target as HTMLElement).closest(INTERACTIVE_SELECTOR) !== null
+    ) {
+      return;
+    }
+
+    if (document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur();
+    }
+  }
+
   return (
     // The double click only duplicates the Maximize button that sits inside this surface.
     // biome-ignore lint/a11y/noStaticElementInteractions: native window drag surface.
     <header
       data-testid="shell-topbar"
       data-tauri-drag-region
+      onPointerDownCapture={handleDragRegionPointerDown}
       onDoubleClick={handleDoubleClick}
       className="grid items-center border-b border-hairline bg-canvas"
       style={{ gridTemplateColumns: "auto minmax(0, 1fr) auto" }}
@@ -122,10 +143,19 @@ export function AppTopbar(props: { onQuit: () => void; isCheckingQuit: boolean }
         <SearchEntry />
         <div data-tauri-drag-region />
       </div>
-      <div className="flex h-10 items-center gap-1">
-        <NotificationBell />
-        <WindowControls />
-      </div>
+      <Highlight
+        mode="parent"
+        controlledItems
+        hover
+        enabled={!prefersReducedMotion}
+        containerClassName="h-10"
+        className="pointer-events-none bg-surface-card"
+      >
+        <div className="flex h-10 items-center gap-1">
+          <NotificationBell />
+          <WindowControls />
+        </div>
+      </Highlight>
     </header>
   );
 }
@@ -156,16 +186,18 @@ function SearchEntry() {
 function NotificationBell() {
   return (
     <Tooltip>
-      <TooltipTrigger asChild>
-        <button
-          type="button"
-          aria-disabled="true"
-          aria-label="Notifications"
-          className="flex size-8 cursor-default items-center justify-center rounded-sm text-body outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          <Bell aria-hidden="true" className="size-4" />
-        </button>
-      </TooltipTrigger>
+      <HighlightItem asChild activeClassName="bg-surface-card">
+        <TooltipTrigger asChild>
+          <button
+            type="button"
+            aria-disabled="true"
+            aria-label="Notifications"
+            className="relative z-[1] flex h-10 w-11 cursor-default items-center justify-center text-body outline-none [&:not([data-highlight])]:hover:bg-surface-card active:bg-cream-strong focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <Bell aria-hidden="true" className="size-4" />
+          </button>
+        </TooltipTrigger>
+      </HighlightItem>
       <TooltipContent side="bottom">Notifications arrive with FE-010.</TooltipContent>
     </Tooltip>
   );

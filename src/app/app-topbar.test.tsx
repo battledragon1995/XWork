@@ -37,6 +37,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  vi.unstubAllGlobals();
 });
 
 // Render the real shell so the topbar is exercised inside its router and providers.
@@ -45,6 +46,28 @@ function renderShellAt(path = "/") {
     <AppProviders>
       <RouterProvider router={createAppRouter([path])} />
     </AppProviders>,
+  );
+}
+
+// Return the moving highlight owned by the topbar without confusing it with the sidebar one.
+function queryTopbarHighlight() {
+  return screen.getByTestId("shell-topbar").querySelector('[data-slot="motion-highlight"]');
+}
+
+// Give the shell a deterministic operating-system motion preference.
+function stubReducedMotion(matches: boolean): void {
+  vi.stubGlobal(
+    "matchMedia",
+    vi.fn().mockReturnValue({
+      matches,
+      media: "(prefers-reduced-motion: reduce)",
+      onchange: null,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    } as unknown as MediaQueryList),
   );
 }
 
@@ -169,6 +192,53 @@ describe("AppMenu", () => {
 });
 
 describe("WindowControls", () => {
+  // Verify one shared highlight slides between controls and adopts the Close danger treatment.
+  it("moves one hover highlight across all four topbar actions", async () => {
+    renderShellAt();
+
+    const bell = screen.getByRole("button", { name: "Notifications" });
+    const close = screen.getByRole("button", { name: "Close (hides to tray)" });
+    const actions = [
+      bell,
+      screen.getByRole("button", { name: "Minimize" }),
+      screen.getByRole("button", { name: "Maximize" }),
+      close,
+    ];
+
+    for (const action of actions) {
+      expect(action).toHaveClass("relative", "z-[1]", "h-10", "w-11");
+    }
+
+    expect(queryTopbarHighlight()).toBeNull();
+
+    fireEvent.mouseEnter(bell);
+    await waitFor(() => expect(queryTopbarHighlight()).toHaveClass("bg-surface-card"));
+    expect(queryTopbarHighlight()).toHaveClass("pointer-events-none");
+    expect(bell).toHaveAttribute("data-active", "true");
+
+    fireEvent.mouseEnter(close);
+    await waitFor(() => expect(queryTopbarHighlight()).toHaveClass("bg-error"));
+    expect(close).toHaveAttribute("data-active", "true");
+    expect(bell).toHaveAttribute("data-active", "false");
+    expect(
+      screen.getByTestId("shell-topbar").querySelectorAll('[data-slot="motion-highlight"]'),
+    ).toHaveLength(1);
+  });
+
+  // Verify reduced-motion users keep immediate hover feedback without an animated element.
+  it("falls back to static hover backgrounds when reduced motion is requested", () => {
+    stubReducedMotion(true);
+    renderShellAt();
+
+    const bell = screen.getByRole("button", { name: "Notifications" });
+    const close = screen.getByRole("button", { name: "Close (hides to tray)" });
+
+    expect(queryTopbarHighlight()).toBeNull();
+    expect(bell).not.toHaveAttribute("data-highlight");
+    expect(bell.className).toContain("[&:not([data-highlight])]:hover:bg-surface-card");
+    expect(close.className).toContain("[&:not([data-highlight])]:hover:bg-error");
+  });
+
   // Verify each control dispatches exactly the command the backend contract defines.
   it.each([
     ["Minimize", () => minimizeMock],
@@ -218,9 +288,33 @@ describe("WindowControls", () => {
     renderShellAt();
 
     expect(screen.getByTestId("shell-topbar")).toHaveAttribute("data-tauri-drag-region");
+    const breadcrumb = screen.getByLabelText("Breadcrumb");
+    expect(breadcrumb).toHaveAttribute("data-tauri-drag-region");
+    for (const crumb of within(breadcrumb).getAllByRole("listitem")) {
+      expect(crumb).toHaveAttribute("data-tauri-drag-region");
+    }
     expect(screen.getByRole("button", { name: "Minimize" })).not.toHaveAttribute(
       "data-tauri-drag-region",
     );
+  });
+
+  // Verify native dragging cannot leave a previously clicked sidebar tooltip focused and open.
+  it("clears sidebar focus before native window dragging starts", async () => {
+    const user = userEvent.setup();
+    renderShellAt();
+
+    await user.click(screen.getByRole("button", { name: "Collapse sidebar" }));
+    const notes = screen.getByRole("link", { name: "Notes" });
+    await user.click(notes);
+
+    expect(notes).toHaveFocus();
+
+    fireEvent.pointerDown(screen.getByTestId("shell-topbar"), { button: 0, pointerId: 1 });
+
+    expect(notes).not.toHaveFocus();
+    await waitFor(() => {
+      expect(screen.queryByRole("tooltip", { name: "Notes" })).not.toBeInTheDocument();
+    });
   });
 });
 

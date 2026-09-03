@@ -481,6 +481,7 @@ function HighlightItem<T extends React.ElementType>({
   ]);
 
   if (!React.isValidElement(children)) return children;
+  if (!enabled) return children;
 
   // The highlight is decoration that follows the pointer, so no selection state is published
   // here: `aria-selected` from the upstream snapshot is deliberately left out because it is
@@ -581,7 +582,7 @@ function HighlightItem<T extends React.ElementType>({
     });
   }
 
-  return enabled ? (
+  return (
     <Component
       key={childValue}
       ref={localRef}
@@ -629,8 +630,6 @@ function HighlightItem<T extends React.ElementType>({
         }),
       })}
     </Component>
-  ) : (
-    children
   );
 }
 

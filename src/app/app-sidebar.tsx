@@ -8,7 +8,8 @@ import {
   type LucideIcon,
   SlidersHorizontal,
 } from "lucide-react";
-import { type ReactNode, useSyncExternalStore } from "react";
+import type { Transition } from "motion/react";
+import type { ReactNode } from "react";
 import { NavLink } from "react-router";
 import {
   Sidebar,
@@ -24,6 +25,7 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils/cn";
 import { useShellStore } from "./shell-store";
+import { usePrefersReducedMotion } from "./use-prefers-reduced-motion";
 
 /** The four primary areas of the sidebar, in the order the wireframe shows them. */
 const AREAS: ReadonlyArray<{ label: string; to: string; icon: LucideIcon; end: boolean }> = [
@@ -50,32 +52,20 @@ const COLLAPSED_ENTRY_OFFSET = "group-data-[collapsible=icon]:ml-0.5";
 /** Shared shape of one sidebar entry, whether it navigates or acts on the shell. */
 const ENTRY_CLASS = `h-8 gap-2.5 rounded-sm px-2.5 text-[13px] font-medium whitespace-nowrap text-body focus-visible:ring-ring ${COLLAPSED_ENTRY_OFFSET}`;
 
+/**
+ * Keep the moving highlight attached to the entry's live width while the sidebar changes width.
+ * Position changes still use the spring, so moving between entries keeps its existing feel.
+ */
+const SIDEBAR_HIGHLIGHT_TRANSITION: Transition = {
+  type: "spring",
+  stiffness: 350,
+  damping: 35,
+  width: { duration: 0 },
+};
+
 /** Nav item styling for the open area, taken from `#shell` rather than the component default. */
 const ACTIVE_ENTRY_CLASS =
   "aria-[current=page]:bg-cream-strong aria-[current=page]:text-ink aria-[current=page]:[&>svg]:text-ink";
-
-/** Media query carrying the reduced-motion preference of the operating system. */
-const REDUCED_MOTION_QUERY = "(prefers-reduced-motion: reduce)";
-
-// Read the media query. A webview without `matchMedia` is treated as expressing no
-// preference, which is the same answer a browser gives when the setting is off.
-function getPrefersReducedMotion(): boolean {
-  return window.matchMedia?.(REDUCED_MOTION_QUERY).matches ?? false;
-}
-
-// Re-render the sidebar when the operating-system preference changes.
-function subscribeToReducedMotion(onChange: () => void): () => void {
-  const query = window.matchMedia?.(REDUCED_MOTION_QUERY);
-  query?.addEventListener("change", onChange);
-  return () => query?.removeEventListener("change", onChange);
-}
-
-// Track the reduced-motion preference. `motion` ships its own hook, but that one caches the
-// first answer in a module-level singleton, so it cannot follow a change made while the
-// application is running and cannot be exercised per test case.
-function usePrefersReducedMotion(): boolean {
-  return useSyncExternalStore(subscribeToReducedMotion, getPrefersReducedMotion);
-}
 
 // Render the primary navigation, the empty Projects block and the sidebar footer. The sidebar
 // itself is the single `navigation` landmark of the shell.
@@ -98,6 +88,7 @@ export function AppSidebar() {
       // Turning the effect off renders no animated element at all; the entries keep a static
       // hover background, so nothing about reaching or reading them changes.
       animateOnHover={!prefersReducedMotion}
+      transition={SIDEBAR_HIGHLIGHT_TRANSITION}
       className="absolute h-full border-sidebar-border"
     >
       <SidebarContent className="gap-0">
