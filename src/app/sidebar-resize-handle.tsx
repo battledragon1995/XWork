@@ -9,28 +9,24 @@ const KEYBOARD_STEP_PX = 16;
 // disagree with the width the layout actually uses.
 export function SidebarResizeHandle() {
   const sidebarWidthPx = useShellStore((state) => state.sidebarWidthPx);
-  const isSidebarCollapsed = useShellStore((state) => state.isSidebarCollapsed);
   const setSidebarWidthPx = useShellStore((state) => state.setSidebarWidthPx);
+  const setSidebarResizing = useShellStore((state) => state.setSidebarResizing);
   const handleRef = useRef<HTMLDivElement>(null);
   const activePointerIdRef = useRef<number | null>(null);
 
-  // Collapsing while a drag is still active would leave the pointer captured by an element
-  // that is about to unmount, so the drag is ended first and the last width is kept.
+  // Collapsing the sidebar removes this seam mid-drag, so the drag has to be ended on
+  // unmount: otherwise the drag flag would stay set and keep the width transition suppressed
+  // after the seam is gone. The last width is deliberately left untouched.
   useEffect(() => {
-    if (!isSidebarCollapsed) {
-      return;
-    }
+    return () => {
+      if (activePointerIdRef.current === null) {
+        return;
+      }
 
-    const pointerId = activePointerIdRef.current;
-    if (pointerId === null) {
-      return;
-    }
-
-    activePointerIdRef.current = null;
-    if (handleRef.current?.hasPointerCapture(pointerId)) {
-      handleRef.current.releasePointerCapture(pointerId);
-    }
-  }, [isSidebarCollapsed]);
+      activePointerIdRef.current = null;
+      setSidebarResizing(false);
+    };
+  }, [setSidebarResizing]);
 
   // Stop tracking the pointer that started the current drag, if there is one.
   function releasePointer() {
@@ -40,6 +36,7 @@ export function SidebarResizeHandle() {
     }
 
     activePointerIdRef.current = null;
+    setSidebarResizing(false);
     if (handleRef.current?.hasPointerCapture(pointerId)) {
       handleRef.current.releasePointerCapture(pointerId);
     }
@@ -52,6 +49,9 @@ export function SidebarResizeHandle() {
     }
 
     activePointerIdRef.current = event.pointerId;
+    // The sidebar drops its width transition while this is set, so its edge stays under the
+    // pointer instead of easing towards it one transition behind.
+    setSidebarResizing(true);
     event.currentTarget.setPointerCapture?.(event.pointerId);
     event.preventDefault();
   }

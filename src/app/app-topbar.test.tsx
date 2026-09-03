@@ -12,7 +12,7 @@ import {
 import { IpcCallError } from "@/lib/ipc/ipc-error";
 import { AppProviders } from "./app-providers";
 import { createAppRouter } from "./app-router";
-import { resetShellStore, useShellStore } from "./shell-store";
+import { COLLAPSED_SIDEBAR_WIDTH_PX, resetShellStore, useShellStore } from "./shell-store";
 
 // Replace the lifecycle boundary so no test touches a real operating-system window.
 vi.mock("@/lib/ipc/app-lifecycle", () => ({
@@ -317,5 +317,47 @@ describe("WindowControls failures", () => {
       expect(screen.queryByRole("status")).not.toBeInTheDocument();
     });
     expect(useShellStore.getState().windowControlFailure).toBeNull();
+  });
+});
+
+describe("AppTopbar brand column", () => {
+  // Read the column whose width follows the sidebar and carries the wordmark.
+  function getBrandColumn() {
+    return screen.getByTestId("shell-topbar").firstElementChild as HTMLElement;
+  }
+
+  // Verify the wordmark is placed by padding alone. Centring it inside the column resolves
+  // against a width that is still animating, so a collapse would put the wordmark in the
+  // middle of the still-open column and then carry it back to the left.
+  it("places the wordmark by padding rather than against the animating width", async () => {
+    const user = userEvent.setup();
+    renderShellAt();
+
+    const open = getBrandColumn();
+    expect(open.className).toContain("transition-[width]");
+    expect(open.className).toContain("px-3");
+    expect(open.className).not.toContain("justify-center");
+
+    await user.click(screen.getByRole("button", { name: "Collapse sidebar" }));
+
+    const closed = getBrandColumn();
+    expect(closed.className).toContain("px-3");
+    expect(closed.className).not.toContain("justify-center");
+    expect(closed.style.width).toBe(`${COLLAPSED_SIDEBAR_WIDTH_PX}px`);
+  });
+
+  // Verify the column clips what it is still too narrow for instead of painting the wordmark
+  // over the breadcrumb for the length of an expand.
+  it("clips the wordmark to the column", () => {
+    renderShellAt();
+
+    expect(getBrandColumn().className).toContain("overflow-hidden");
+  });
+
+  // Verify the brand column still offers the window drag surface.
+  it("keeps the wordmark surround draggable", () => {
+    renderShellAt();
+
+    expect(getBrandColumn()).toHaveAttribute("data-tauri-drag-region");
   });
 });

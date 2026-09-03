@@ -1,4 +1,6 @@
+import type { CSSProperties } from "react";
 import { Outlet } from "react-router";
+import { SidebarInset, SidebarProvider } from "@/components/animate-ui/components/radix/sidebar";
 import { AppSidebar } from "./app-sidebar";
 import { AppTopbar } from "./app-topbar";
 import { useQuitStore } from "./quit-store";
@@ -22,14 +24,15 @@ function useIntegrationFailure(): boolean {
 }
 
 // Compose the persistent three-region layout every route renders inside. The sidebar column
-// follows the shell state so the topbar brand column and the sidebar always line up.
+// width lives in the two custom properties the copied sidebar reads, so the topbar brand
+// column and the sidebar always line up on the same two numbers from the shell state.
 export function AppShell() {
   const isCollapsed = useShellStore((state) => state.isSidebarCollapsed);
   const sidebarWidthPx = useShellStore((state) => state.sidebarWidthPx);
+  const toggleSidebarCollapsed = useShellStore((state) => state.toggleSidebarCollapsed);
   const startQuit = useQuitStore((state) => state.startQuit);
   const isCheckingQuit = useQuitStore((state) => state.phase === "requesting");
   const hasIntegrationFailure = useIntegrationFailure();
-  const columnWidthPx = isCollapsed ? COLLAPSED_SIDEBAR_WIDTH_PX : sidebarWidthPx;
 
   // Mounted here because this is the innermost persistent component that has router context.
   useLifecycleEvents();
@@ -37,14 +40,21 @@ export function AppShell() {
   return (
     <div className="grid h-full grid-rows-[40px_minmax(0,1fr)] bg-canvas">
       <AppTopbar onQuit={() => void startQuit()} isCheckingQuit={isCheckingQuit} />
-      <div
+      <SidebarProvider
         data-testid="shell-body"
-        className="relative grid min-h-0"
-        style={{ gridTemplateColumns: `${columnWidthPx}px minmax(0, 1fr)` }}
+        open={!isCollapsed}
+        onOpenChange={() => toggleSidebarCollapsed()}
+        style={
+          {
+            "--sidebar-width": `${sidebarWidthPx}px`,
+            "--sidebar-width-icon": `${COLLAPSED_SIDEBAR_WIDTH_PX}px`,
+          } as CSSProperties
+        }
+        className="relative h-full min-h-0"
       >
         <AppSidebar />
         {!isCollapsed && <SidebarResizeHandle />}
-        <main className="flex min-h-0 min-w-0 flex-col overflow-hidden bg-canvas">
+        <SidebarInset className="flex min-h-0 min-w-0 flex-col overflow-hidden bg-canvas">
           {hasIntegrationFailure && (
             <p
               role="alert"
@@ -56,8 +66,8 @@ export function AppShell() {
           <div className="min-h-0 flex-1 overflow-hidden">
             <Outlet />
           </div>
-        </main>
-      </div>
+        </SidebarInset>
+      </SidebarProvider>
     </div>
   );
 }

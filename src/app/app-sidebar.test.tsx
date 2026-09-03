@@ -15,6 +15,9 @@ import {
   useShellStore,
 } from "./shell-store";
 
+/** The real `matchMedia`, restored after a case that chose a reduced-motion preference. */
+const originalMatchMedia = window.matchMedia;
+
 // Start every case from the documented defaults and remove the previous render.
 beforeEach(() => {
   resetShellStore();
@@ -22,7 +25,28 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  window.matchMedia = originalMatchMedia;
 });
+
+// Answer the reduced-motion query with a chosen value for the duration of one case.
+function stubReducedMotion(matches: boolean) {
+  window.matchMedia = ((query: string) =>
+    ({
+      matches: query.includes("prefers-reduced-motion") ? matches : false,
+      media: query,
+      onchange: null,
+      addListener: () => {},
+      removeListener: () => {},
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      dispatchEvent: () => false,
+    }) as unknown as MediaQueryList) as typeof window.matchMedia;
+}
+
+// Read the single moving highlight, which only exists while the effect is enabled.
+function queryHighlight() {
+  return document.querySelector('[data-slot="motion-highlight"]');
+}
 
 // Render the real shell at one entry so the sidebar is exercised through the router.
 function renderShellAt(path = "/") {
@@ -36,6 +60,15 @@ function renderShellAt(path = "/") {
 // Read the resize separator the sidebar publishes.
 function getResizeHandle() {
   return screen.getByRole("separator", { name: "Resize sidebar" });
+}
+
+// Read the wrapper of the copied Animate UI sidebar, which carries its layout state.
+function getSidebar() {
+  const sidebar = document.querySelector<HTMLElement>('[data-slot="sidebar"]');
+  if (sidebar === null) {
+    throw new Error("The sidebar is not rendered.");
+  }
+  return sidebar;
 }
 
 describe("AppSidebar navigation", () => {
@@ -138,6 +171,19 @@ describe("AppSidebar collapse", () => {
     expect(await screen.findByRole("tooltip", { name: "Calendar" })).toBeInTheDocument();
   });
 
+  // Verify the same tooltip is reachable without a pointer, which is what §18 asks for.
+  it("carries the area label in a tooltip on keyboard focus while collapsed", async () => {
+    const user = userEvent.setup();
+    renderShellAt();
+
+    await user.click(screen.getByRole("button", { name: "Collapse sidebar" }));
+    act(() => {
+      screen.getByRole("link", { name: "Notes" }).focus();
+    });
+
+    expect(await screen.findByRole("tooltip", { name: "Notes" })).toBeInTheDocument();
+  });
+
   // Verify the resize separator disappears while there is no width to change.
   it("hides the resize separator while collapsed", async () => {
     const user = userEvent.setup();
@@ -232,6 +278,41 @@ describe("SidebarResizeHandle", () => {
     expect(useShellStore.getState().sidebarWidthPx).toBe(MAX_SIDEBAR_WIDTH_PX);
   });
 
+  // Verify a pointer drag suppresses the width transition and only a pointer drag does.
+  it("marks the sidebar as resizing for the duration of a pointer drag", async () => {
+    const user = userEvent.setup();
+    renderShellAt();
+
+    const handle = getResizeHandle();
+    expect(getSidebar()).toHaveAttribute("data-resizing", "false");
+
+    fireEvent.pointerDown(handle, { pointerId: 1, clientX: 232 });
+
+    expect(getSidebar()).toHaveAttribute("data-resizing", "true");
+
+    fireEvent.pointerMove(handle, { pointerId: 1, clientX: 300 });
+    fireEvent.pointerUp(handle, { pointerId: 1, clientX: 300 });
+
+    expect(getSidebar()).toHaveAttribute("data-resizing", "false");
+
+    getResizeHandle().focus();
+    await user.keyboard("{ArrowRight}");
+
+    expect(useShellStore.getState().sidebarWidthPx).toBe(316);
+    expect(getSidebar()).toHaveAttribute("data-resizing", "false");
+  });
+
+  // Verify a cancelled pointer also ends the drag, so the transition cannot stay suppressed.
+  it("ends the drag when the pointer is cancelled", () => {
+    renderShellAt();
+
+    const handle = getResizeHandle();
+    fireEvent.pointerDown(handle, { pointerId: 1, clientX: 232 });
+    fireEvent.pointerCancel(handle, { pointerId: 1, clientX: 260 });
+
+    expect(useShellStore.getState().isSidebarResizing).toBe(false);
+  });
+
   // Verify collapsing during a drag ends the drag and keeps the latest expanded width.
   it("ends an active drag when the sidebar collapses", async () => {
     const user = userEvent.setup();
@@ -244,6 +325,7 @@ describe("SidebarResizeHandle", () => {
     await user.click(screen.getByRole("button", { name: "Collapse sidebar" }));
 
     expect(useShellStore.getState().isSidebarCollapsed).toBe(true);
+    expect(useShellStore.getState().isSidebarResizing).toBe(false);
     expect(useShellStore.getState().sidebarWidthPx).toBe(288);
 
     await user.click(screen.getByRole("button", { name: "Expand sidebar" }));
@@ -253,26 +335,139 @@ describe("SidebarResizeHandle", () => {
   });
 });
 
-describe("AppSidebar layout", () => {
-  // Verify the rendered grid uses the width in state, and the icon width while collapsed.
-  it("drives the shell grid width from state", async () => {
+describe("AppSidebar hover highlight", () => {
+  // Verify hovering an area entry hands the moving highlight to that entry.
+  it("moves a highlight to the hovered area", async () => {
+    stubReducedMotion(false);
     const user = userEvent.setup();
     renderShellAt();
 
+    expect(queryHighlight()).toBeNull();
+
+    await user.hover(screen.getByRole("link", { name: "Notes" }));
+
+    expect(queryHighlight()).not.toBeNull();
+  });
+
+  // Verify the effect is absent, not merely instant, when less motion is requested.
+  it("renders no animated element when reduced motion is requested", async () => {
+    stubReducedMotion(true);
+    const user = userEvent.setup();
+    renderShellAt();
+
+    await user.hover(screen.getByRole("link", { name: "Notes" }));
+
+    expect(queryHighlight()).toBeNull();
+    expect(document.querySelector("[data-highlight]")).toBeNull();
+    expect(screen.getByRole("link", { name: "Notes" })).toBeInTheDocument();
+  });
+});
+
+describe("AppSidebar negative guarantees", () => {
+  // Guard the FE-001 rule that the shell writes no persistence inside the webview.
+  it("writes no cookie while the sidebar is used", async () => {
+    const user = userEvent.setup();
+    renderShellAt();
+
+    const before = document.cookie;
+
+    await user.click(screen.getByRole("button", { name: "Collapse sidebar" }));
+    await user.click(screen.getByRole("button", { name: "Expand sidebar" }));
+
+    expect(document.cookie).toBe(before);
+  });
+
+  // Guard the decision not to let a component claim a global shortcut of its own.
+  it("ignores Ctrl+B", async () => {
+    const user = userEvent.setup();
+    renderShellAt();
+
+    await user.keyboard("{Control>}b{/Control}");
+
+    expect(useShellStore.getState().isSidebarCollapsed).toBe(false);
+  });
+});
+
+describe("AppSidebar layout", () => {
+  // Verify the width in state reaches the sidebar through the two custom properties it reads.
+  it("publishes the sidebar widths from state", () => {
+    renderShellAt();
+
     const layout = screen.getByTestId("shell-body");
-    expect(layout).toHaveStyle({ gridTemplateColumns: "232px minmax(0, 1fr)" });
+    expect(layout.style.getPropertyValue("--sidebar-width")).toBe("232px");
+    expect(layout.style.getPropertyValue("--sidebar-width-icon")).toBe(
+      `${COLLAPSED_SIDEBAR_WIDTH_PX}px`,
+    );
 
     act(() => {
       useShellStore.getState().setSidebarWidthPx(345);
     });
-    expect(screen.getByTestId("shell-body")).toHaveStyle({
-      gridTemplateColumns: "345px minmax(0, 1fr)",
-    });
+
+    expect(screen.getByTestId("shell-body").style.getPropertyValue("--sidebar-width")).toBe(
+      "345px",
+    );
+  });
+
+  // Verify the collapsed state of the store is what switches the sidebar to its icon layout.
+  it("drives the sidebar layout state from the store", async () => {
+    const user = userEvent.setup();
+    renderShellAt();
+
+    expect(getSidebar()).toHaveAttribute("data-state", "expanded");
+    expect(getSidebar()).toHaveAttribute("data-collapsible", "");
 
     await user.click(screen.getByRole("button", { name: "Collapse sidebar" }));
 
-    expect(screen.getByTestId("shell-body")).toHaveStyle({
-      gridTemplateColumns: `${COLLAPSED_SIDEBAR_WIDTH_PX}px minmax(0, 1fr)`,
-    });
+    expect(getSidebar()).toHaveAttribute("data-state", "collapsed");
+    expect(getSidebar()).toHaveAttribute("data-collapsible", "icon");
+  });
+});
+
+describe("AppSidebar overflow", () => {
+  // Verify the sidebar column never offers a horizontal scrollbar. The expand animation
+  // clears `data-collapsible` on the first frame, so the Projects block is already mounted
+  // at its full width while the column is still icon-narrow. A scrollable horizontal axis
+  // would draw a bar along the bottom of the scroll box, right above the Settings entry.
+  it("never scrolls the sidebar column horizontally", async () => {
+    const user = userEvent.setup();
+    renderShellAt();
+
+    const content = document.querySelector('[data-slot="sidebar-content"]');
+    expect(content).toHaveClass("overflow-x-hidden");
+    expect(content?.className.split(/\s+/)).not.toContain("overflow-auto");
+
+    await user.click(screen.getByRole("button", { name: "Collapse sidebar" }));
+    await user.click(screen.getByRole("button", { name: "Expand sidebar" }));
+
+    const afterToggle = document.querySelector('[data-slot="sidebar-content"]');
+    expect(afterToggle).toHaveClass("overflow-x-hidden");
+    expect(afterToggle?.className.split(/\s+/)).not.toContain("overflow-auto");
+  });
+});
+
+describe("AppSidebar collapsed alignment", () => {
+  // Verify the icon rail positions its entries with a fixed offset. That offset makes up for
+  // the padding an entry trades away in icon mode, so its glyph does not move at all. Centring
+  // the entries inside their list instead resolves against the width of that list, which is
+  // still animating while the sidebar closes: they would land in the middle of the still-open
+  // sidebar and travel back to the left, which reads as a swing right.
+  it("offsets collapsed entries by a fixed length instead of centring them in the list", async () => {
+    const user = userEvent.setup();
+    renderShellAt();
+
+    await user.click(screen.getByRole("button", { name: "Collapse sidebar" }));
+
+    for (const list of document.querySelectorAll('[data-slot="sidebar-menu"]')) {
+      expect(list.className).not.toContain("items-center");
+    }
+
+    const entries = [
+      screen.getByRole("link", { name: "Home" }),
+      screen.getByRole("link", { name: "Settings" }),
+      screen.getByRole("button", { name: "Expand sidebar" }),
+    ];
+    for (const entry of entries) {
+      expect(entry.className).toContain("group-data-[collapsible=icon]:ml-0.5");
+    }
   });
 });

@@ -27,10 +27,12 @@ export interface WindowControlFailure {
 export interface ShellState {
   sidebarWidthPx: number;
   isSidebarCollapsed: boolean;
+  isSidebarResizing: boolean;
   isMaximized: boolean;
   windowControlFailure: WindowControlFailure | null;
   setSidebarWidthPx(next: number): void;
   toggleSidebarCollapsed(): void;
+  setSidebarResizing(next: boolean): void;
   setMaximized(next: boolean): void;
   setWindowControlFailure(next: WindowControlFailure | null): void;
 }
@@ -48,6 +50,7 @@ function clampSidebarWidth(next: number): number {
 export const useShellStore = create<ShellState>((set) => ({
   sidebarWidthPx: DEFAULT_SIDEBAR_WIDTH_PX,
   isSidebarCollapsed: false,
+  isSidebarResizing: false,
   isMaximized: false,
   windowControlFailure: null,
 
@@ -60,6 +63,12 @@ export const useShellStore = create<ShellState>((set) => ({
   // left untouched so expanding restores exactly the width the user last chose.
   toggleSidebarCollapsed() {
     set((state) => ({ isSidebarCollapsed: !state.isSidebarCollapsed }));
+  },
+
+  // Publish whether a pointer drag of the sidebar seam is in progress. The sidebar drops its
+  // width transition while this is true so its edge stays under the pointer.
+  setSidebarResizing(next) {
+    set({ isSidebarResizing: next });
   },
 
   // Record the maximized state the backend reported for the last toggle.
@@ -78,6 +87,7 @@ export function resetShellStore(): void {
   useShellStore.setState({
     sidebarWidthPx: DEFAULT_SIDEBAR_WIDTH_PX,
     isSidebarCollapsed: false,
+    isSidebarResizing: false,
     isMaximized: false,
     windowControlFailure: null,
   });

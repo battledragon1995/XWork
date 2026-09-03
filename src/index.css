@@ -53,6 +53,16 @@
   --color-destructive-foreground: #ffffff;
   --color-overlay: rgb(20 20 19 / 0.32);
 
+  /* Sidebar aliases consumed by the copied Animate UI sidebar. `--color-sidebar-accent` is
+     the hover-highlight surface; the active area entry keeps `cream-strong` at the call site
+     so the moving highlight stays visible as it passes over the open area. */
+  --color-sidebar: var(--color-surface-soft);
+  --color-sidebar-foreground: var(--color-body);
+  --color-sidebar-accent: var(--color-surface-card);
+  --color-sidebar-accent-foreground: var(--color-ink);
+  --color-sidebar-border: var(--color-hairline);
+  --color-sidebar-ring: var(--color-brand);
+
   /* Type */
   --font-display: "Tiempos Headline", Garamond, "Times New Roman", serif;
   --font-body: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;

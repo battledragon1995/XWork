@@ -58,6 +58,26 @@ describe("useShellStore", () => {
     expect(useShellStore.getState().sidebarWidthPx).toBe(301);
   });
 
+  // Verify the drag flag is published and reset without disturbing the width it was set for.
+  it("tracks an active sidebar drag", () => {
+    expect(useShellStore.getState().isSidebarResizing).toBe(false);
+
+    useShellStore.getState().setSidebarWidthPx(301);
+    useShellStore.getState().setSidebarResizing(true);
+
+    expect(useShellStore.getState().isSidebarResizing).toBe(true);
+    expect(useShellStore.getState().sidebarWidthPx).toBe(301);
+
+    useShellStore.getState().setSidebarResizing(false);
+
+    expect(useShellStore.getState().isSidebarResizing).toBe(false);
+    expect(useShellStore.getState().sidebarWidthPx).toBe(301);
+
+    resetShellStore();
+
+    expect(useShellStore.getState().isSidebarResizing).toBe(false);
+  });
+
   // Verify the maximize icon follows the state the backend last reported.
   it("tracks the last reported maximized state", () => {
     useShellStore.getState().setMaximized(true);

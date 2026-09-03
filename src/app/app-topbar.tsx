@@ -2,6 +2,7 @@ import { Bell, Search } from "lucide-react";
 import { useEffect } from "react";
 import { useLocation, useMatches } from "react-router";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { cn } from "@/lib/utils/cn";
 import { AppMenu } from "./app-menu";
 import type { RouteCrumbHandle } from "./app-router";
 import { COLLAPSED_SIDEBAR_WIDTH_PX, useShellStore } from "./shell-store";
@@ -66,6 +67,7 @@ function useClearWindowFailureOnRouteChange(): void {
 // reserved entry points and the three custom window actions.
 export function AppTopbar(props: { onQuit: () => void; isCheckingQuit: boolean }) {
   const isCollapsed = useShellStore((state) => state.isSidebarCollapsed);
+  const isResizing = useShellStore((state) => state.isSidebarResizing);
   const sidebarWidthPx = useShellStore((state) => state.sidebarWidthPx);
   const brandColumnPx = isCollapsed ? COLLAPSED_SIDEBAR_WIDTH_PX : sidebarWidthPx;
 
@@ -89,11 +91,25 @@ export function AppTopbar(props: { onQuit: () => void; isCheckingQuit: boolean }
       data-tauri-drag-region
       onDoubleClick={handleDoubleClick}
       className="grid items-center border-b border-hairline bg-canvas"
-      style={{ gridTemplateColumns: `${brandColumnPx}px minmax(0, 1fr) auto` }}
+      style={{ gridTemplateColumns: "auto minmax(0, 1fr) auto" }}
     >
+      {/* The brand column is an `auto` track sized by this element, so its width can follow
+          the same transition as the sidebar it must stay aligned with. A track list mixing
+          `minmax()` and `auto` is not reliably interpolable, which is why the width lives
+          here instead of on the grid. */}
+      {/* The wordmark is placed by padding alone, never by centring it in this column: the
+          width here is still animating, so centring would put the wordmark in the middle of
+          the still-open column on a collapse and only then carry it back to the left. The
+          `px-3` plus the `px-1.5` the menu trigger carries put the glyph on the same `18px`
+          rail inset as the sidebar icons underneath it, in both widths. Anything the column
+          is still too narrow for is clipped rather than painted over the breadcrumb. */}
       <div
         data-tauri-drag-region
-        className={`flex h-10 items-center ${isCollapsed ? "justify-center px-0" : "px-2"}`}
+        style={{ width: brandColumnPx }}
+        className={cn(
+          "flex h-10 items-center overflow-hidden px-3 transition-[width] duration-400 ease-[cubic-bezier(0.7,-0.15,0.25,1.15)] motion-reduce:transition-none",
+          isResizing && "transition-none",
+        )}
       >
         <AppMenu onQuit={props.onQuit} isCheckingQuit={props.isCheckingQuit} />
       </div>

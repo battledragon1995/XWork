@@ -32,6 +32,18 @@ Người dùng mở XWork và thấy một khung ứng dụng hoàn chỉnh: sid
 - Ở lát cắt hiện tại `session_count` luôn bằng `0` vì `BE-005` chưa có, nên `request_quit` thoát ngay và hộp thoại Quit không xuất hiện khi chạy thật. Hộp thoại vẫn được triển khai đầy đủ và kiểm chứng bằng component test với fixture đúng `QuitRequestDto`; nó chỉ xuất hiện trong runtime thật từ giai đoạn 8 trở đi.
 - Bảng màu chỉ có biến thể sáng theo `00-Docs/01-Wireframe/00-Design.md`. Tài liệu design không định nghĩa bảng màu tối cho bề mặt ứng dụng, nên FE-001 khai báo `color-scheme: light` và để `FE-012` bổ sung `Dark` cùng chế độ theo hệ điều hành.
 - Không thêm file font vào repo. `--font-display` và `--font-body` dùng đúng fallback stack đã ghi trong `00-Design.md`; CSP `font-src 'self'` chặn Google Fonts nên webfont tự host được xử lý cùng `FE-012`.
+- Sidebar dựng từ component `sidebar` của Animate UI (`https://animate-ui.com/r/components-radix-sidebar.json`) được sao chép vào `src/components/animate-ui/`, kèm primitive `highlight` và helper `get-strict-context` mà nó phụ thuộc. Đây là sidebar của shadcn được Animate UI thêm vệt sáng chạy theo con trỏ, nên `motion` trở thành dependency thật của shell và được khóa đúng `13.1.1` theo `01-TechStack.md`.
+- Bản sao chép được cắt gọn cho desktop, mọi thay đổi giữ cục bộ trong file đã sao chép: bỏ nhánh mobile cùng `Sheet` và `useIsMobile`, bỏ luôn `hidden md:block` để sidebar không biến mất khi cửa sổ hẹp hơn `768px`; bỏ ghi cookie `sidebar_state`; bỏ listener `Ctrl+B`; bỏ `SidebarInput`, `SidebarMenuSkeleton` và `SidebarSeparator` vì ba thành phần đó chỉ tồn tại để dùng `input`, `skeleton` và `separator` mà shell không sao chép; bỏ `TooltipProvider` bên trong `SidebarProvider` vì `app-providers.tsx` đã cung cấp đúng một context tooltip.
+- `SidebarProvider` không giữ state riêng. Shell truyền `open={!isSidebarCollapsed}` và `onOpenChange` gọi `toggleSidebarCollapsed`, nên `shell-store` vẫn là nguồn duy nhất của trạng thái thu gọn; cùng với việc bỏ ghi cookie, quyết định "không có persistence nào trong webview" ở lát cắt này được giữ nguyên.
+- Không gán `Ctrl+B` cho thu gọn sidebar. `§17.4` không liệt kê thao tác này trong danh mục phím tắt và phím tắt là địa hạt của `BE-009`; một component nền tảng không được tự chiếm một tổ hợp phím toàn ứng dụng.
+- `SidebarRail` của Animate UI không được dùng. Nó chiếm đúng khe giữa sidebar và vùng nội dung với hành vi bấm-để-toggle, trùng chỗ với `SidebarResizeHandle` mà `§4.1` yêu cầu. Khe đó chỉ có một chủ là vạch kéo đổi độ rộng.
+- Độ rộng sidebar đi qua hai biến CSS `--sidebar-width` và `--sidebar-width-icon` do shell đặt trên `SidebarProvider`, thay cho `grid-template-columns` của lát cắt trước; `--sidebar-width-icon` bằng `56px` theo `#shell-collapsed`. Topbar vẫn tự tính cột brand từ cùng hai giá trị trong `shell-store`.
+- Cột brand của topbar chạy cùng một transition độ rộng với sidebar, nếu không thì nó nhảy ngay trong khi cạnh sidebar còn đang đi và hai vùng lệch nhau suốt thời gian chuyển động. Cột brand được dựng thành một track `auto` do một phần tử con định độ rộng, vì một track list trộn `minmax()` và `auto` không nội suy được đáng tin cậy. Transition này cũng bị tắt trong lúc kéo vạch và khi `prefers-reduced-motion` được đặt.
+- Tooltip của nav item do chỗ gọi sở hữu và prop `tooltip` bị bỏ khỏi `SidebarMenuButton` trong bản sao chép. Lý do: `HighlightItem` chèn thêm một `div` bọc ngoài, nếu để `div` đó làm trigger thì tooltip chỉ hiện khi hover và mất khi focus bằng bàn phím, trái `§18`.
+- Bản sao chép của primitive `highlight` bỏ phần tự chèn `aria-selected` vào phần tử con. Vệt sáng là trang trí theo con trỏ chứ không phải trạng thái chọn, và `aria-selected` không hợp lệ trên một link điều hướng.
+- Vệt sáng hover bật mặc định và tắt khi người dùng đặt `prefers-reduced-motion`. Khi tắt, `Highlight` render thẳng phần tử con nên nav item quay về hover tĩnh bằng class có sẵn của bản upstream, còn phần đổi độ rộng dùng `motion-reduce:transition-none`. Đây là quyết định thay thế cho giả định cũ "shell không dùng animation nào".
+- Transition độ rộng bị tắt trong lúc kéo vạch, qua `data-resizing` trên wrapper của sidebar. Nếu để nguyên, sidebar chạy sau con trỏ đúng thời lượng transition. Kéo bằng bàn phím vẫn giữ transition vì mỗi lần nhấn là một bước `16px` rời rạc.
+- Token màu sidebar được thêm vào `src/index.css` và map vào bảng màu đang có: `--color-sidebar` là `surface-soft`, `--color-sidebar-accent` là `surface-card` dùng cho vệt sáng hover, `--color-sidebar-border` là `hairline`, `--color-sidebar-ring` là `brand`. Nav item đang mở giữ nền `cream-strong` theo `#shell` và được đặt tại chỗ gọi, nhờ vậy vệt sáng hover vẫn phân biệt được khi chạy qua item đang mở.
 
 ### Ngoài phạm vi
 
@@ -42,6 +54,8 @@ Người dùng mở XWork và thấy một khung ứng dụng hoàn chỉnh: sid
 - Menu native của system tray, single instance, dọn runtime khi Quit và mọi thao tác cửa sổ ở tầng hệ điều hành: thuộc `BE-001`.
 - Persistence độ rộng/thu gọn sidebar, theme tối, tùy chỉnh màu và cỡ chữ: thuộc `BE-008`, `FE-011` và `FE-012`.
 - Font tự host và asset font.
+- Các biến thể `floating`, `inset` và chế độ `offcanvas` của sidebar Animate UI. Shell chỉ dùng `variant="sidebar"` với `collapsible="icon"`; các biến thể còn lại giữ trong bản sao chép nhưng không có nơi dùng ở lát cắt này.
+- `SidebarMenuSub`, `SidebarMenuBadge` và `SidebarMenuAction`: thuộc danh sách project và chỉ báo phiên của `FE-004` và `FE-006`.
 
 ### Contract backend còn thiếu hoặc lệch
 
@@ -55,16 +69,19 @@ Người dùng mở XWork và thấy một khung ứng dụng hoàn chỉnh: sid
 |---|---|
 | `src/app/app-router.tsx` | Bảng route memory router, nhãn khu vực cho breadcrumb, `errorElement` cấp ứng dụng và điểm để lát cắt sau thay `element` của route thuộc feature mình. |
 | `src/app/app-providers.tsx` | Ghép provider cấp ứng dụng: tooltip provider, đăng ký event lifecycle và host của hộp thoại Quit. |
-| `src/app/app-shell.tsx` | Layout ba vùng topbar / sidebar / content, đặt landmark và điều khiển độ rộng grid theo state sidebar. |
-| `src/app/app-topbar.tsx` | Vùng kéo cửa sổ, brand button, breadcrumb ngữ cảnh, điểm vào tìm kiếm, biểu tượng chuông và cụm điều khiển cửa sổ. |
+| `src/app/app-shell.tsx` | Layout ba vùng topbar / sidebar / content: hàng dưới là `SidebarProvider`, độ rộng công bố qua `--sidebar-width` và `--sidebar-width-icon`, vùng nội dung là `SidebarInset`. |
+| `src/app/app-topbar.tsx` | Vùng kéo cửa sổ, brand button, breadcrumb ngữ cảnh, điểm vào tìm kiếm, biểu tượng chuông và cụm điều khiển cửa sổ; cột brand chạy cùng transition độ rộng với sidebar. |
 | `src/app/app-menu.tsx` | Menu mở từ wordmark, chứa mục `Quit XWork` ở cuối sau separator. |
 | `src/app/window-controls.tsx` | Ba nút Minimize / Maximize / Close cùng vùng thông báo lỗi thao tác cửa sổ. |
-| `src/app/app-sidebar.tsx` | Bốn nav item khu vực, khối `Projects` ở trạng thái rỗng, footer `Settings` và nút thu gọn. |
-| `src/app/sidebar-resize-handle.tsx` | Kéo đổi độ rộng bằng con trỏ và thao tác tương đương bằng bàn phím. |
+| `src/app/app-sidebar.tsx` | Ghép sidebar từ các thành phần Animate UI đã sao chép: bốn nav item khu vực, khối `Projects` ở trạng thái rỗng, footer `Settings` và nút thu gọn; quyết định bật/tắt vệt sáng theo `prefers-reduced-motion` và sở hữu tooltip của nav item. |
+| `src/app/sidebar-resize-handle.tsx` | Kéo đổi độ rộng bằng con trỏ và thao tác tương đương bằng bàn phím; công bố trạng thái đang kéo để shell tắt transition độ rộng. |
+| `src/components/animate-ui/components/radix/sidebar.tsx` | Sidebar Animate UI được sao chép cùng các thay đổi cục bộ đã chốt; cung cấp `SidebarProvider`, `Sidebar`, `SidebarContent`, `SidebarGroup`, `SidebarMenu`, `SidebarMenuButton`, `SidebarFooter`, `SidebarInset` và `useSidebar`. |
+| `src/components/animate-ui/primitives/effects/highlight.tsx` | Primitive tạo vệt sáng chạy theo con trỏ mà `SidebarMenuButton` dùng. |
+| `src/components/animate-ui/lib/get-strict-context.tsx` | Helper tạo context bắt buộc có provider, dùng bởi các component Animate UI đã sao chép. |
 | `src/app/area-placeholder.tsx` | Trạng thái "khu vực chưa khả dụng" dùng chung cho các route chưa có feature. |
 | `src/app/app-error-boundary.tsx` | `errorElement` cấp ứng dụng khi render route thất bại. |
 | `src/app/quit-dialog.tsx` | Hộp thoại xác nhận `Quit XWork`, các dòng số liệu, trạng thái đang xử lý và lỗi. |
-| `src/app/shell-store.ts` | State chrome của shell: độ rộng sidebar, thu gọn, trạng thái maximized gần nhất, lỗi thao tác cửa sổ. |
+| `src/app/shell-store.ts` | State chrome của shell: độ rộng sidebar, thu gọn, đang kéo đổi độ rộng, trạng thái maximized gần nhất, lỗi thao tác cửa sổ. |
 | `src/app/quit-store.ts` | State máy trạng thái của luồng Quit trên giao diện. |
 | `src/app/use-lifecycle-events.ts` | Đăng ký `app-quit-requested` và `app-navigate-session`, dedupe theo `requestId`, hủy đăng ký khi unmount. |
 | `src/lib/ipc/ipc-error.ts` | Bọc `invoke`, nhận diện lỗi dạng `{ code }` và chuẩn hóa lỗi không xác định. |
@@ -73,11 +90,11 @@ Người dùng mở XWork và thấy một khung ứng dụng hoàn chỉnh: sid
 | `src/components/ui/button.tsx` | Component nút nền tảng cho các biến thể primary, secondary, danger và icon. |
 | `src/components/ui/dialog.tsx` | Component hộp thoại modal nền tảng cho hộp thoại Quit. |
 | `src/components/ui/dropdown-menu.tsx` | Component menu nền tảng cho menu ở wordmark. |
-| `src/components/ui/tooltip.tsx` | Component tooltip nền tảng cho các nút chỉ có icon. |
-| `src/index.css` | Khai báo token màu, font, bán kính và bóng theo `00-Design.md`, cùng các alias semantic mà component trong `src/components/ui/` dùng. |
+| `src/components/ui/tooltip.tsx` | Component tooltip nền tảng cho các nút chỉ có icon và cho nav item khi sidebar thu gọn. |
+| `src/index.css` | Khai báo token màu, font, bán kính và bóng theo `00-Design.md`, cùng các alias semantic mà component trong `src/components/ui/` và `src/components/animate-ui/` dùng, gồm nhóm token `--color-sidebar*`. |
 | `src/main.tsx` | Bọc `RouterProvider` bằng `AppProviders`. |
 | `components.json` | Trỏ alias `utils` sang `@/lib/utils/cn` để đúng quy tắc đặt file của project structure. |
-| `package.json` | Thêm `@tauri-apps/api`, `lucide-react` và các dependency mà component nền tảng được sao chép yêu cầu. |
+| `package.json` | Thêm `@tauri-apps/api`, `lucide-react`, `motion` và các dependency mà component nền tảng được sao chép yêu cầu. |
 | `pnpm-lock.yaml` | Khóa exact version các dependency vừa thêm. |
 | `src-tauri/tauri.conf.json` | Đặt `"decorations": false` cho window `main`; không đổi label, title hay identifier. |
 | `src-tauri/capabilities/main.json` | Thêm đúng ba quyền `core:event:allow-listen`, `core:event:allow-unlisten`, `core:window:allow-start-dragging`. |
@@ -92,7 +109,7 @@ Người dùng mở XWork và thấy một khung ứng dụng hoàn chỉnh: sid
 | `src/app/use-lifecycle-events.test.ts` | Test dedupe event, điều hướng theo `sessionId` và hủy đăng ký. |
 | `src/lib/ipc/app-lifecycle.test.ts` | Test tên command, hình dạng tham số và ánh xạ lỗi typed. |
 
-Dependency mới được khóa exact version: `@tauri-apps/api` cùng dòng `2.11` với Tauri, `lucide-react` `1.39.0` theo `01-TechStack.md`, cùng `clsx`, `tailwind-merge`, `class-variance-authority` và các primitive Radix mà `dialog`, `dropdown-menu`, `tooltip` được sao chép cần. Không thêm `motion` hoặc component Animate UI ở lát cắt này vì shell chưa dùng animation nào.
+Dependency mới được khóa exact version: `@tauri-apps/api` cùng dòng `2.11` với Tauri, `lucide-react` `1.39.0` và `motion` `13.1.1` theo `01-TechStack.md`, cùng `clsx`, `tailwind-merge`, `class-variance-authority` và các primitive Radix mà `dialog`, `dropdown-menu`, `tooltip` được sao chép cần. `motion` là dependency runtime của sidebar Animate UI và primitive `highlight`; bản `13.1.1` khai báo hỗ trợ `react` và `react-dom` `^19`.
 
 ## UI và hành vi
 
@@ -100,26 +117,31 @@ Dependency mới được khóa exact version: `@tauri-apps/api` cùng dòng `2.
 
 | Thành phần | Vai trò | Wireframe |
 |---|---|---|
-| `AppShell` | Grid gồm `topbar` trên cùng, `sidebar` bên trái theo độ rộng hiện tại, `main` chứa `Outlet`. | `02-AppShell.html#shell` |
+| `AppShell` | Grid hai hàng: `topbar` trên cùng, hàng dưới là `SidebarProvider` chứa `AppSidebar`, vạch kéo và `SidebarInset` với `Outlet`. | `02-AppShell.html#shell` |
 | `AppTopbar` | Cột brand rộng bằng sidebar, giữa là breadcrumb và điểm vào tìm kiếm, phải là chuông và điều khiển cửa sổ. Toàn bộ nền là vùng kéo cửa sổ. | `02-AppShell.html#shell` |
 | `AppMenu` | Menu mở từ wordmark `XWork`, chỉ có mục `Quit XWork` ở cuối sau separator tại lát cắt này. | `04-Projects.html#dlg-quit` là điểm vào tương ứng của tray `02-AppShell.html#tray` |
 | `SearchEntry` | Pill `Search or run a command`, ở trạng thái chưa khả dụng. | `02-AppShell.html#shell` |
 | `NotificationBell` | Nút chuông, ở trạng thái chưa khả dụng và không có badge. | `02-AppShell.html#shell`, `#welcome` |
 | `WindowControls` | Ba nút Minimize, Maximize, Close với nhãn `Close (hides to tray)`. | `02-AppShell.html#shell` |
-| `AppSidebar` | `Home`, `Projects`, `Notes`, `Calendar`; khối `Projects`; footer `Settings` và nút thu gọn. | `02-AppShell.html#shell`, `#shell-collapsed` |
+| `AppSidebar` | `Home`, `Projects`, `Notes`, `Calendar`; khối `Projects`; footer `Settings` và nút thu gọn. Là landmark `navigation` duy nhất của shell. | `02-AppShell.html#shell`, `#shell-collapsed` |
+| `Sidebar` cùng `SidebarContent`, `SidebarGroup`, `SidebarMenu`, `SidebarMenuButton`, `SidebarFooter` | Bộ khung sidebar của Animate UI mà `AppSidebar` ghép lại; giữ vệt sáng hover, transition độ rộng và ẩn nhãn khi thu gọn. | `02-AppShell.html#shell`, `#shell-collapsed` |
+| `SidebarInset` | Vùng nội dung, mang landmark `main` và chứa dòng lỗi cấp ứng dụng cùng `Outlet`. | `02-AppShell.html#shell` |
 | `SidebarResizeHandle` | Vạch kéo giữa sidebar và vùng nội dung, có thao tác bàn phím tương đương. | `02-AppShell.html#shell` |
 | `AreaPlaceholder` | Tiêu đề khu vực cùng câu giải thích khu vực sẽ có ở lát cắt nào. | `Không có` |
 | `QuitDialog` | Hộp thoại modal xác nhận thoát, khối số liệu và hai hành động `Cancel` / `Quit`. | `04-Projects.html#dlg-quit` |
 | `AppErrorBoundary` | Thông báo lỗi render cấp ứng dụng kèm hành động quay về `Home`. | `Không có` |
 
-Kích thước lấy từ wireframe: topbar cao `40px`; sidebar mặc định `232px`, thu gọn `56px`; nav item cao `32px`; hộp thoại rộng `460px`. Độ rộng sidebar kéo được trong khoảng `200px`–`420px`.
+Kích thước lấy từ wireframe: topbar cao `40px`; sidebar mặc định `232px`, thu gọn `56px`; nav item cao `32px`; hộp thoại rộng `460px`. Độ rộng sidebar kéo được trong khoảng `200px`–`420px`. Ở chế độ thu gọn, nav item giữ kích thước `32px` và được căn giữa trong cột `56px`.
 
 ### Trạng thái hiển thị
 
 | Trạng thái | Điều kiện | Giao diện thể hiện |
 |---|---|---|
-| `Sidebar đầy đủ` | `isSidebarCollapsed === false`. | Nav item có nhãn, khối `Projects` hiển thị, footer có `Settings` và `Collapse`. |
-| `Sidebar thu gọn` | `isSidebarCollapsed === true`. | Chỉ còn icon rộng `56px`; wordmark thu về chữ `X`; khối `Projects` và danh sách phiên bị ẩn; mọi icon có tooltip mang nhãn; nút cuối đổi thành `Expand sidebar`. |
+| `Sidebar đầy đủ` | `isSidebarCollapsed === false`. | Nav item có nhãn, khối `Projects` hiển thị, footer có `Settings` và `Collapse`; sidebar mang `data-state="expanded"`. |
+| `Sidebar thu gọn` | `isSidebarCollapsed === true`. | Chỉ còn icon rộng `56px`, sidebar mang `data-state="collapsed"` và `data-collapsible="icon"`; wordmark thu về chữ `X`; nhãn nav item vẫn nằm trong DOM và trong accessibility tree nhưng bị cắt bởi `overflow`; khối `Projects` và danh sách phiên bị ẩn; mọi icon có tooltip mang nhãn; nút cuối đổi thành `Expand sidebar`. |
+| `Vệt sáng hover` | Con trỏ đang ở trên một nav item và `prefers-reduced-motion` không được đặt. | Một khối nền `--color-sidebar-accent` trượt từ item trước sang item đang hover; item đang mở giữ nền `cream-strong` bên dưới nên vẫn phân biệt được. |
+| `Hover tĩnh` | Người dùng đặt `prefers-reduced-motion`. | Không có vệt sáng và không có phần tử động nào; nav item đang hover đổi nền ngay, transition độ rộng bị tắt. |
+| `Đang kéo đổi độ rộng` | `isSidebarResizing === true`. | Sidebar mang `data-resizing="true"`, transition độ rộng bị tắt nên cạnh sidebar đi đúng theo con trỏ. |
 | `Rỗng — chưa có project` | Luôn đúng ở lát cắt này. | Khối `Projects` hiển thị `No projects yet. Add a folder to start a session.`; không hiển thị nút `+` vì `Add Project` thuộc `FE-004`, giống `#welcome`. |
 | `Khu vực chưa khả dụng` | Route trỏ tới khu vực mà feature sở hữu chưa được triển khai. | `AreaPlaceholder` với `h1` là tên khu vực và một câu nêu khu vực sẽ xuất hiện cùng feature nào; không có nút không hoạt động. |
 | `Điểm vào chưa khả dụng` | Luôn đúng cho `SearchEntry` và `NotificationBell` ở lát cắt này. | Nút `disabled` giữ đúng vị trí và nhãn wireframe, tooltip nói rõ chức năng đến ở lát cắt sau. Không hiển thị badge `Ctrl K` và không hiển thị số chưa đọc. |
@@ -138,8 +160,10 @@ Kích thước lấy từ wireframe: topbar cao `40px`; sidebar mặc định `2
 |---|---|---|
 | Bấm một nav item khu vực | Điều hướng tới route tương ứng, nav item nhận `aria-current="page"`, breadcrumb đổi theo nhãn khu vực. | `Không có` |
 | Di chuyển focus bằng `Tab` | Thứ tự brand → breadcrumb → tìm kiếm → chuông → điều khiển cửa sổ → nav sidebar → vạch kéo → nội dung; mọi thành phần focus có viền focus rõ ràng. | `Tab` / `Shift+Tab` |
-| Bấm nút cuối sidebar | Đổi giữa thu gọn và mở rộng; nhãn và tooltip đổi giữa `Collapse sidebar` và `Expand sidebar`. | `Không có` |
-| Kéo vạch giữa sidebar và nội dung | Đổi độ rộng sidebar theo con trỏ, clamp trong `200px`–`420px`. | `Không có` |
+| Bấm nút cuối sidebar | Đổi giữa thu gọn và mở rộng qua `toggleSidebarCollapsed`; độ rộng chuyển động giữa `232px` và `56px`; nhãn và tooltip đổi giữa `Collapse sidebar` và `Expand sidebar`. | `Không có` |
+| Đưa con trỏ qua các nav item | Vệt sáng trượt tới item đang hover; khi con trỏ rời sidebar, vệt sáng mờ dần rồi biến mất. Không đổi route và không đổi focus. | `Không có` |
+| Kéo vạch giữa sidebar và nội dung | Đổi độ rộng sidebar theo con trỏ, clamp trong `200px`–`420px`; transition độ rộng bị tắt suốt thời gian kéo và bật lại khi nhả. | `Không có` |
+| Bấm `Ctrl+B` | Không có tác dụng. Shell không đăng ký tổ hợp này và listener của bản upstream đã bị bỏ. | `Không có` |
 | Focus vạch kéo rồi bấm mũi tên | `ArrowLeft` và `ArrowRight` đổi `16px` mỗi lần, `Home` và `End` về cận dưới và cận trên; đây là thao tác bàn phím tương đương của kéo thả theo `§18`. | `←` `→` `Home` `End` |
 | Bấm wordmark `XWork` | Mở `AppMenu`; menu điều khiển được hoàn toàn bằng bàn phím, `Esc` đóng và trả focus về wordmark. | `Không có` |
 | Chọn `Quit XWork` trong menu | Gọi `request_quit`; nếu còn phiên thì mở `QuitDialog`, nếu không còn phiên thì backend dọn runtime rồi thoát. | `Không có` |
@@ -153,7 +177,7 @@ Kích thước lấy từ wireframe: topbar cao `40px`; sidebar mặc định `2
 | Bấm `Quit` trong `QuitDialog` | Gọi `confirm_quit`; hộp thoại chuyển sang trạng thái `Đang thoát` cho tới khi backend thoát hoặc trả lỗi. | `Không có` |
 | Di chuyển focus trong `QuitDialog` | Focus bị giữ trong hộp thoại; thứ tự là `Cancel` rồi `Quit`. | `Tab` / `Shift+Tab` |
 
-Mọi nút chỉ có icon đều có `aria-label` và tooltip cùng nội dung. Ở trạng thái thu gọn, tooltip của nav item mang nhãn khu vực đúng như `#shell-collapsed`.
+Mọi nút chỉ có icon đều có `aria-label` và tooltip cùng nội dung. Ở trạng thái thu gọn, tooltip của nav item mang nhãn khu vực đúng như `#shell-collapsed`; trigger của tooltip là chính link hoặc button nên tooltip hiện cả khi hover và khi focus bằng bàn phím.
 
 ## Luồng chính
 
@@ -224,10 +248,12 @@ interface WindowControlFailure {
 interface ShellState {
   sidebarWidthPx: number;
   isSidebarCollapsed: boolean;
+  isSidebarResizing: boolean;
   isMaximized: boolean;
   windowControlFailure: WindowControlFailure | null;
   setSidebarWidthPx(next: number): void;
   toggleSidebarCollapsed(): void;
+  setSidebarResizing(next: boolean): void;
   setMaximized(next: boolean): void;
   setWindowControlFailure(next: WindowControlFailure | null): void;
 }
@@ -258,7 +284,8 @@ interface QuitState {
 
 | Dữ liệu | Nguồn sở hữu | Ghi chú |
 |---|---|---|
-| `sidebarWidthPx`, `isSidebarCollapsed` | UI tạm thời | Chỉ trong bộ nhớ ở lát cắt này; chuyển sang settings persistence của `BE-008` ở giai đoạn 6. `setSidebarWidthPx` clamp vào `200`–`420`. |
+| `sidebarWidthPx`, `isSidebarCollapsed` | UI tạm thời | Chỉ trong bộ nhớ ở lát cắt này; chuyển sang settings persistence của `BE-008` ở giai đoạn 6. `setSidebarWidthPx` clamp vào `200`–`420`. Hai giá trị này là nguồn duy nhất của `--sidebar-width` và trạng thái `open` của `SidebarProvider`. |
+| `isSidebarResizing` | UI tạm thời | Chỉ bật trong lúc kéo bằng con trỏ, không bật khi đổi độ rộng bằng bàn phím; luôn tắt khi nhả, khi hủy pointer và khi sidebar thu gọn giữa lúc kéo. |
 | `isMaximized` | UI tạm thời, cập nhật từ giá trị trả về của `toggle_main_window_maximized` | Không có query đọc trạng thái; mặc định `false` khi mount. |
 | `windowControlFailure` | UI tạm thời | Xóa khi thao tác cửa sổ kế tiếp thành công hoặc khi đổi route. |
 | `phase`, `failure` | UI tạm thời | Suy ra từ kết quả command và event; không bao giờ suy ra `phase` từ nội dung DOM. |
@@ -301,6 +328,8 @@ export function invokeCommand<TResult, TError extends TaggedIpcError>(
 ): Promise<TResult>;
 ```
 
+Các thành phần sidebar trong `src/components/animate-ui/` là component dùng chung của repo, không phải contract của feature: `FE-004` và `FE-006` được phép import chúng để dựng danh sách project và phiên, nhưng không import `AppSidebar` hay hai store của shell.
+
 `src/app/` là composition root: feature khác không import từ `src/app/` theo quy tắc phụ thuộc. Lát cắt sau đưa màn hình của mình vào ứng dụng bằng cách thay `element` của route thuộc feature đó trong `app-router.tsx`, không import `AppShell`, `AppSidebar` hay hai store của shell. Phần dùng chung thật sự cho feature khác là các export trong `src/lib/ipc/`.
 
 ## Edge case
@@ -319,17 +348,24 @@ export function invokeCommand<TResult, TError extends TaggedIpcError>(
 | Webview reload trong khi có pending request | Hộp thoại không được dựng lại vì `BE-001` không có query chỉ đọc; chọn `Quit XWork` lần nữa trả về đúng request cũ và mở lại hộp thoại. Chỉ xảy ra trong dev. |
 | `Alt+F4` hoặc close ở tầng hệ điều hành | `BE-001` chặn và chuyển thành hide; frontend không cần xử lý và không mất state. |
 | Kéo vạch sidebar ra ngoài khoảng cho phép | Độ rộng dừng ở cận `200px` hoặc `420px`; `aria-valuenow` của vạch kéo phản ánh giá trị đã clamp. |
-| Thu gọn sidebar khi đang kéo | Kết thúc kéo, giữ độ rộng gần nhất để lần mở rộng sau trả về đúng độ rộng đó. |
+| Thu gọn sidebar khi đang kéo | Kết thúc kéo, tắt `isSidebarResizing` và giữ độ rộng gần nhất để lần mở rộng sau trả về đúng độ rộng đó. |
+| Con trỏ vẫn nằm trên một nav item khi sidebar đang chuyển độ rộng | Vệt sáng bám theo item đó suốt quá trình chuyển động vì `Highlight` đo lại vùng theo từng frame; khi con trỏ rời sidebar, vệt sáng biến mất. |
+| Cửa sổ bị thu hẹp dưới `768px` | Sidebar vẫn hiển thị đầy đủ. Bản sao chép đã bỏ `hidden md:block` và toàn bộ nhánh mobile, nên không có breakpoint nào ẩn sidebar. |
+| Người dùng bật `prefers-reduced-motion` | Vệt sáng hover bị tắt hoàn toàn và không có phần tử động nào được render; nav item vẫn đổi nền khi hover; transition độ rộng khi thu gọn và mở rộng cũng bị tắt nên độ rộng đổi ngay lập tức. |
+| Webview reload | Sidebar quay về `232px` và trạng thái mở rộng. Không có cookie, `localStorage` hay bất kỳ persistence nào ghi lại trạng thái sidebar ở lát cắt này. |
 | Breadcrumb của route phiên khi chưa có `FE-006` | Hiển thị nhãn khu vực cùng `sessionId` thô; `FE-006` thay bằng tên project và tên phiên. |
 | `invoke` bị từ chối vì thiếu quyền hoặc phản hồi không đúng dạng `{ code }` | Wrapper ném `IpcCallError` với `payload` bằng `null`; giao diện xử lý như lỗi tích hợp và không thử lại thành vòng lặp. |
-| Người dùng bật `prefers-reduced-motion` | Shell không dùng animation nào ở lát cắt này, nên hành vi không đổi. |
 
 ## Tiêu chí hoàn thành
 
 - [ ] `pnpm tauri dev` mở cửa sổ không viền hệ điều hành, hiển thị topbar và sidebar đúng `#shell`: brand, breadcrumb, pill tìm kiếm, chuông, ba nút cửa sổ, bốn nav item, khối `Projects` rỗng, footer `Settings` và nút thu gọn.
 - [ ] Bấm bốn nav item và `Settings` điều hướng đúng năm route, nav item đang mở có `aria-current="page"` và breadcrumb đổi theo tên khu vực; mỗi khu vực chưa có feature render `AreaPlaceholder` nêu rõ feature sở hữu.
-- [ ] Nút thu gọn chuyển sidebar giữa `232px` và `56px` đúng `#shell-collapsed`: ẩn nhãn, ẩn khối `Projects`, wordmark còn chữ `X`, mọi icon có tooltip mang nhãn, nút cuối đổi thành `Expand sidebar`.
-- [ ] Kéo vạch sidebar đổi độ rộng và clamp ở `200px` và `420px`; focus vạch kéo rồi bấm `←`, `→`, `Home`, `End` cho kết quả tương đương và `aria-valuenow` khớp độ rộng thực tế.
+- [ ] Nút thu gọn chuyển sidebar giữa `232px` và `56px` đúng `#shell-collapsed`: ẩn nhãn, ẩn khối `Projects`, wordmark còn chữ `X`, mọi icon có tooltip mang nhãn, nút cuối đổi thành `Expand sidebar`; độ rộng chuyển động chứ không nhảy bậc, và cột brand của topbar đi cùng nhịp với cạnh sidebar suốt chuyển động.
+- [ ] Kéo vạch sidebar đổi độ rộng và clamp ở `200px` và `420px`; focus vạch kéo rồi bấm `←`, `→`, `Home`, `End` cho kết quả tương đương và `aria-valuenow` khớp độ rộng thực tế. Trong lúc kéo, cạnh sidebar đi đúng theo con trỏ, không trễ theo transition.
+- [ ] Đưa con trỏ dọc bốn nav item cho vệt sáng trượt giữa các item; bật `prefers-reduced-motion` trong hệ điều hành rồi mở lại làm vệt sáng biến mất, hover vẫn đổi nền và độ rộng đổi ngay không chuyển động.
+- [ ] `Ctrl+B` không đổi trạng thái sidebar; tìm trong `src/` không còn listener nào nghe tổ hợp này.
+- [ ] Không có cookie nào được ghi: sau khi thu gọn rồi mở rộng sidebar, `document.cookie` vẫn rỗng, và tìm trong `src/` không có `document.cookie`.
+- [ ] `package.json` khóa `motion` đúng `13.1.1`; `src/components/animate-ui/` chỉ chứa sidebar, primitive `highlight` và helper `get-strict-context`, không có `sheet`, `input`, `skeleton` hay `separator`.
 - [ ] Trên desktop thật, `Minimize` minimize cửa sổ, `Maximize` đổi qua lại giữa maximize và restore kèm đổi icon và nhãn, double-click vùng trống topbar cho kết quả giống nút `Maximize`, kéo vùng trống topbar di chuyển được cửa sổ.
 - [ ] `Close (hides to tray)` và `Alt+F4` đều chỉ ẩn cửa sổ; mở lại từ tray trả về đúng route đang xem trước đó.
 - [ ] Menu wordmark mở được bằng chuột và bàn phím, có `Quit XWork` ở cuối sau separator, `Esc` đóng menu và trả focus về wordmark.
@@ -350,16 +386,18 @@ export function invokeCommand<TResult, TError extends TaggedIpcError>(
 | File test | Loại | Hành vi kiểm tra |
 |---|---|---|
 | `src/app/app-router.test.tsx` | Component | Năm route khu vực cùng hai route dành trước render `AreaPlaceholder` đúng tên khu vực; route không khớp render placeholder `Not found`; `errorElement` nhận lỗi render. |
-| `src/app/app-shell.test.tsx` | Component | Landmark `banner`, `navigation` và `main` tồn tại đúng một lần; độ rộng grid theo `sidebarWidthPx`; trạng thái thu gọn ẩn đúng các phần; thứ tự focus theo `Tab`. |
+| `src/app/app-shell.test.tsx` | Component | Landmark `banner`, `navigation` và `main` tồn tại đúng một lần; `--sidebar-width` theo `sidebarWidthPx` và `--sidebar-width-icon` bằng `56px`; trạng thái thu gọn ẩn đúng các phần; thứ tự focus theo `Tab`. |
 | `src/app/app-topbar.test.tsx` | Component | Breadcrumb dựng từ route đã match; `SearchEntry` và `NotificationBell` là nút `disabled` có tooltip và không có badge; ba nút cửa sổ gọi đúng command; double-click vùng kéo gọi `toggle_main_window_maximized`; `window_operation_failed` hiện dòng lỗi `aria-live`; menu wordmark mở và đóng bằng bàn phím và có `Quit XWork` ở cuối. |
-| `src/app/app-sidebar.test.tsx` | Component | Bốn nav item và `Settings` điều hướng đúng route và đặt `aria-current`; khối `Projects` hiện đúng câu trạng thái rỗng và không có nút `+`; nút thu gọn đổi nhãn; tooltip mang nhãn khi thu gọn; vạch kéo phản hồi `←`, `→`, `Home`, `End` và cập nhật `aria-valuenow`. |
+| `src/app/app-sidebar.test.tsx` | Component | Bốn nav item và `Settings` điều hướng đúng route và đặt `aria-current`; khối `Projects` hiện đúng câu trạng thái rỗng và không có nút `+`; nút thu gọn đổi nhãn và đổi `data-state` của sidebar; tooltip mang nhãn khi thu gọn, cả khi hover và khi focus; vạch kéo phản hồi `←`, `→`, `Home`, `End` và cập nhật `aria-valuenow`; kéo bằng con trỏ đặt rồi xóa `data-resizing`; `prefers-reduced-motion` tắt vệt sáng; `Ctrl+B` không đổi trạng thái; `document.cookie` không bị ghi sau một vòng thu gọn và mở rộng. |
 | `src/app/quit-dialog.test.tsx` | Component | Nội dung và số liệu theo `#dlg-quit`; số ít và số nhiều; ẩn dòng file chưa lưu khi bằng `0`; focus bị giữ trong hộp thoại; `Cancel`, `Esc`, click ngoài, `Quit`, trạng thái `Quitting…` và từng nhánh lỗi. |
-| `src/app/shell-store.test.ts` | Unit | Clamp độ rộng ở hai cận, giữ độ rộng gần nhất qua một vòng thu gọn và mở rộng, cập nhật `isMaximized`, xóa `windowControlFailure` khi thao tác sau thành công. |
+| `src/app/shell-store.test.ts` | Unit | Clamp độ rộng ở hai cận, giữ độ rộng gần nhất qua một vòng thu gọn và mở rộng, bật và tắt `isSidebarResizing`, cập nhật `isMaximized`, xóa `windowControlFailure` khi thao tác sau thành công. |
 | `src/app/quit-store.test.ts` | Unit | Chuyển trạng thái cho kết quả `null` và kết quả có request; chặn `confirm_quit` lặp; ánh xạ `runtime_snapshot_failed`, `runtime_shutdown_failed`, `quit_already_in_progress` và nhóm lỗi tích hợp; `stale_quit_request` gọi lại `request_quit` đúng một lần. |
 | `src/app/use-lifecycle-events.test.ts` | Unit | Đăng ký đúng hai event một lần; dedupe theo `requestId`; điều hướng bằng `sessionId` nguyên vẹn; hủy đăng ký khi unmount. |
 | `src/lib/ipc/app-lifecycle.test.ts` | Unit | Gọi đúng tên sáu command; `requestId` gửi dạng camelCase; lỗi dạng `{ code }` trở thành `IpcCallError` có `payload`; lỗi lạ trở thành `IpcCallError` với `payload` bằng `null`. |
 
 Các hành vi phụ thuộc cửa sổ native — kéo cửa sổ, minimize, maximize, hide xuống tray, mở lại từ tray và thoát process — được xác nhận bằng smoke test thủ công trên Windows với bản build thật; automated test không được coi là thay thế cho bước này.
+
+Vị trí và độ mượt của vệt sáng không kiểm được bằng component test: trong `jsdom`, `getBoundingClientRect()` luôn trả về `0` nên vệt sáng có vùng bằng `0`. Test chỉ xác nhận vệt sáng được render hay không theo `prefers-reduced-motion`; phần thị giác thuộc smoke test thủ công trên Windows.
 
 ## Câu hỏi mở
 
