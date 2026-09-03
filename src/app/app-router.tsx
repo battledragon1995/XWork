@@ -1,4 +1,5 @@
 import { createMemoryRouter, type Params } from "react-router";
+import { HomeRoute } from "@/features/home/home-route";
 import { AppErrorBoundary } from "./app-error-boundary";
 import { AppShell } from "./app-shell";
 import { AreaPlaceholder, NotFoundPlaceholder } from "./area-placeholder";
@@ -25,7 +26,7 @@ export function createAppRouter(initialEntries: string[] = ["/"]) {
         children: [
           {
             index: true,
-            element: <AreaPlaceholder area="Home" arrivesWith="FE-003" />,
+            element: <HomeRoute />,
             errorElement: <AppErrorBoundary />,
             handle: crumbs(() => ["Home"]),
           },

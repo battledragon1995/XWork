@@ -4,8 +4,26 @@ import { cleanup, render, screen } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { RouterProvider } from "react-router";
 import { AppProviders } from "./app-providers";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createAppRouter } from "./app-router";
+
+// Replace the Projects boundary the index route depends on. One project keeps `/` on its Home
+// branch, so these cases stay about the shell rather than about project data.
+vi.mock("@/lib/ipc/projects", () => ({
+  addProject: vi.fn(async () => ({ outcome: "cancelled" })),
+  listProjects: vi.fn(async () => [
+    {
+      id: "3f2a",
+      displayName: "xwork",
+      rootPath: "D:\\Self\\XWork",
+      isPinned: false,
+      addedAtMs: 1_700_000_000_000,
+      lastOpenedAtMs: 1_700_000_000_000,
+      availability: { status: "available" },
+    },
+  ]),
+  onProjectsChanged: vi.fn(async () => () => {}),
+}));
 
 // Remove rendered output between tests so each router instance stays isolated.
 afterEach(() => {
@@ -38,7 +56,7 @@ describe("AppShell", () => {
 
     const banner = screen.getByRole("banner");
     const navigation = screen.getByRole("navigation");
-    expect(screen.getByRole("heading", { level: 1, name: "Home" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { level: 1, name: "Home" })).toBeInTheDocument();
 
     await user.click(screen.getByRole("link", { name: "Calendar" }));
 

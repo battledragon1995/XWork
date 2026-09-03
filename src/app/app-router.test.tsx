@@ -3,16 +3,40 @@ import "@testing-library/jest-dom/vitest";
 import { act, cleanup, render, screen, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { createMemoryRouter, RouterProvider } from "react-router";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { ProjectDto } from "@/bindings/projects/projects";
+import { listProjects } from "@/lib/ipc/projects";
 import { AppErrorBoundary } from "./app-error-boundary";
 import { AppProviders } from "./app-providers";
 import { createAppRouter } from "./app-router";
 import { AppShell } from "./app-shell";
 import { resetQuitStore, useQuitStore } from "./quit-store";
 
-// Start every case from an idle Quit flow and remove the previous render.
+// Replace the Projects boundary the index route now depends on. Both functions resolve so no
+// case can leak an unresolved event registration into the next one.
+vi.mock("@/lib/ipc/projects", () => ({
+  addProject: vi.fn(async () => ({ outcome: "cancelled" })),
+  listProjects: vi.fn(async () => []),
+  onProjectsChanged: vi.fn(async () => () => {}),
+}));
+
+const listProjectsMock = vi.mocked(listProjects);
+
+/** One registered project, so the index route settles on its Home branch. */
+const PROJECT: ProjectDto = {
+  id: "3f2a",
+  displayName: "xwork",
+  rootPath: "D:\\Self\\XWork",
+  isPinned: false,
+  addedAtMs: 1_700_000_000_000,
+  lastOpenedAtMs: 1_700_000_000_000,
+  availability: { status: "available" },
+};
+
+// Start every case from an idle Quit flow, one registered project, and no previous render.
 beforeEach(() => {
   resetQuitStore();
+  listProjectsMock.mockResolvedValue([PROJECT]);
 });
 
 afterEach(() => {
@@ -38,7 +62,6 @@ function readBreadcrumb(): string[] {
 describe("createAppRouter", () => {
   // Verify each primary area route renders its own placeholder with the owning feature.
   it.each([
-    ["/", "Home", "FE-003"],
     ["/projects", "Projects", "FE-004"],
     ["/notes", "Notes", "FE-019"],
     ["/calendar", "Calendar", "FE-021"],
@@ -48,6 +71,36 @@ describe("createAppRouter", () => {
 
     expect(screen.getByRole("heading", { level: 1, name: area })).toBeInTheDocument();
     expect(screen.getByText(`This area arrives with ${arrivesWith}.`)).toBeInTheDocument();
+  });
+
+  // Verify the index route now renders the Home feature entry, which resolves its own branch
+  // from project data instead of the static shell placeholder.
+  it("renders the index route as HomeRoute", async () => {
+    renderAt("/");
+
+    expect(await screen.findByRole("heading", { level: 1, name: "Home" })).toBeInTheDocument();
+    expect(screen.getByText("This area arrives with FE-003.")).toBeInTheDocument();
+  });
+
+  // Verify the same route resolves to the Welcome branch when no project exists yet.
+  it("renders the Welcome branch of the index route on a clean install", async () => {
+    listProjectsMock.mockResolvedValue([]);
+
+    renderAt("/");
+
+    expect(await screen.findByRole("button", { name: "Add Project" })).toBeInTheDocument();
+  });
+
+  // Verify the shell keeps naming the index route `Home` whichever branch it renders, so the
+  // feature never writes into shell state to change a crumb or a navigation highlight.
+  it("keeps the Home breadcrumb and navigation highlight on the Welcome branch", async () => {
+    listProjectsMock.mockResolvedValue([]);
+
+    renderAt("/");
+    await screen.findByRole("button", { name: "Add Project" });
+
+    expect(readBreadcrumb()).toEqual(["Home"]);
+    expect(screen.getByRole("link", { name: "Home" })).toHaveAttribute("aria-current", "page");
   });
 
   // Verify the reserved project detail route renders without owning project data.
@@ -83,7 +136,7 @@ describe("createAppRouter", () => {
 
     await user.click(screen.getByRole("button", { name: "Go to Home" }));
 
-    expect(screen.getByRole("heading", { level: 1, name: "Home" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { level: 1, name: "Home" })).toBeInTheDocument();
   });
 
   // Verify the shell keeps its landmarks exactly once around whichever child route matched.

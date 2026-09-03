@@ -26,6 +26,24 @@ vi.mock("@/lib/ipc/app-lifecycle", () => ({
   onNavigateSession: vi.fn(async () => () => {}),
 }));
 
+// Replace the Projects boundary the index route depends on. One project keeps `/` on its Home
+// branch, so no project-load alert can compete with the window-control alerts under test.
+vi.mock("@/lib/ipc/projects", () => ({
+  addProject: vi.fn(async () => ({ outcome: "cancelled" })),
+  listProjects: vi.fn(async () => [
+    {
+      id: "3f2a",
+      displayName: "xwork",
+      rootPath: "D:\\Self\\XWork",
+      isPinned: false,
+      addedAtMs: 1_700_000_000_000,
+      lastOpenedAtMs: 1_700_000_000_000,
+      availability: { status: "available" },
+    },
+  ]),
+  onProjectsChanged: vi.fn(async () => () => {}),
+}));
+
 const hideMock = vi.mocked(hideMainWindow);
 const minimizeMock = vi.mocked(minimizeMainWindow);
 const toggleMock = vi.mocked(toggleMainWindowMaximized);
