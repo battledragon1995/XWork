@@ -4,6 +4,8 @@ import type {
   ProjectDto,
   ProjectFolderSelectionDto,
   ProjectsError,
+  RemoveProjectImpactDto,
+  RemoveProjectResultDto,
 } from "@/bindings/projects/projects";
 import { invokeCommand } from "./ipc-error";
 
@@ -37,6 +39,42 @@ export function listProjects(search?: string): Promise<ProjectDto[]> {
 // not an error, so callers branch on `outcome` instead of catching.
 export function addProject(): Promise<ProjectFolderSelectionDto> {
   return invokeProjects<ProjectFolderSelectionDto>("add_project");
+}
+
+// Change the name XWork shows for one project. The folder on disk keeps its own name.
+export function renameProject(projectId: string, displayName: string): Promise<ProjectDto> {
+  return invokeProjects<ProjectDto>("rename_project", { projectId, displayName });
+}
+
+// Pin or unpin one project. The backend owns the resulting order, so callers re-read the list
+// instead of moving the row themselves.
+export function setProjectPinned(projectId: string, isPinned: boolean): Promise<ProjectDto> {
+  return invokeProjects<ProjectDto>("set_project_pinned", { projectId, isPinned });
+}
+
+// Ask the operating system to reveal the registered root. Nothing about the project changes.
+export function openProjectFolder(projectId: string): Promise<void> {
+  return invokeProjects<void>("open_project_folder", { projectId });
+}
+
+// Open the native picker to point one project at a new root. Cancellation is a result, not
+// an error, exactly as it is for `addProject`.
+export function locateProjectFolder(projectId: string): Promise<ProjectFolderSelectionDto> {
+  return invokeProjects<ProjectFolderSelectionDto>("locate_project_folder", { projectId });
+}
+
+// Read the facts a remove confirmation must state. The frontend never synthesizes them.
+export function getRemoveProjectImpact(projectId: string): Promise<RemoveProjectImpactDto> {
+  return invokeProjects<RemoveProjectImpactDto>("get_remove_project_impact", { projectId });
+}
+
+// Forget one project's metadata. `confirmed` is forwarded as given; the feature always sends
+// `true` because the backend refuses an unconfirmed removal by design.
+export function removeProject(
+  projectId: string,
+  confirmed: boolean,
+): Promise<RemoveProjectResultDto> {
+  return invokeProjects<RemoveProjectResultDto>("remove_project", { projectId, confirmed });
 }
 
 // Subscribe to project invalidation. The returned callback removes the listener.

@@ -11,6 +11,12 @@ import { createAppRouter } from "./app-router";
 // branch, so these cases stay about the shell rather than about project data.
 vi.mock("@/lib/ipc/projects", () => ({
   addProject: vi.fn(async () => ({ outcome: "cancelled" })),
+  getRemoveProjectImpact: vi.fn(),
+  locateProjectFolder: vi.fn(async () => ({ outcome: "cancelled" })),
+  openProjectFolder: vi.fn(),
+  removeProject: vi.fn(),
+  renameProject: vi.fn(),
+  setProjectPinned: vi.fn(),
   listProjects: vi.fn(async () => [
     {
       id: "3f2a",
@@ -68,10 +74,15 @@ describe("AppShell", () => {
 
   // Verify Tab walks the shell in the documented order and ends on the resize separator,
   // which is the keyboard equivalent of dragging the seam. The breadcrumb is not a stop
-  // because it holds no interactive content in this slice.
+  // because it holds no interactive content in this slice. The Projects block sits between
+  // the primary areas and the footer, so its Add Project action and its project rows come
+  // after `Calendar` and before `Settings`.
   it("tabs through the topbar, the sidebar areas and then the resize separator", async () => {
     const user = userEvent.setup();
     renderShellAt("/");
+    // The Projects block is filled by FE-004, so its action and its rows are real tab stops.
+    // Wait for the row before reading the order, or the list is still empty.
+    await screen.findByRole("link", { name: "xwork" });
 
     const expected = [
       screen.getByRole("button", { name: "XWork menu" }),
@@ -84,6 +95,8 @@ describe("AppShell", () => {
       screen.getByRole("link", { name: "Projects" }),
       screen.getByRole("link", { name: "Notes" }),
       screen.getByRole("link", { name: "Calendar" }),
+      screen.getByRole("button", { name: "Add Project" }),
+      screen.getByRole("link", { name: "xwork" }),
       screen.getByRole("link", { name: "Settings" }),
       screen.getByRole("button", { name: "Collapse sidebar" }),
       screen.getByRole("separator", { name: "Resize sidebar" }),

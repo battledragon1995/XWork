@@ -34,6 +34,11 @@
   --color-warning: #d4a017;
   --color-error: #c64545;
 
+  /* Warning surface and ink for the `Unavailable` badge and its reason line, added by
+     FE-004. Derived from `--color-amber` so the pair stays part of the shell palette. */
+  --color-warn-surface: rgba(232, 165, 90, 0.22);
+  --color-warn-ink: #7a4a12;
+
   /* Semantic aliases consumed by the copied shadcn/ui primitives */
   --color-background: var(--color-canvas);
   --color-foreground: var(--color-body);

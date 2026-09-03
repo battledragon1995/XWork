@@ -17,12 +17,12 @@ import {
   SidebarFooter,
   SidebarGroup,
   SidebarGroupContent,
-  SidebarGroupLabel,
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
 } from "@/components/animate-ui/components/radix/sidebar";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { SidebarProjectList } from "@/features/projects/sidebar-project-list";
 import { cn } from "@/lib/utils/cn";
 import { useShellStore } from "./shell-store";
 import { usePrefersReducedMotion } from "./use-prefers-reduced-motion";
@@ -67,8 +67,8 @@ const SIDEBAR_HIGHLIGHT_TRANSITION: Transition = {
 const ACTIVE_ENTRY_CLASS =
   "aria-[current=page]:bg-cream-strong aria-[current=page]:text-ink aria-[current=page]:[&>svg]:text-ink";
 
-// Render the primary navigation, the empty Projects block and the sidebar footer. The sidebar
-// itself is the single `navigation` landmark of the shell.
+// Render the primary navigation, the Projects block and the sidebar footer. The sidebar itself
+// is the single `navigation` landmark of the shell.
 export function AppSidebar() {
   const isCollapsed = useShellStore((state) => state.isSidebarCollapsed);
   const isResizing = useShellStore((state) => state.isSidebarResizing);
@@ -102,20 +102,10 @@ export function AppSidebar() {
           </SidebarGroupContent>
         </SidebarGroup>
 
-        {/* The project list itself belongs to FE-004 and BE-003, so only the empty state
-            exists here. Icon mode drops the whole block, exactly as `#shell-collapsed` shows. */}
-        {!isCollapsed && (
-          <SidebarGroup className="pt-4">
-            <SidebarGroupLabel className="mx-0.5 h-auto px-2 pb-1.5 text-[11px] font-medium tracking-[1.2px] text-muted-soft uppercase">
-              Projects
-            </SidebarGroupLabel>
-            <SidebarGroupContent>
-              <p className="mx-0.5 px-2 text-xs leading-relaxed text-muted-soft">
-                No projects yet. Add a folder to start a session.
-              </p>
-            </SidebarGroupContent>
-          </SidebarGroup>
-        )}
+        {/* The project list and its Add Project action belong to FE-004, which owns the whole
+            block. Icon mode drops it entirely, exactly as `#shell-collapsed` shows, and that
+            boundary stays here rather than moving into the feature. */}
+        {!isCollapsed && <SidebarProjectList />}
       </SidebarContent>
 
       <SidebarFooter>

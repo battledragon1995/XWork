@@ -1,5 +1,6 @@
 import { createMemoryRouter, type Params } from "react-router";
 import { HomeRoute } from "@/features/home/home-route";
+import { ProjectsRoute } from "@/features/projects/projects-route";
 import { AppErrorBoundary } from "./app-error-boundary";
 import { AppShell } from "./app-shell";
 import { AreaPlaceholder, NotFoundPlaceholder } from "./area-placeholder";
@@ -32,7 +33,7 @@ export function createAppRouter(initialEntries: string[] = ["/"]) {
           },
           {
             path: "projects",
-            element: <AreaPlaceholder area="Projects" arrivesWith="FE-004" />,
+            element: <ProjectsRoute />,
             errorElement: <AppErrorBoundary />,
             handle: crumbs(() => ["Projects"]),
           },

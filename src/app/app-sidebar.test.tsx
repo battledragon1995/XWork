@@ -3,8 +3,12 @@ import "@testing-library/jest-dom/vitest";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { RouterProvider } from "react-router";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import type { ProjectDto } from "@/bindings/projects/projects";
+import { IpcCallError } from "@/lib/ipc/ipc-error";
+import { listProjects } from "@/lib/ipc/projects";
+import { resetProjectsStore } from "@/features/projects/projects-store";
 import { AppProviders } from "./app-providers";
 import { createAppRouter } from "./app-router";
 import {
@@ -15,12 +19,36 @@ import {
   useShellStore,
 } from "./shell-store";
 
+// Replace the Projects boundary the sidebar block now depends on. Every function resolves so
+// no case can leak an unresolved event registration or a real filesystem read into the next.
+vi.mock("@/lib/ipc/projects", () => ({
+  addProject: vi.fn(async () => ({ outcome: "cancelled" })),
+  listProjects: vi.fn(async () => []),
+  onProjectsChanged: vi.fn(async () => () => {}),
+}));
+
+const listProjectsMock = vi.mocked(listProjects);
+
+/** One registered project, used by the cases that need real rows in the sidebar. */
+const PROJECT: ProjectDto = {
+  id: "3f2a",
+  displayName: "xwork",
+  rootPath: "D:\\Self\\XWork",
+  isPinned: false,
+  addedAtMs: 1_700_000_000_000,
+  lastOpenedAtMs: 1_700_000_000_000,
+  availability: { status: "available" },
+};
+
 /** The real `matchMedia`, restored after a case that chose a reduced-motion preference. */
 const originalMatchMedia = window.matchMedia;
 
 // Start every case from the documented defaults and remove the previous render.
 beforeEach(() => {
   resetShellStore();
+  resetProjectsStore();
+  vi.clearAllMocks();
+  listProjectsMock.mockResolvedValue([]);
 });
 
 afterEach(() => {
@@ -102,20 +130,46 @@ describe("AppSidebar navigation", () => {
 });
 
 describe("AppSidebar Projects block", () => {
-  // Verify the Phase 1 empty state uses the exact wireframe copy.
-  it("shows the empty projects copy", () => {
+  // Verify the shell delegates the whole block to the feature: the empty sentence FE-001 wrote
+  // is now rendered by `SidebarProjectList`, unchanged.
+  it("keeps the empty projects copy through the feature component", async () => {
     renderShellAt();
 
     expect(
-      screen.getByText("No projects yet. Add a folder to start a session."),
+      await screen.findByText("No projects yet. Add a folder to start a session."),
     ).toBeInTheDocument();
   });
 
-  // Verify no add affordance is offered, because Add Project belongs to FE-004.
-  it("offers no add-project control", () => {
+  // Verify the feature's Add Project action is now part of the block.
+  it("offers the Add Project action", async () => {
     renderShellAt();
 
-    expect(screen.queryByRole("button", { name: /add project/i })).not.toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "Add Project" })).toBeInTheDocument();
+  });
+
+  // Verify real project rows replace the empty sentence and navigate on their own.
+  it("renders real project rows", async () => {
+    listProjectsMock.mockResolvedValue([PROJECT]);
+
+    renderShellAt();
+
+    const row = await screen.findByRole("link", { name: "xwork" });
+    expect(row).toHaveAttribute("href", "/projects/3f2a");
+    expect(
+      screen.queryByText("No projects yet. Add a folder to start a session."),
+    ).not.toBeInTheDocument();
+  });
+
+  // Verify a failed load stays inside the block instead of breaking the shell.
+  it("reports a failed load inside the block", async () => {
+    listProjectsMock.mockRejectedValue(
+      new IpcCallError("list_projects", { code: "persistenceFailed" }),
+    );
+
+    renderShellAt();
+
+    expect(await screen.findByText("Couldn't load projects.")).toBeInTheDocument();
+    expect(screen.getByRole("navigation", { name: "Main" })).toBeInTheDocument();
   });
 });
 
@@ -135,10 +189,14 @@ describe("AppSidebar collapse", () => {
   // Verify icon mode hides the project block but keeps every area reachable by name.
   it("hides the projects block while keeping accessible names", async () => {
     const user = userEvent.setup();
+    listProjectsMock.mockResolvedValue([PROJECT]);
     renderShellAt();
+    await screen.findByRole("link", { name: "xwork" });
 
     await user.click(screen.getByRole("button", { name: "Collapse sidebar" }));
 
+    expect(screen.queryByRole("link", { name: "xwork" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Add Project" })).not.toBeInTheDocument();
     expect(
       screen.queryByText("No projects yet. Add a folder to start a session."),
     ).not.toBeInTheDocument();

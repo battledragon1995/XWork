@@ -10,14 +10,22 @@ import { AppErrorBoundary } from "./app-error-boundary";
 import { AppProviders } from "./app-providers";
 import { createAppRouter } from "./app-router";
 import { AppShell } from "./app-shell";
+import { resetProjectsStore } from "@/features/projects/projects-store";
 import { resetQuitStore, useQuitStore } from "./quit-store";
 
-// Replace the Projects boundary the index route now depends on. Both functions resolve so no
-// case can leak an unresolved event registration into the next one.
+// Replace the Projects boundary the index route, the Projects page and the sidebar block all
+// depend on. Every function resolves so no case can leak an unresolved event registration, a
+// real filesystem read or a native dialog into the next one.
 vi.mock("@/lib/ipc/projects", () => ({
   addProject: vi.fn(async () => ({ outcome: "cancelled" })),
+  getRemoveProjectImpact: vi.fn(),
   listProjects: vi.fn(async () => []),
+  locateProjectFolder: vi.fn(async () => ({ outcome: "cancelled" })),
   onProjectsChanged: vi.fn(async () => () => {}),
+  openProjectFolder: vi.fn(),
+  removeProject: vi.fn(),
+  renameProject: vi.fn(),
+  setProjectPinned: vi.fn(),
 }));
 
 const listProjectsMock = vi.mocked(listProjects);
@@ -36,6 +44,7 @@ const PROJECT: ProjectDto = {
 // Start every case from an idle Quit flow, one registered project, and no previous render.
 beforeEach(() => {
   resetQuitStore();
+  resetProjectsStore();
   listProjectsMock.mockResolvedValue([PROJECT]);
 });
 
@@ -62,7 +71,6 @@ function readBreadcrumb(): string[] {
 describe("createAppRouter", () => {
   // Verify each primary area route renders its own placeholder with the owning feature.
   it.each([
-    ["/projects", "Projects", "FE-004"],
     ["/notes", "Notes", "FE-019"],
     ["/calendar", "Calendar", "FE-021"],
     ["/settings", "Settings", "FE-011"],
@@ -71,6 +79,18 @@ describe("createAppRouter", () => {
 
     expect(screen.getByRole("heading", { level: 1, name: area })).toBeInTheDocument();
     expect(screen.getByText(`This area arrives with ${arrivesWith}.`)).toBeInTheDocument();
+  });
+
+  // Verify the Projects route now renders the feature page instead of the shell placeholder,
+  // while the route table keeps owning its breadcrumb label.
+  it("renders the Projects route as ProjectsRoute", async () => {
+    renderAt("/projects");
+
+    expect(await screen.findByRole("heading", { level: 1, name: "Projects" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Search projects by name or path")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { level: 3, name: "xwork" })).toBeInTheDocument();
+    expect(screen.queryByText("This area arrives with FE-004.")).not.toBeInTheDocument();
+    expect(readBreadcrumb()).toEqual(["Projects"]);
   });
 
   // Verify the index route now renders the Home feature entry, which resolves its own branch
