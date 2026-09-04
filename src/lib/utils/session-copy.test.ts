@@ -92,16 +92,26 @@ describe("classifySessionsFailure", () => {
   });
 
   // Verify a boundary problem is reported as unrecoverable, so no surface loops on it.
-  it.each<SessionsError["code"]>([
-    "unauthorizedWindow",
-    "invalidMove",
-    "invalidSplitRatio",
-    "paneLimitReached",
-  ])("classifies %s as an integration failure", (code) => {
+  it.each<SessionsError["code"]>(["unauthorizedWindow"])(
+    "classifies %s as an integration failure",
+    (code) => {
+      const failure = classifySessionsFailure(rejection({ code } as SessionsError));
+
+      expect(failure.kind).toBe("integration");
+      expect(failure.message).toBe(SESSIONS_INTEGRATION_MESSAGE);
+      expect(failure.canRetry).toBe(false);
+    },
+  );
+
+  // Verify workspace rule failures use their operation-specific FE-007 copy.
+  it.each([
+    ["invalidMove", "XWork couldn't move that tab."],
+    ["invalidSplitRatio", "XWork couldn't resize that split."],
+    ["paneLimitReached", "A tab can hold up to 4 panes."],
+  ] as const)("classifies %s with workspace copy", (code, message) => {
     const failure = classifySessionsFailure(rejection({ code } as SessionsError));
 
-    expect(failure.kind).toBe("integration");
-    expect(failure.message).toBe(SESSIONS_INTEGRATION_MESSAGE);
+    expect(failure.message).toBe(message);
     expect(failure.canRetry).toBe(false);
   });
 
@@ -248,7 +258,7 @@ describe("buildDeleteSessionFacts", () => {
   it("keeps the backend count when fewer labels were supplied", () => {
     expect(
       buildDeleteSessionFacts(impact({ runningProcessCount: 9, runningProcessLabels: ["claude"] })),
-    ).toEqual(["9 running processes will be stopped: claude"]);
+    ).toEqual(["9 running processes will be stopped: claude, +8 more"]);
   });
 
   // Verify a counted blocker with no label at all still states the fact.

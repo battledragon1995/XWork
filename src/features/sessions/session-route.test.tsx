@@ -190,21 +190,21 @@ describe("SessionRoute states", () => {
     expect(screen.queryByText(/Starts in/)).not.toBeInTheDocument();
   });
 
-  // Verify a session that already has tabs renders only the explicit FE-007 placeholder.
-  it("renders the FE-007 placeholder for a session with tabs", async () => {
+  // Verify a session that already has tabs renders the FE-007 workspace without its old header.
+  it("renders the FE-007 workspace for a session with tabs", async () => {
     getSessionMock.mockResolvedValue(createNonEmptySessionDetail());
 
     renderRoute();
 
-    expect(await screen.findByText("This session has 1 tab.")).toBeInTheDocument();
-    expect(screen.getByText("Tabs and panes arrive with FE-007.")).toBeInTheDocument();
-    // The header stays in both branches at this slice, so rename and delete always have a
-    // way in even once a session has tabs.
-    expect(screen.getByRole("button", { name: "Rename session" })).toBeInTheDocument();
+    expect(await screen.findByRole("tablist", { name: "Session tabs" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: /Codex/ })).toHaveAttribute("aria-selected", "true");
+    expect(
+      screen.queryByRole("heading", { level: 1, name: "New Session" }),
+    ).not.toBeInTheDocument();
   });
 
-  // Verify the placeholder pluralizes the count it reads from the snapshot.
-  it("pluralizes the tab count", async () => {
+  // Verify every backend tab is rendered in its authoritative order.
+  it("renders every backend tab", async () => {
     const detail = createNonEmptySessionDetail();
     const firstTab = detail.tabs[0];
     if (firstTab === undefined) {
@@ -218,7 +218,7 @@ describe("SessionRoute states", () => {
 
     renderRoute();
 
-    expect(await screen.findByText("This session has 2 tabs.")).toBeInTheDocument();
+    expect(await screen.findAllByRole("tab")).toHaveLength(2);
   });
 });
 
@@ -605,7 +605,7 @@ describe("SessionRoute content branches", () => {
       FIXTURE_SESSION_ID,
       "builtin:codex",
     );
-    expect(await screen.findByText("This session has 1 tab.")).toBeInTheDocument();
+    expect(await screen.findByRole("tablist", { name: "Session tabs" })).toBeInTheDocument();
     expect(getSessionMock).toHaveBeenCalledOnce();
   });
 
@@ -622,7 +622,7 @@ describe("SessionRoute content branches", () => {
 
     await user.click(await screen.findByRole("button", { name: /Codex/ }));
 
-    expect(await screen.findByText("This session has 1 tab.")).toBeInTheDocument();
+    expect(await screen.findByRole("tablist", { name: "Session tabs" })).toBeInTheDocument();
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 

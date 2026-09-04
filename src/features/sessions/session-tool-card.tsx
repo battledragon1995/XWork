@@ -116,6 +116,7 @@ export function SessionToolCard(props: SessionToolCardProps) {
       // resolve its state. `tabIndex={-1}` keeps it out of the Tab order those controls belong
       // in, while still allowing a number key to focus it.
       <fieldset
+        disabled={isLocked}
         tabIndex={-1}
         aria-label={`${profile.name}, unavailable`}
         ref={props.cardRef as Ref<HTMLFieldSetElement>}

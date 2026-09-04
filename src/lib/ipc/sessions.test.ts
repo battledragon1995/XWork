@@ -13,14 +13,24 @@ import type {
 import { IpcCallError } from "./ipc-error";
 import {
   closeRuntimeTarget,
+  createTab,
   createSession,
   getCloseImpact,
   getSession,
   listSessions,
   onSessionsRuntimeChanged,
+  moveTab,
+  renameTab,
   renameSession,
+  reopenLastClosedTab,
+  selectPaneTool,
   selectSessionTool,
   setObservedSession,
+  setActivePane,
+  setActiveTab,
+  setMaximizedPane,
+  setSplitRatio,
+  splitPane,
 } from "./sessions";
 
 // Replace the desktop boundary so no adapter case reaches the real Tauri runtime.
@@ -123,6 +133,52 @@ describe("Sessions command wrappers", () => {
       sessionId: "s1",
       profileId: "builtin:codex",
     });
+  });
+
+  // Verify every FE-007 wrapper forwards the exact command name and camelCase payload.
+  it.each([
+    ["create_tab", () => createTab("s1"), { sessionId: "s1" }],
+    [
+      "rename_tab",
+      () => renameTab("s1", "t1", "Name"),
+      { sessionId: "s1", tabId: "t1", name: "Name" },
+    ],
+    [
+      "move_tab",
+      () => moveTab("s1", "t1", null),
+      { sessionId: "s1", tabId: "t1", beforeTabId: null },
+    ],
+    ["set_active_tab", () => setActiveTab("s1", "t1"), { sessionId: "s1", tabId: "t1" }],
+    [
+      "set_active_pane",
+      () => setActivePane("s1", "t1", "p1"),
+      { sessionId: "s1", tabId: "t1", paneId: "p1" },
+    ],
+    [
+      "split_pane",
+      () => splitPane("s1", "t1", "p1", "right"),
+      { sessionId: "s1", tabId: "t1", paneId: "p1", direction: "right" },
+    ],
+    [
+      "set_split_ratio",
+      () => setSplitRatio("s1", "t1", "x1", 4500),
+      { sessionId: "s1", tabId: "t1", splitId: "x1", ratioBasisPoints: 4500 },
+    ],
+    [
+      "set_maximized_pane",
+      () => setMaximizedPane("s1", "t1", null),
+      { sessionId: "s1", tabId: "t1", paneId: null },
+    ],
+    [
+      "select_pane_tool",
+      () => selectPaneTool("s1", "t1", "p1", "builtin:codex"),
+      { sessionId: "s1", tabId: "t1", paneId: "p1", profileId: "builtin:codex" },
+    ],
+    ["reopen_last_closed_tab", () => reopenLastClosedTab("s1"), { sessionId: "s1" }],
+  ] as const)("calls %s with its generated contract", async (command, call, args) => {
+    invokeMock.mockResolvedValue(DETAIL);
+    await expect(call()).resolves.toBe(DETAIL);
+    expect(invokeMock).toHaveBeenCalledExactlyOnceWith(command, args);
   });
 
   // Verify the impact read wraps the whole target in the single `target` field.

@@ -7,7 +7,7 @@ import { DeleteSessionDialog } from "./delete-session-dialog";
 import { RenameSessionDialog } from "./rename-session-dialog";
 import { SessionActionsMenu } from "./session-actions-menu";
 import { SessionToolPicker } from "./session-tool-picker";
-import { SessionWorkspacePlaceholder } from "./session-workspace-placeholder";
+import { SessionWorkspace } from "./session-workspace";
 import { useSessionDetail } from "./use-session-detail";
 import { useSessionLifecycle } from "./use-session-lifecycle";
 
@@ -148,7 +148,10 @@ export function SessionRoute() {
     if (target === "rename") {
       renameButtonRef.current?.focus();
     } else if (target === "menu") {
-      menuButtonRef.current?.focus();
+      const menuButton =
+        menuButtonRef.current ??
+        document.querySelector<HTMLButtonElement>('button[aria-label="Tab options"]');
+      menuButton?.focus();
     }
   }, []);
 
@@ -203,31 +206,8 @@ export function SessionRoute() {
   const summary = detail.detail.summary;
   const isBusy = lifecycle.pending !== null;
 
-  return (
-    <div className="@container h-full overflow-y-auto overflow-x-hidden px-8 py-7">
-      <div className="grid min-w-0 gap-6">
-        <SessionHeader
-          name={summary.name}
-          rootPath={detail.project?.rootPath ?? null}
-          isBusy={isBusy}
-          renameRef={renameButtonRef}
-          menuRef={menuButtonRef}
-          onRenameFromButton={() => openRename("rename")}
-          onRenameFromMenu={() => openRename("menu")}
-          onDelete={() => void openDelete()}
-        />
-
-        {detail.detail.tabs.length === 0 ? (
-          <SessionToolPicker
-            sessionId={summary.id}
-            onSelected={detail.applyDetail}
-            onRefresh={detail.refresh}
-          />
-        ) : (
-          <SessionWorkspacePlaceholder tabCount={detail.detail.tabs.length} />
-        )}
-      </div>
-
+  const dialogs = (
+    <>
       <RenameSessionDialog
         session={isRenameOpen ? summary : null}
         isPending={lifecycle.pending === "rename"}
@@ -239,13 +219,10 @@ export function SessionRoute() {
         }}
         onSubmit={(name) => {
           void lifecycle.rename(summary.id, name).then((shouldClose) => {
-            if (shouldClose) {
-              setRenameOpen(false);
-            }
+            if (shouldClose) setRenameOpen(false);
           });
         }}
       />
-
       <DeleteSessionDialog
         session={isDeleteOpen ? summary : null}
         impact={lifecycle.impact}
@@ -261,13 +238,51 @@ export function SessionRoute() {
           void lifecycle.confirmDelete(summary.id).then((shouldClose) => {
             if (shouldClose) {
               setDeleteOpen(false);
-              // The session the user was looking at is gone, so the route returns to the
-              // project it belonged to rather than waiting for the runtime event.
               leave();
             }
           });
         }}
       />
+    </>
+  );
+
+  if (detail.detail.tabs.length > 0) {
+    return (
+      <div className="h-full min-h-0 overflow-hidden">
+        <SessionWorkspace
+          detail={detail.detail}
+          rootPath={detail.project?.rootPath ?? null}
+          onApplyDetail={detail.applyDetail}
+          onRefresh={detail.refresh}
+          onRenameSession={() => openRename("menu")}
+          onDeleteSession={() => void openDelete()}
+        />
+        {dialogs}
+      </div>
+    );
+  }
+
+  return (
+    <div className="@container h-full overflow-y-auto overflow-x-hidden px-8 py-7">
+      <div className="grid min-w-0 gap-6">
+        <SessionHeader
+          name={summary.name}
+          rootPath={detail.project?.rootPath ?? null}
+          isBusy={isBusy}
+          renameRef={renameButtonRef}
+          menuRef={menuButtonRef}
+          onRenameFromButton={() => openRename("rename")}
+          onRenameFromMenu={() => openRename("menu")}
+          onDelete={() => void openDelete()}
+        />
+
+        <SessionToolPicker
+          sessionId={summary.id}
+          onSelected={detail.applyDetail}
+          onRefresh={detail.refresh}
+        />
+      </div>
+      {dialogs}
     </div>
   );
 }

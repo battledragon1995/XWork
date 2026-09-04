@@ -8,6 +8,21 @@ export const SESSIONS_INTEGRATION_MESSAGE =
 /** The session-name rule, worded exactly as the rename dialog shows it. */
 export const SESSION_NAME_REQUIREMENT = "Use 1 to 80 characters without control characters.";
 
+/** Copy shown whenever a split would exceed the Phase 1 pane cap. */
+export const PANE_LIMIT_MESSAGE = "A tab can hold up to 4 panes.";
+
+/** Explanation shown before closing a tab with measured blockers. */
+export const CLOSE_TAB_DESCRIPTION =
+  "The processes in this tab are stopped. You can reopen it later in this run, but a stopped process does not start again.";
+
+/** Explanation shown before removing a pane from a multi-pane tab. */
+export const CLOSE_PANE_DESCRIPTION =
+  "The processes in this pane are stopped and the pane is removed. This cannot be undone.";
+
+/** Explanation shown before clearing the only pane in a tab. */
+export const CLOSE_LAST_PANE_DESCRIPTION =
+  "The processes in this pane are stopped and the pane goes back to choosing content. This cannot be undone.";
+
 /** Longest session name BE-005 accepts, counted in Unicode scalar values. */
 const NAME_MAX_SCALARS = 80;
 
@@ -77,15 +92,19 @@ const FAILURES: Record<
   paneNotFound: { kind: "missing", message: "That pane is no longer open.", canRetry: false },
   splitNotFound: { kind: "missing", message: "That split is no longer open.", canRetry: false },
   invalidName: { kind: "invalidName", message: SESSION_NAME_REQUIREMENT, canRetry: false },
-  invalidMove: { kind: "integration", message: SESSIONS_INTEGRATION_MESSAGE, canRetry: false },
+  invalidMove: {
+    kind: "unknown",
+    message: "XWork couldn't move that tab.",
+    canRetry: false,
+  },
   invalidSplitRatio: {
-    kind: "integration",
-    message: SESSIONS_INTEGRATION_MESSAGE,
+    kind: "unknown",
+    message: "XWork couldn't resize that split.",
     canRetry: false,
   },
   paneLimitReached: {
-    kind: "integration",
-    message: SESSIONS_INTEGRATION_MESSAGE,
+    kind: "busy",
+    message: PANE_LIMIT_MESSAGE,
     canRetry: false,
   },
   sessionNotEmpty: { kind: "busy", message: "This session already has a tab.", canRetry: false },
@@ -162,7 +181,7 @@ function factRow(count: number, labels: readonly string[], phrase: string): stri
   }
 
   const shown = labels.slice(0, MAX_FACT_LABELS);
-  const remaining = labels.length - shown.length;
+  const remaining = Math.max(count, labels.length) - shown.length;
   const listed = remaining > 0 ? `${shown.join(", ")}, +${remaining} more` : shown.join(", ");
 
   return `${count} ${phrase}: ${listed}`;
@@ -173,7 +192,7 @@ function factRow(count: number, labels: readonly string[], phrase: string): stri
  * count renders no row at all, so the facts box states only measured blockers and disappears
  * entirely for a session with none.
  */
-export function buildDeleteSessionFacts(impact: CloseImpactDto): readonly string[] {
+export function buildCloseImpactFacts(impact: CloseImpactDto): readonly string[] {
   const facts: string[] = [];
 
   if (impact.runningProcessCount > 0) {
@@ -199,4 +218,9 @@ export function buildDeleteSessionFacts(impact: CloseImpactDto): readonly string
   }
 
   return facts;
+}
+
+/** Preserve the FE-006 session-delete API while sharing target-neutral fact copy. */
+export function buildDeleteSessionFacts(impact: CloseImpactDto): readonly string[] {
+  return buildCloseImpactFacts(impact);
 }

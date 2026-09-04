@@ -9,7 +9,7 @@ import {
   type UnlistenFn,
 } from "@/lib/ipc/sessions";
 import { classifySessionsFailure, type SessionsFailure } from "@/lib/utils/session-copy";
-import { classifySessionRevision } from "@/lib/utils/session-revision";
+import { classifySessionRevision, compareSessionRevisions } from "@/lib/utils/session-revision";
 
 /** What the session route reads about the one session it is showing. */
 export interface SessionDetailData {
@@ -141,6 +141,13 @@ export function useSessionDetail(sessionId: string): SessionDetailData {
     (detail: SessionDetailDto) => {
       if (detail.summary.id !== sessionId) {
         // A snapshot for another session would silently replace the route's own.
+        return;
+      }
+
+      const applied = appliedRevision.current;
+      // Independent workspace mutations may resolve out of order. Equal revisions remain
+      // valid because a full command response can enrich an event-updated summary.
+      if (applied !== null && compareSessionRevisions(detail.revision, applied) < 0) {
         return;
       }
 

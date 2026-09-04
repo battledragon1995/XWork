@@ -256,13 +256,13 @@ compatibility without changing unrelated packages.
   `@dnd-kit/core@6.3.1`, `@dnd-kit/sortable@10.0.0`, and
   `@dnd-kit/utilities@3.2.2`.
 
-- [ ] **Step 1: Capture the dependency baseline**
+- [x] **Step 1: Capture the dependency baseline**
 
   Review the current direct dependencies and preserve every unrelated manifest
   and lockfile entry. This task is the isolated dependency update required by
   `01-TechStack.md`.
 
-- [ ] **Step 2: Install exact direct versions**
+- [x] **Step 2: Install exact direct versions**
 
   Run:
 
@@ -274,7 +274,7 @@ compatibility without changing unrelated packages.
   Global Constraints and pnpm updates only the dependency graph needed for
   them.
 
-- [ ] **Step 3: Verify the resolved direct graph**
+- [x] **Step 3: Verify the resolved direct graph**
 
   Run:
 
@@ -320,7 +320,7 @@ tab/pane test snapshots, and reject older mutation responses at the route.
   constants; updated failure classification; multi-tab/multi-pane/close/catalog
   fixture factories; revision-monotonic `applyDetail`.
 
-- [ ] **Step 1: Add focused failing adapter, copy, fixture-consumer, and stale-response tests**
+- [x] **Step 1: Add focused failing adapter, copy, fixture-consumer, and stale-response tests**
 
   Assert every command name and camelCase argument, including explicit `null`
   for `beforeTabId` and `paneId`; typed `IpcCallError` propagation; shared facts
@@ -328,7 +328,7 @@ tab/pane test snapshots, and reject older mutation responses at the route.
   facts; exact FE-007 messages and retry policy; and `applyDetail` accepting a
   newer/equal route snapshot while ignoring an older revision.
 
-- [ ] **Step 2: Verify the focused tests fail for named missing behavior**
+- [x] **Step 2: Verify the focused tests fail for named missing behavior**
 
   Run:
 
@@ -340,7 +340,7 @@ tab/pane test snapshots, and reject older mutation responses at the route.
   exports/close-fact copy and because the current `applyDetail` accepts an older
   revision.
 
-- [ ] **Step 3: Implement the minimum boundary and shared changes**
+- [x] **Step 3: Implement the minimum boundary and shared changes**
 
   Forward DTOs without remapping, factor existing delete facts through
   `buildCloseImpactFacts`, add exact tab/pane copy, classify
@@ -349,7 +349,7 @@ tab/pane test snapshots, and reject older mutation responses at the route.
   snapshot. Keep same-revision application valid so the direct response can
   replace an event-updated summary at that revision.
 
-- [ ] **Step 4: Verify the boundary and revision behavior**
+- [x] **Step 4: Verify the boundary and revision behavior**
 
   Run the Step 2 command.
 
@@ -380,14 +380,14 @@ and all seven Phase 1 shortcut matches/labels used by later components.
   `WorkspaceShortcutId`, `WorkspaceShortcut`, `WORKSPACE_SHORTCUTS`,
   `matchWorkspaceShortcut`, and `shortcutLabel` with the signatures in FE-007.
 
-- [ ] **Step 1: Add failing pure unit tests**
+- [x] **Step 1: Add failing pure unit tests**
 
   Cover first-before-second leaf order, one-to-four-pane trees, missing pane
   index `0`, ratio boundaries and round trips, each drag destination including
   unchanged/end positions, exact `code`/modifier matches, rejection of extra
   modifiers, and all display labels including `Ctrl Alt \`.
 
-- [ ] **Step 2: Verify the modules are discovered and missing**
+- [x] **Step 2: Verify the modules are discovered and missing**
 
   Run:
 
@@ -398,14 +398,14 @@ and all seven Phase 1 shortcut matches/labels used by later components.
   Expected: both files are discovered and fail because the two modules/exports
   do not exist yet, not because zero tests matched.
 
-- [ ] **Step 3: Implement the pure helpers**
+- [x] **Step 3: Implement the pure helpers**
 
   Traverse the tagged binary tree without mutation; use exact integer basis
   points at the backend boundary; compute `beforeTabId` from the post-removal
   destination so same-position drops produce no operation; and match shortcut
   `code`, Ctrl, Alt, Shift, and absence of extra modifiers exactly.
 
-- [ ] **Step 4: Verify all pure contracts**
+- [x] **Step 4: Verify all pure contracts**
 
   Run the Step 2 command.
 
@@ -435,7 +435,7 @@ race/error into the correct refresh, message, retry, lock, or silent exit.
   Tests inject adapter functions and controlled promises at module boundaries;
   they do not run Tauri or processes.
 
-- [ ] **Step 1: Add failing hook tests for concurrency and every recovery branch**
+- [x] **Step 1: Add failing hook tests for concurrency and every recovery branch**
 
   Assert one structural slot; independent, deduplicated activation; per-split
   ordered commits; no-op same-position tab moves; successful snapshot apply;
@@ -445,7 +445,7 @@ race/error into the correct refresh, message, retry, lock, or silent exit.
   missing targets, `closeInProgress`, `contentLifecycleFailed`,
   `runtimeShuttingDown`, and `unauthorizedWindow`.
 
-- [ ] **Step 2: Verify the hook target fails on the missing module**
+- [x] **Step 2: Verify the hook target fails on the missing module**
 
   Run:
 
@@ -456,7 +456,7 @@ race/error into the correct refresh, message, retry, lock, or silent exit.
   Expected: Vitest discovers the file and fails because
   `useWorkspaceMutations` and its public state/actions do not exist.
 
-- [ ] **Step 3: Implement the coordinator with operation-specific recovery**
+- [x] **Step 3: Implement the coordinator with operation-specific recovery**
 
   Keep one structural promise slot, a latest-target dedupe for each activation
   kind, and one chained queue per split. Derive no backend-owned state locally.
@@ -465,7 +465,7 @@ race/error into the correct refresh, message, retry, lock, or silent exit.
   `closeInProgress` lock the workspace until a new snapshot; and on
   `runtimeShuttingDown` clear dialogs/failures silently.
 
-- [ ] **Step 4: Verify orchestration and retry semantics**
+- [x] **Step 4: Verify orchestration and retry semantics**
 
   Run the Step 2 command.
 
@@ -499,7 +499,7 @@ placeholder.
 - Produces: `SessionPane`, `PaneContentPicker`, and `PaneContentPlaceholder`
   props internal to `src/features/sessions/`; no app-level export.
 
-- [ ] **Step 1: Add failing pane/content component tests**
+- [x] **Step 1: Add failing pane/content component tests**
 
   Assert all four content-union identities, missing-profile neutral fallback,
   root-path/null behavior, active border plus `aria-current`, focus activation,
@@ -508,7 +508,7 @@ placeholder.
   unavailable/check/settings behavior, the inert FE-016 File column, and exact
   `toolSelection`/`terminal`/`file` placeholder copy.
 
-- [ ] **Step 2: Verify all three targets fail on missing components**
+- [x] **Step 2: Verify all three targets fail on missing components**
 
   Run:
 
@@ -519,14 +519,14 @@ placeholder.
   Expected: all three files are discovered and fail because their component
   modules are absent.
 
-- [ ] **Step 3: Implement presentational pane and content branches**
+- [x] **Step 3: Implement presentational pane and content branches**
 
   Keep control decisions in props, use semantic disabled states and tooltip
   copy, render `Recent` only when populated, reuse the one workspace catalog,
   and call selection only for available profiles. Exhaustively switch on
   `PaneContentDto.kind`; do not create a terminal, file reader, or storage.
 
-- [ ] **Step 4: Verify pane leaves and picker states**
+- [x] **Step 4: Verify pane leaves and picker states**
 
   Run the Step 2 command.
 
@@ -557,7 +557,7 @@ not unmount the rest of the tree.
 - Produces: `PaneLayout` and `PaneSplitHandle` sessions-local props; one
   temporary ratio per active handle; labeled focusable separators.
 
-- [ ] **Step 1: Add failing layout and resize tests**
+- [x] **Step 1: Add failing layout and resize tests**
 
   Render the one-, two-, three-, and four-pane fixture trees; assert
   `vertical` means left/right and `horizontal` means up/down, `first` precedes
@@ -567,7 +567,7 @@ not unmount the rest of the tree.
   `invalidSplitRatio` restores. In maximize state assert every pane remains in
   the DOM while other panes/separators become inert and leave the Tab order.
 
-- [ ] **Step 2: Verify both component targets fail on missing modules**
+- [x] **Step 2: Verify both component targets fail on missing modules**
 
   Run:
 
@@ -578,7 +578,7 @@ not unmount the rest of the tree.
   Expected: both files are discovered and fail because the recursive renderer
   and split handle do not exist.
 
-- [ ] **Step 3: Implement recursive rendering and resize synchronization**
+- [x] **Step 3: Implement recursive rendering and resize synchronization**
 
   Give every split its own two-panel `Group` and 8px `Separator`; do not use
   `useDefaultLayout` or browser-backed storage. Pass v4 percentage strings for
@@ -588,7 +588,7 @@ not unmount the rest of the tree.
   ratio win. Implement maximize entirely with positioning/visibility/pointer/
   focus attributes, including the exact pane-index badge.
 
-- [ ] **Step 4: Verify axes, commits, cancellation, and mounting**
+- [x] **Step 4: Verify axes, commits, cancellation, and mounting**
 
   Run the Step 2 command.
 
@@ -626,7 +626,7 @@ automatic active-tab scrolling without predicting the backend order.
 - Produces: `SessionTab`, `SessionTabStrip`, `TabOptionsMenu`,
   `RenameTabDialog`, and `CloseTargetDialog` internal props/events.
 
-- [ ] **Step 1: Add failing tab/menu/dialog tests**
+- [x] **Step 1: Add failing tab/menu/dialog tests**
 
   Assert content icons, full-name titles, close labels, selected and roving
   tabindex state; Arrow/Home/End focus movement and Enter/Space selection;
@@ -637,7 +637,7 @@ automatic active-tab scrolling without predicting the backend order.
   close target wordings, singular/plural/bounded facts, cancel, second
   confirmation, retry, pending, and focus return.
 
-- [ ] **Step 2: Verify all five targets fail on missing components**
+- [x] **Step 2: Verify all five targets fail on missing components**
 
   Run:
 
@@ -648,7 +648,7 @@ automatic active-tab scrolling without predicting the backend order.
   Expected: Vitest discovers all five files and fails on their missing modules,
   not on an undiscovered test glob.
 
-- [ ] **Step 3: Implement the strip, tabs, menus, and dialogs**
+- [x] **Step 3: Implement the strip, tabs, menus, and dialogs**
 
   Render a horizontal non-wrapping `role="tablist"`; separate sortable drag
   handles from tab close buttons; calculate but do not display an optimistic
@@ -657,7 +657,7 @@ automatic active-tab scrolling without predicting the backend order.
   existing FE-006 visual patterns. Keep `Tab options` scoped to the active tab
   and expose session intents only to the route.
 
-- [ ] **Step 4: Verify all tab and dialog behaviors**
+- [x] **Step 4: Verify all tab and dialog behaviors**
 
   Run the Step 2 command.
 
@@ -694,7 +694,7 @@ session-lifecycle branches remain intact.
   onRenameSession, onDeleteSession })` boundary from FE-007. No `src/app/` or
   cross-feature export is added.
 
-- [ ] **Step 1: Add failing shortcut, workspace, and route regression tests**
+- [x] **Step 1: Add failing shortcut, workspace, and route regression tests**
 
   Assert all seven handlers; ignored input/textarea/contenteditable,
   `isComposing`, repeat, extra modifiers, disabled action, and open-dialog
@@ -703,7 +703,7 @@ session-lifecycle branches remain intact.
   intents; and route branches where nonempty content loses the header/padding
   while empty content retains the FE-006 picker/header/dialog behavior.
 
-- [ ] **Step 2: Verify the integration tests fail on the placeholder**
+- [x] **Step 2: Verify the integration tests fail on the placeholder**
 
   Run:
 
@@ -715,7 +715,7 @@ session-lifecycle branches remain intact.
   are missing and the route still renders `SessionWorkspacePlaceholder` plus
   the nonempty-branch session header.
 
-- [ ] **Step 3: Compose without adding another backend state owner**
+- [x] **Step 3: Compose without adding another backend state owner**
 
   Build the active tab/pane defensively from `detail`, wire all actions through
   one mutation hook, mount one catalog, open feature dialogs in the workspace,
@@ -725,7 +725,7 @@ session-lifecycle branches remain intact.
   lifecycle dialog ownership, pass rename/delete intents into the workspace,
   and delete the old placeholder.
 
-- [ ] **Step 4: Verify workspace integration and FE-006 regression behavior**
+- [x] **Step 4: Verify workspace integration and FE-006 regression behavior**
 
   Run the Step 2 command.
 
@@ -756,7 +756,7 @@ workflow is manually demonstrated without adding desktop end-to-end tests.
 - Produces: passing automated evidence and a recorded targeted Windows smoke
   result. It produces no automated desktop test and touches no real user data.
 
-- [ ] **Step 1: Run every focused FE-007 target together**
+- [x] **Step 1: Run every focused FE-007 target together**
 
   Run:
 
@@ -767,7 +767,7 @@ workflow is manually demonstrated without adding desktop end-to-end tests.
   Expected: Vitest discovers all 19 FE-007-listed files, including the extended
   FE-006 `use-session-detail` regression target, and every assertion passes.
 
-- [ ] **Step 2: Run all automated and negative-scope checks**
+- [x] **Step 2: Run all automated and negative-scope checks**
 
   Run every command in Final Verification.
 
@@ -780,7 +780,7 @@ workflow is manually demonstrated without adding desktop end-to-end tests.
   Manual Windows Smoke Check with `pnpm tauri dev`; do not improvise process or
   file blockers that BE-007/FE-008/FE-017 have not implemented yet.
 
-- [ ] **Step 4: Record evidence without rewriting history**
+- [x] **Step 4: Record evidence without rewriting history**
 
   Mark tasks accurately, append material deviations/decisions, and change
   Status only when required automated checks and the required manual smoke run
@@ -902,12 +902,43 @@ Run `pnpm tauri dev` with one disposable available project. Use existing Stage
   backend ownership remain unchanged. Synchronizing that terminology back into
   FE-007 is a separate documentation correction and is not authorized here.
 
+- The first parallel Rust test attempt exhausted the Windows page file during
+  dependency compilation. Verification was rerun with
+  `CARGO_BUILD_JOBS=1`; all Rust tests then passed without a source change.
+  The final Tauri build used the same resource limit.
+- The four negative-scope PowerShell snippets leave `rg`'s no-match exit code
+  (`1`) as the process exit code even when their `$hits` arrays are empty.
+  Verification therefore reran the same predicates with an explicit `exit 0`
+  after the empty-hit check. All four searches had zero matches.
+- Native-window automation is unavailable in the current execution
+  environment. The required targeted Windows smoke checklist remains open;
+  no automated desktop end-to-end test was added as a substitute.
+
 During implementation, append material deviations and decisions without
 rewriting completed history.
 
 ## Outcome
 
-Pending implementation.
+Implementation and automated verification are complete; the plan remains
+active because the required manual Windows smoke run is pending.
 
-When complete, summarize delivered behavior, exact automated and manual
-verification evidence, and remaining FE-008/FE-016/FE-017 limitations.
+- Delivered the backend-owned tab strip and recursive one-to-four-pane
+  workspace, including create/select/rename/reorder/close/reopen, split,
+  resize, maximize/restore, tool selection, accessible alternatives, focus
+  restoration, seven local shortcuts, close-impact confirmation, retry and
+  stale-snapshot handling.
+- Preserved the FE-006 empty-session picker and route-owned session lifecycle
+  dialogs, removed the nonempty-session placeholder/header, and made no change
+  under `src-tauri`, `src/bindings`, or `src/app`.
+- Exact dependency inspection passed for `react-resizable-panels@4.12.3`,
+  `@dnd-kit/core@6.3.1`, `@dnd-kit/sortable@10.0.0`, and
+  `@dnd-kit/utilities@3.2.2`. Frontend format, lint, type check, all 19 focused
+  FE-007 test files (183 tests), the full frontend suite (79 files and 1,631
+  tests), the Vite production build, every negative-scope check, Rustfmt,
+  Clippy, all Rust tests (335 tests), and the Windows Tauri release build
+  passed. The release executable was produced at
+  `src-tauri/target/release/xwork.exe`.
+- FE-008 terminal, FE-016 file explorer, and FE-017 file/source content remain
+  intentional placeholders. Pane tool selection does not start a process.
+- Pending evidence: run the 11-item Manual Windows Smoke Check with disposable
+  data, then mark Task 9 Step 3 complete and change this plan's status.

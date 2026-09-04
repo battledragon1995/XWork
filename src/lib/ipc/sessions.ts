@@ -7,6 +7,7 @@ import type {
   SessionRuntimeEventDto,
   SessionSummaryDto,
   SessionsError,
+  SplitDirectionDto,
 } from "@/bindings/sessions/sessions";
 import { invokeCommand } from "./ipc-error";
 
@@ -60,6 +61,97 @@ export function renameSession(sessionId: string, name: string): Promise<SessionD
  */
 export function selectSessionTool(sessionId: string, profileId: string): Promise<SessionDetailDto> {
   return invokeSessions<SessionDetailDto>("select_session_tool", { sessionId, profileId });
+}
+
+/** Create one empty tab and return the authoritative workspace snapshot. */
+export function createTab(sessionId: string): Promise<SessionDetailDto> {
+  return invokeSessions<SessionDetailDto>("create_tab", { sessionId });
+}
+
+/** Rename one tab without normalizing the backend-owned value. */
+export function renameTab(
+  sessionId: string,
+  tabId: string,
+  name: string,
+): Promise<SessionDetailDto> {
+  return invokeSessions<SessionDetailDto>("rename_tab", { sessionId, tabId, name });
+}
+
+/** Move one tab before another tab, or to the end when `beforeTabId` is null. */
+export function moveTab(
+  sessionId: string,
+  tabId: string,
+  beforeTabId: string | null,
+): Promise<SessionDetailDto> {
+  return invokeSessions<SessionDetailDto>("move_tab", { sessionId, tabId, beforeTabId });
+}
+
+/** Activate one tab and return the resulting complete session snapshot. */
+export function setActiveTab(sessionId: string, tabId: string): Promise<SessionDetailDto> {
+  return invokeSessions<SessionDetailDto>("set_active_tab", { sessionId, tabId });
+}
+
+/** Activate one pane within one tab. */
+export function setActivePane(
+  sessionId: string,
+  tabId: string,
+  paneId: string,
+): Promise<SessionDetailDto> {
+  return invokeSessions<SessionDetailDto>("set_active_pane", { sessionId, tabId, paneId });
+}
+
+/** Split one pane in the requested physical direction. */
+export function splitPane(
+  sessionId: string,
+  tabId: string,
+  paneId: string,
+  direction: SplitDirectionDto,
+): Promise<SessionDetailDto> {
+  return invokeSessions<SessionDetailDto>("split_pane", { sessionId, tabId, paneId, direction });
+}
+
+/** Commit one split ratio expressed in integer basis points. */
+export function setSplitRatio(
+  sessionId: string,
+  tabId: string,
+  splitId: string,
+  ratioBasisPoints: number,
+): Promise<SessionDetailDto> {
+  return invokeSessions<SessionDetailDto>("set_split_ratio", {
+    sessionId,
+    tabId,
+    splitId,
+    ratioBasisPoints,
+  });
+}
+
+/** Maximize one pane, or restore the complete layout when `paneId` is null. */
+export function setMaximizedPane(
+  sessionId: string,
+  tabId: string,
+  paneId: string | null,
+): Promise<SessionDetailDto> {
+  return invokeSessions<SessionDetailDto>("set_maximized_pane", { sessionId, tabId, paneId });
+}
+
+/** Attach a profile selection to one empty pane without starting a process. */
+export function selectPaneTool(
+  sessionId: string,
+  tabId: string,
+  paneId: string,
+  profileId: string,
+): Promise<SessionDetailDto> {
+  return invokeSessions<SessionDetailDto>("select_pane_tool", {
+    sessionId,
+    tabId,
+    paneId,
+    profileId,
+  });
+}
+
+/** Restore the last tab closed during this runtime session. */
+export function reopenLastClosedTab(sessionId: string): Promise<SessionDetailDto> {
+  return invokeSessions<SessionDetailDto>("reopen_last_closed_tab", { sessionId });
 }
 
 /** Read the process and unsaved-file blockers of one close target. Nothing is closed yet. */

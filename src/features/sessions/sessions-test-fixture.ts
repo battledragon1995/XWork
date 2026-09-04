@@ -1,8 +1,11 @@
 import type { ProjectDto } from "@/bindings/projects/projects";
+import type { CliProfileDto, CliProfilesSnapshotDto } from "@/bindings/terminal/cli-profiles";
+import type { ToolCatalogData } from "./use-tool-catalog";
 import type {
   CloseImpactDto,
   CloseTargetDto,
   PaneDto,
+  PaneLayoutNodeDto,
   SessionDetailDto,
   SessionRuntimeEventDto,
   SessionSummaryDto,
@@ -16,6 +19,8 @@ import type {
 export const FIXTURE_PROJECT_ID = "project-alpha";
 export const FIXTURE_OTHER_PROJECT_ID = "project-beta";
 export const FIXTURE_SESSION_ID = "session-1";
+export const FIXTURE_TAB_ID = "tab-1";
+export const FIXTURE_PANE_ID = "pane-1";
 
 /** A fixed root path that looks like a Windows path without naming a real folder. */
 export const FIXTURE_ROOT_PATH = "D:\\Fixtures\\alpha";
@@ -51,7 +56,27 @@ export function createSessionSummary(
 
 /** Build one pane carrying the only content FE-006 can create. */
 export function createToolSelectionPane(profileId: string, title: string): PaneDto {
-  return { id: "pane-1", content: { kind: "toolSelection", profileId, title } };
+  return { id: FIXTURE_PANE_ID, content: { kind: "toolSelection", profileId, title } };
+}
+
+/** Build one pane with caller-selected content for layout and placeholder tests. */
+export function createPaneDto(overrides: Partial<PaneDto> = {}): PaneDto {
+  return { id: FIXTURE_PANE_ID, content: { kind: "empty" }, ...overrides };
+}
+
+/** Build one two-leaf layout with the requested backend axis and ratio. */
+export function createSplitLayout(
+  overrides: Partial<Extract<PaneLayoutNodeDto, { kind: "split" }>> = {},
+): PaneLayoutNodeDto {
+  return {
+    kind: "split",
+    splitId: "split-1",
+    axis: "vertical",
+    ratioBasisPoints: 5000,
+    first: { kind: "pane", pane: createPaneDto() },
+    second: { kind: "pane", pane: createPaneDto({ id: "pane-2" }) },
+    ...overrides,
+  };
 }
 
 /** Build one tab whose single pane holds a chosen tool. */
@@ -59,12 +84,74 @@ export function createTabDto(overrides: Partial<TabDto> = {}): TabDto {
   const pane = createToolSelectionPane("builtin:codex", "Codex");
 
   return {
-    id: "tab-1",
+    id: FIXTURE_TAB_ID,
     name: "Codex",
     layout: { kind: "pane", pane },
     activePaneId: pane.id,
     maximizedPaneId: null,
     ...overrides,
+  };
+}
+
+/** Build one deterministic CLI profile without reading the developer's catalog. */
+export function createCliProfileDto(overrides: Partial<CliProfileDto> = {}): CliProfileDto {
+  return {
+    id: "builtin:codex",
+    name: "Codex",
+    kind: "builtIn",
+    command: "codex",
+    arguments: [],
+    shellId: null,
+    effectiveShellId: "shell:cmd",
+    icon: "CX",
+    color: "#cc785c",
+    environment: [],
+    availability: { status: "available", checkedAtUnixMs: "1700000000000" },
+    ...overrides,
+  };
+}
+
+/** Build a complete isolated catalog snapshot for picker and pane tests. */
+export function createCliProfilesSnapshot(
+  overrides: Partial<CliProfilesSnapshotDto> = {},
+): CliProfilesSnapshotDto {
+  return {
+    revision: "4",
+    defaultShellId: "shell:cmd",
+    effectiveDefaultShellId: "shell:cmd",
+    shells: [],
+    profiles: [createCliProfileDto()],
+    ...overrides,
+  };
+}
+
+/** Build a ready catalog seam that performs no backend or event operation. */
+export function createToolCatalogData(overrides: Partial<ToolCatalogData> = {}): ToolCatalogData {
+  return {
+    status: "ready",
+    snapshot: createCliProfilesSnapshot(),
+    checkingProfileIds: new Set<string>(),
+    unavailableProfileIds: new Set<string>(),
+    failure: null,
+    refresh: () => {},
+    check: async () => {},
+    markUnavailable: () => {},
+    ...overrides,
+  };
+}
+
+/** Build the close target for one fixture tab. */
+export function createTabCloseTarget(): CloseTargetDto {
+  return { kind: "tab", sessionId: FIXTURE_SESSION_ID, tabId: FIXTURE_TAB_ID };
+}
+
+/** Build the close target for one fixture pane. */
+export function createPaneCloseTarget(): CloseTargetDto {
+  return {
+    kind: "pane",
+    sessionId: FIXTURE_SESSION_ID,
+    tabId: FIXTURE_TAB_ID,
+    paneId: FIXTURE_PANE_ID,
   };
 }
 

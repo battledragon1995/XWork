@@ -379,6 +379,22 @@ describe("useSessionDetail mutation snapshots", () => {
     expect(getSessionMock).toHaveBeenCalledOnce();
   });
 
+  // Verify a late mutation response cannot replace a snapshot with a greater decimal revision.
+  it("ignores an older returned snapshot", async () => {
+    const view = await mountReady();
+    act(() =>
+      view.result.current.applyDetail(
+        createSessionDetail({ revision: "100", summary: createSessionSummary({ name: "Newest" }) }),
+      ),
+    );
+    act(() =>
+      view.result.current.applyDetail(
+        createSessionDetail({ revision: "99", summary: createSessionSummary({ name: "Late" }) }),
+      ),
+    );
+    expect(view.result.current.detail?.summary.name).toBe("Newest");
+  });
+
   // Verify a snapshot of another session cannot replace this route's own.
   it("rejects a snapshot for another session", async () => {
     const view = await mountReady();
