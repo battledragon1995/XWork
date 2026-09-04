@@ -388,6 +388,13 @@ describe("WindowControls", () => {
     );
   });
 
+  // Verify route labels behave like native titlebar chrome instead of selectable document text.
+  it("keeps the default cursor and disables text selection across the drag surface", () => {
+    renderShellAt();
+
+    expect(screen.getByTestId("shell-topbar")).toHaveClass("cursor-default", "select-none");
+  });
+
   // Verify native dragging cannot leave a previously clicked sidebar tooltip focused and open.
   it("clears sidebar focus before native window dragging starts", async () => {
     const user = userEvent.setup();

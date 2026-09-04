@@ -115,7 +115,7 @@ export function AppTopbar(props: { onQuit: () => void; isCheckingQuit: boolean }
       data-tauri-drag-region
       onPointerDownCapture={handleDragRegionPointerDown}
       onDoubleClick={handleDoubleClick}
-      className="grid items-center border-b border-hairline bg-canvas"
+      className="grid cursor-default items-center border-b border-hairline bg-canvas select-none"
       style={{ gridTemplateColumns: "auto minmax(0, 1fr) auto" }}
     >
       {/* The brand column is an `auto` track sized by this element, so its width can follow
