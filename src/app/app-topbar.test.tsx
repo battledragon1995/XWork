@@ -4,13 +4,15 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testi
 import { userEvent } from "@testing-library/user-event";
 import { RouterProvider } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { resetProjectsStore, useProjectsStore } from "@/features/projects/projects-store";
+import { resetSessionsStore } from "@/features/sessions/sessions-store";
 import {
   hideMainWindow,
   minimizeMainWindow,
   toggleMainWindowMaximized,
 } from "@/lib/ipc/app-lifecycle";
 import { IpcCallError } from "@/lib/ipc/ipc-error";
-import { resetProjectsStore, useProjectsStore } from "@/features/projects/projects-store";
+import { getSession, listSessions } from "@/lib/ipc/sessions";
 import { AppProviders } from "./app-providers";
 import { createAppRouter } from "./app-router";
 import { COLLAPSED_SIDEBAR_WIDTH_PX, resetShellStore, useShellStore } from "./shell-store";
@@ -31,15 +33,6 @@ vi.mock("@/lib/ipc/app-lifecycle", () => ({
 // branch, so no project-load alert can compete with the window-control alerts under test.
 vi.mock("@/lib/ipc/projects", () => ({
   addProject: vi.fn(async () => ({ outcome: "cancelled" })),
-  getProject: vi.fn(async () => ({
-    id: "3f2a",
-    displayName: "xwork",
-    rootPath: "D:\\Self\\XWork",
-    isPinned: false,
-    addedAtMs: 1_700_000_000_000,
-    lastOpenedAtMs: 1_700_000_000_000,
-    availability: { status: "available" },
-  })),
   getProjectGitStatus: vi.fn(async () => ({
     summary: {
       projectId: "3f2a",
@@ -77,6 +70,28 @@ vi.mock("@/lib/ipc/projects", () => ({
   removeProject: vi.fn(),
   renameProject: vi.fn(),
   setProjectPinned: vi.fn(),
+  getProject: vi.fn(async () => ({
+    id: "3f2a",
+    displayName: "xwork",
+    rootPath: "D:SelfXWork",
+    isPinned: false,
+    addedAtMs: 1_700_000_000_000,
+    lastOpenedAtMs: 1_700_000_000_000,
+    availability: { status: "available" },
+  })),
+}));
+
+// Replace the Sessions boundary the breadcrumb and the sidebar rows now read.
+vi.mock("@/lib/ipc/sessions", () => ({
+  closeRuntimeTarget: vi.fn(),
+  createSession: vi.fn(),
+  getCloseImpact: vi.fn(),
+  getSession: vi.fn(),
+  listSessions: vi.fn(async () => []),
+  onSessionsRuntimeChanged: vi.fn(async () => () => {}),
+  renameSession: vi.fn(),
+  selectSessionTool: vi.fn(),
+  setObservedSession: vi.fn(async () => null),
 }));
 
 const hideMock = vi.mocked(hideMainWindow);
@@ -87,10 +102,13 @@ beforeEach(() => {
   vi.clearAllMocks();
   resetShellStore();
   resetProjectsStore();
+  resetSessionsStore();
+  vi.mocked(listSessions).mockResolvedValue([]);
 });
 
 afterEach(() => {
   cleanup();
+  resetSessionsStore();
   vi.unstubAllGlobals();
 });
 
@@ -550,5 +568,114 @@ describe("AppTopbar brand column", () => {
     renderShellAt();
 
     expect(getBrandColumn()).toHaveAttribute("data-tauri-drag-region");
+  });
+});
+
+describe("AppTopbar session breadcrumb", () => {
+  /** One runtime session of the registered project. */
+  const SESSION = {
+    id: "s1",
+    projectId: "3f2a",
+    name: "Debounce PTY resize",
+    status: "noToolYet" as const,
+    runningProcessCount: 0,
+    tabCount: 0,
+  };
+
+  /** Read the breadcrumb labels currently rendered, in order. */
+  function readBreadcrumb(): string[] {
+    return within(screen.getByLabelText("Breadcrumb"))
+      .getAllByRole("listitem")
+      .map((item) => item.textContent ?? "");
+  }
+
+  // Verify the session route reaches three levels, both labels coming from retained
+  // snapshots rather than from the opaque route parameter.
+  it("renders a three-level session breadcrumb", async () => {
+    vi.mocked(listSessions).mockResolvedValue([SESSION]);
+    vi.mocked(getSession).mockResolvedValue({
+      summary: SESSION,
+      tabs: [],
+      activeTabId: null,
+      canReopenLastClosedTab: false,
+      revision: "4",
+    });
+    renderShellAt("/sessions/s1");
+
+    await waitFor(() =>
+      expect(readBreadcrumb()).toEqual(["Projects", "xwork", "Debounce PTY resize"]),
+    );
+  });
+
+  // Verify a rename recomputes the label with no navigation at all, which is the whole
+  // reason the breadcrumb subscribes to the session snapshot.
+  it("follows a renamed session without navigating", async () => {
+    vi.mocked(listSessions).mockResolvedValue([SESSION]);
+    vi.mocked(getSession).mockResolvedValue({
+      summary: SESSION,
+      tabs: [],
+      activeTabId: null,
+      canReopenLastClosedTab: false,
+      revision: "4",
+    });
+    renderShellAt("/sessions/s1");
+    await waitFor(() =>
+      expect(readBreadcrumb()).toEqual(["Projects", "xwork", "Debounce PTY resize"]),
+    );
+
+    vi.mocked(listSessions).mockResolvedValue([{ ...SESSION, name: "Renamed" }]);
+    await act(async () => {
+      window.dispatchEvent(new Event("focus"));
+    });
+
+    await waitFor(() => expect(readBreadcrumb()).toEqual(["Projects", "xwork", "Renamed"]));
+  });
+
+  // Verify the project crumb still comes from the project snapshot, so both stores really
+  // are read for the same breadcrumb.
+  it("follows a renamed project in the session breadcrumb", async () => {
+    vi.mocked(listSessions).mockResolvedValue([SESSION]);
+    vi.mocked(getSession).mockResolvedValue({
+      summary: SESSION,
+      tabs: [],
+      activeTabId: null,
+      canReopenLastClosedTab: false,
+      revision: "4",
+    });
+    renderShellAt("/sessions/s1");
+    await waitFor(() => expect(readBreadcrumb()).toHaveLength(3));
+
+    act(() => {
+      useProjectsStore.setState({
+        projects: [
+          {
+            id: "3f2a",
+            displayName: "renamed-project",
+            rootPath: "D:SelfXWork",
+            isPinned: false,
+            addedAtMs: 1_700_000_000_000,
+            lastOpenedAtMs: 1_700_000_000_000,
+            availability: { status: "available" },
+          },
+        ],
+      });
+    });
+
+    await waitFor(() =>
+      expect(readBreadcrumb()).toEqual(["Projects", "renamed-project", "Debounce PTY resize"]),
+    );
+  });
+
+  // Verify every unrelated route keeps the crumbs it had before this slice.
+  it.each([
+    ["/", ["Home"]],
+    ["/projects", ["Projects"]],
+    ["/notes", ["Notes"]],
+    ["/calendar", ["Calendar"]],
+    ["/settings/general", ["Settings", "General"]],
+  ])("keeps the crumbs of %s unchanged", async (path, expected) => {
+    renderShellAt(path);
+
+    await waitFor(() => expect(readBreadcrumb()).toEqual(expected));
   });
 });

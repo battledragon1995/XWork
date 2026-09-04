@@ -3,6 +3,8 @@ import { HomeRoute } from "@/features/home/home-route";
 import { ProjectOverviewRoute } from "@/features/projects/project-overview-route";
 import { ProjectsRoute } from "@/features/projects/projects-route";
 import { readProjectCrumbLabel } from "@/features/projects/projects-store";
+import { SessionRoute } from "@/features/sessions/session-route";
+import { readSessionCrumb } from "@/features/sessions/sessions-store";
 import { SettingsAboutRoute } from "@/features/settings/settings-about-route";
 import { SettingsAppearanceRoute } from "@/features/settings/settings-appearance-route";
 import { SettingsGeneralRoute } from "@/features/settings/settings-general-route";
@@ -101,11 +103,19 @@ export function createAppRouter(initialEntries: string[] = ["/"]) {
             ],
           },
           {
-            // Reserved for FE-006. The session id stays opaque, so it is echoed verbatim.
             path: "sessions/:sessionId",
-            element: <AreaPlaceholder area="Session" arrivesWith="FE-006" />,
+            element: <SessionRoute />,
             errorElement: <AppErrorBoundary />,
-            handle: crumbs((params) => ["Session", params.sessionId ?? ""]),
+            handle: crumbs((params) => {
+              const crumb = readSessionCrumb(params.sessionId);
+
+              // Both labels come from retained snapshots, never from the opaque route
+              // parameter. Until the session snapshot is loaded — or for an id the runtime
+              // does not know — only the area the route belongs to can be named.
+              return crumb === null
+                ? ["Projects"]
+                : ["Projects", readProjectCrumbLabel(crumb.projectId), crumb.name];
+            }),
           },
           {
             path: "*",

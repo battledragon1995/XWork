@@ -1,7 +1,7 @@
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type {
   ProjectChangedEventDto,
   ProjectDto,
@@ -10,7 +10,9 @@ import type {
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { IpcCallError } from "@/lib/ipc/ipc-error";
 import * as projectsIpc from "@/lib/ipc/projects";
+import * as sessionsIpc from "@/lib/ipc/sessions";
 import { ProjectOverviewRoute } from "./project-overview-route";
+import { resetProjectSessions } from "./use-project-sessions";
 
 // Replace the complete Projects boundary so route tests touch no native or user-owned state.
 vi.mock("@/lib/ipc/projects", () => ({
@@ -27,7 +29,19 @@ vi.mock("@/lib/ipc/projects", () => ({
   setProjectPinned: vi.fn(),
 }));
 
+// Replace the Sessions boundary too: the overview now reads and mutates runtime sessions.
+vi.mock("@/lib/ipc/sessions", () => ({
+  closeRuntimeTarget: vi.fn(),
+  createSession: vi.fn(),
+  getCloseImpact: vi.fn(),
+  listSessions: vi.fn(),
+  onSessionsRuntimeChanged: vi.fn(),
+  renameSession: vi.fn(),
+}));
+
 const openProjectMock = vi.mocked(projectsIpc.openProject);
+const listSessionsMock = vi.mocked(sessionsIpc.listSessions);
+const createSessionMock = vi.mocked(sessionsIpc.createSession);
 const getProjectMock = vi.mocked(projectsIpc.getProject);
 const getProjectGitStatusMock = vi.mocked(projectsIpc.getProjectGitStatus);
 const onProjectsChangedMock = vi.mocked(projectsIpc.onProjectsChanged);
@@ -67,7 +81,23 @@ function deferred<T>() {
   return { promise, resolve };
 }
 
-/** Render the real route with a small destination route for silent gone navigation. */
+/** One freshly created session detail, of which the route keeps only the identifier. */
+const CREATED_DETAIL = {
+  summary: {
+    id: "s7",
+    projectId: "3f2a",
+    name: "New Session",
+    status: "noToolYet" as const,
+    runningProcessCount: 0,
+    tabCount: 0,
+  },
+  tabs: [],
+  activeTabId: null,
+  canReopenLastClosedTab: false,
+  revision: "3",
+};
+
+/** Render the real route with small destination routes for every navigation it can perform. */
 function renderRoute() {
   return render(
     <TooltipProvider>
@@ -75,6 +105,7 @@ function renderRoute() {
         <Routes>
           <Route path="/projects/:projectId" element={<ProjectOverviewRoute />} />
           <Route path="/projects" element={<p>Projects destination</p>} />
+          <Route path="/sessions/:sessionId" element={<p>Session destination</p>} />
         </Routes>
       </MemoryRouter>
     </TooltipProvider>,
@@ -83,7 +114,11 @@ function renderRoute() {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  resetProjectSessions();
   projectEvent = null;
+  listSessionsMock.mockResolvedValue([]);
+  createSessionMock.mockResolvedValue(CREATED_DETAIL);
+  vi.mocked(sessionsIpc.onSessionsRuntimeChanged).mockResolvedValue(() => {});
   openProjectMock.mockResolvedValue(PROJECT);
   getProjectMock.mockResolvedValue(PROJECT);
   getProjectGitStatusMock.mockResolvedValue(GIT_STATUS);
@@ -112,6 +147,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  resetProjectSessions();
 });
 
 describe("ProjectOverviewRoute states", () => {
@@ -150,11 +186,12 @@ describe("ProjectOverviewRoute states", () => {
       screen.getByRole("heading", { level: 2, name: "Changes on main (0)" }),
     ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "More actions" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "New Session" })).toHaveAttribute(
-      "aria-disabled",
-      "true",
-    );
-    expect(screen.queryByText("Sessions in this run")).not.toBeInTheDocument();
+    // Two entry points now exist: the header one and the empty state's own.
+    for (const entry of screen.getAllByRole("button", { name: "New Session" })) {
+      expect(entry).not.toHaveAttribute("aria-disabled");
+    }
+    expect(screen.getByRole("heading", { name: "Sessions in this run" })).toBeInTheDocument();
+    expect(listSessionsMock).toHaveBeenCalledExactlyOnceWith("3f2a");
   });
 
   // Verify unavailable metadata replaces the Git area with its recovery banner.
@@ -227,5 +264,162 @@ describe("ProjectOverviewRoute actions", () => {
     fireEvent.click(screen.getByRole("button", { name: "Open folder" }));
 
     expect(projectsIpc.openProjectFolder).toHaveBeenCalledExactlyOnceWith("3f2a");
+  });
+});
+
+describe("ProjectOverviewRoute sessions", () => {
+  // Verify the session block leads the left column, above the read-only Git changes.
+  it("places the session block before the Git changes", async () => {
+    renderRoute();
+    await screen.findByRole("heading", { level: 1, name: "xwork" });
+
+    const headings = screen
+      .getAllByRole("heading", { level: 2 })
+      .map((heading) => heading.textContent);
+
+    expect(headings.indexOf("Sessions in this run")).toBeLessThan(
+      headings.indexOf("Changes on main (0)"),
+    );
+  });
+
+  // Verify the empty state offers its own entry point with the documented sentences.
+  it("renders the empty session state with its own New Session control", async () => {
+    renderRoute();
+    await screen.findByRole("heading", { level: 1, name: "xwork" });
+
+    expect(await screen.findByText("No sessions in this run yet.")).toBeInTheDocument();
+    expect(screen.getByText("Start one to work in this project.")).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "New Session" })).toHaveLength(2);
+  });
+
+  // Verify both entry points run the one shared create flow and navigate exactly once.
+  it.each([0, 1])("creates one session from entry point %i", async (index) => {
+    const user = userEvent.setup();
+    renderRoute();
+    await screen.findByText("No sessions in this run yet.");
+
+    const entry = screen.getAllByRole("button", { name: "New Session" })[index];
+    if (entry === undefined) {
+      throw new Error("Both New Session entry points should be rendered.");
+    }
+
+    await user.click(entry);
+
+    expect(createSessionMock).toHaveBeenCalledExactlyOnceWith("3f2a");
+    expect(await screen.findByText("Session destination")).toBeInTheDocument();
+  });
+
+  // Verify the two entry points share one lock, so a rapid double activation creates one
+  // session and navigates once.
+  it("creates one session when both entry points are pressed", async () => {
+    const user = userEvent.setup();
+    let release!: (detail: typeof CREATED_DETAIL) => void;
+    createSessionMock.mockReturnValue(
+      new Promise((resolve) => {
+        release = resolve;
+      }),
+    );
+    renderRoute();
+    await screen.findByText("No sessions in this run yet.");
+
+    const entries = screen.getAllByRole("button", { name: "New Session" });
+    await user.click(entries[0] as HTMLElement);
+    await user.click(entries[1] as HTMLElement);
+
+    expect(createSessionMock).toHaveBeenCalledOnce();
+
+    release(CREATED_DETAIL);
+    expect(await screen.findByText("Session destination")).toBeInTheDocument();
+  });
+
+  // Verify an unavailable project blocks both entry points instead of only explaining itself.
+  it("blocks both entry points for an unavailable project", async () => {
+    const user = userEvent.setup();
+    openProjectMock.mockResolvedValue({
+      ...PROJECT,
+      availability: { status: "unavailable", reason: "missing" },
+    });
+    renderRoute();
+    await screen.findByText("Folder not found.");
+
+    for (const entry of screen.getAllByRole("button", { name: "New Session" })) {
+      expect(entry).toHaveAttribute("aria-disabled", "true");
+      await user.click(entry);
+    }
+
+    expect(createSessionMock).not.toHaveBeenCalled();
+  });
+
+  // Verify a create refused because the project vanished leaves the route silently.
+  it("navigates away when the project is gone", async () => {
+    const user = userEvent.setup();
+    createSessionMock.mockRejectedValue(
+      new IpcCallError("create_session", { code: "projectNotFound", projectId: "3f2a" }),
+    );
+    renderRoute();
+    await screen.findByText("No sessions in this run yet.");
+
+    await user.click(screen.getAllByRole("button", { name: "New Session" })[0] as HTMLElement);
+
+    expect(await screen.findByText("Projects destination")).toBeInTheDocument();
+  });
+
+  // Verify a create refused because the root is unusable re-reads the metadata and keeps the
+  // banner's own sentence, rather than inventing a message of its own.
+  it("re-reads the project after an unavailable create", async () => {
+    const user = userEvent.setup();
+    createSessionMock.mockRejectedValue(
+      new IpcCallError("create_session", { code: "projectUnavailable", projectId: "3f2a" }),
+    );
+    getProjectMock.mockResolvedValue({
+      ...PROJECT,
+      availability: { status: "unavailable", reason: "missing" },
+    });
+    renderRoute();
+    await screen.findByText("No sessions in this run yet.");
+
+    await user.click(screen.getAllByRole("button", { name: "New Session" })[0] as HTMLElement);
+
+    expect(await screen.findByText("Folder not found.")).toBeInTheDocument();
+    // The banner states the reason exactly once; the create flow adds no second copy of it.
+    expect(
+      screen.getAllByText("Sessions cannot start until the path is valid again."),
+    ).toHaveLength(1);
+    expect(getProjectMock).toHaveBeenCalledWith("3f2a");
+  });
+
+  // Verify a transient create failure is reported with one more attempt and can be dismissed.
+  it("offers Try again after a transient create failure", async () => {
+    const user = userEvent.setup();
+    createSessionMock.mockRejectedValueOnce(
+      new IpcCallError("create_session", { code: "projectLookupFailed" }),
+    );
+    renderRoute();
+    await screen.findByText("No sessions in this run yet.");
+
+    await user.click(screen.getAllByRole("button", { name: "New Session" })[0] as HTMLElement);
+
+    const alert = await screen.findByText("XWork couldn't start a session for this project.");
+    expect(alert).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Try again" }));
+
+    expect(createSessionMock).toHaveBeenCalledTimes(2);
+    expect(await screen.findByText("Session destination")).toBeInTheDocument();
+  });
+
+  // Verify a shutdown refusal states the fact and offers no retry at all.
+  it("reports a shutdown refusal without a retry", async () => {
+    const user = userEvent.setup();
+    createSessionMock.mockRejectedValue(
+      new IpcCallError("create_session", { code: "runtimeShuttingDown" }),
+    );
+    renderRoute();
+    await screen.findByText("No sessions in this run yet.");
+
+    await user.click(screen.getAllByRole("button", { name: "New Session" })[0] as HTMLElement);
+
+    expect(await screen.findByText("XWork is shutting down.")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Try again" })).not.toBeInTheDocument();
   });
 });

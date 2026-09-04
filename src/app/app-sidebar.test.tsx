@@ -7,10 +7,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { ProjectDto } from "@/bindings/projects/projects";
 import { resetProjectsStore } from "@/features/projects/projects-store";
+import { resetSessionsStore } from "@/features/sessions/sessions-store";
 import { resetSettingsStore } from "@/features/settings/settings-store";
 import { createSettingsSnapshot } from "@/features/settings/settings-test-fixture";
 import { IpcCallError } from "@/lib/ipc/ipc-error";
-import { listProjects } from "@/lib/ipc/projects";
+import { getProject, listProjects, openProject } from "@/lib/ipc/projects";
+import { getSession, listSessions } from "@/lib/ipc/sessions";
 import { getSettings } from "@/lib/ipc/settings";
 import { AppProviders } from "./app-providers";
 import { createAppRouter } from "./app-router";
@@ -26,8 +28,30 @@ import {
 // no case can leak an unresolved event registration or a real filesystem read into the next.
 vi.mock("@/lib/ipc/projects", () => ({
   addProject: vi.fn(async () => ({ outcome: "cancelled" })),
+  getProject: vi.fn(),
+  getProjectGitStatus: vi.fn(),
+  getRemoveProjectImpact: vi.fn(),
   listProjects: vi.fn(async () => []),
+  locateProjectFolder: vi.fn(async () => ({ outcome: "cancelled" })),
   onProjectsChanged: vi.fn(async () => () => {}),
+  openProject: vi.fn(),
+  openProjectFolder: vi.fn(),
+  removeProject: vi.fn(),
+  renameProject: vi.fn(),
+  setProjectPinned: vi.fn(),
+}));
+
+// Replace the Sessions boundary the session rows and the active-project lookup now read.
+vi.mock("@/lib/ipc/sessions", () => ({
+  closeRuntimeTarget: vi.fn(),
+  createSession: vi.fn(),
+  getCloseImpact: vi.fn(),
+  getSession: vi.fn(),
+  listSessions: vi.fn(async () => []),
+  onSessionsRuntimeChanged: vi.fn(async () => () => {}),
+  renameSession: vi.fn(),
+  selectSessionTool: vi.fn(),
+  setObservedSession: vi.fn(async () => null),
 }));
 
 // Replace the Settings read used after the sidebar enters the newly implemented frame.
@@ -35,6 +59,7 @@ vi.mock("@/lib/ipc/settings", () => ({ getSettings: vi.fn() }));
 
 const listProjectsMock = vi.mocked(listProjects);
 const getSettingsMock = vi.mocked(getSettings);
+const listSessionsMock = vi.mocked(listSessions);
 
 /** One registered project, used by the cases that need real rows in the sidebar. */
 const PROJECT: ProjectDto = {
@@ -55,14 +80,17 @@ beforeEach(() => {
   resetShellStore();
   resetProjectsStore();
   resetSettingsStore();
+  resetSessionsStore();
   vi.clearAllMocks();
   listProjectsMock.mockResolvedValue([]);
+  listSessionsMock.mockResolvedValue([]);
   getSettingsMock.mockResolvedValue(createSettingsSnapshot());
 });
 
 afterEach(() => {
   cleanup();
   resetSettingsStore();
+  resetSessionsStore();
   window.matchMedia = originalMatchMedia;
 });
 
@@ -554,5 +582,98 @@ describe("AppSidebar collapsed alignment", () => {
     for (const entry of entries) {
       expect(entry.className).toContain("group-data-[collapsible=icon]:ml-0.5");
     }
+  });
+});
+
+describe("AppSidebar session composition", () => {
+  /** One runtime session of the registered project. */
+  const SESSION = {
+    id: "s1",
+    projectId: "3f2a",
+    name: "Debounce PTY resize",
+    status: "noToolYet" as const,
+    runningProcessCount: 0,
+    tabCount: 0,
+  };
+
+  // Verify the sessions feature's rows are composed under the project row they belong to.
+  it("renders the session rows through the project-list slot", async () => {
+    const user = userEvent.setup();
+    listProjectsMock.mockResolvedValue([PROJECT]);
+    listSessionsMock.mockResolvedValue([SESSION]);
+    renderShellAt("/");
+    await screen.findByRole("link", { name: "xwork" });
+
+    await user.click(screen.getByRole("button", { name: "Sessions for xwork" }));
+
+    const row = await screen.findByRole("link", { name: /Debounce PTY resize/ });
+    expect(row).toHaveAttribute("href", "/sessions/s1");
+  });
+
+  // Verify the project route names its own project as the active one.
+  it("marks the project of a project route as active", async () => {
+    listProjectsMock.mockResolvedValue([PROJECT]);
+    listSessionsMock.mockResolvedValue([SESSION]);
+    vi.mocked(openProject).mockResolvedValue(PROJECT);
+    vi.mocked(getProject).mockResolvedValue(PROJECT);
+    renderShellAt("/projects/3f2a");
+
+    // The active project is forced open, so its rows appear without any interaction.
+    expect(await screen.findByRole("link", { name: /Debounce PTY resize/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Sessions for xwork" })).toHaveAttribute(
+      "aria-expanded",
+      "true",
+    );
+  });
+
+  // Verify a session route resolves the project through the session snapshot, so the open
+  // session can never be hidden inside a collapsed row.
+  it("resolves the active project of a session route", async () => {
+    listProjectsMock.mockResolvedValue([PROJECT]);
+    listSessionsMock.mockResolvedValue([SESSION]);
+    vi.mocked(getProject).mockResolvedValue(PROJECT);
+    vi.mocked(getSession).mockResolvedValue({
+      summary: SESSION,
+      tabs: [],
+      activeTabId: null,
+      canReopenLastClosedTab: false,
+      revision: "4",
+    });
+    renderShellAt("/sessions/s1");
+
+    const row = await screen.findByRole("link", { name: /Debounce PTY resize/ });
+    expect(row).toHaveAttribute("aria-current", "page");
+    expect(screen.getByRole("button", { name: "Sessions for xwork" })).toHaveAttribute(
+      "aria-expanded",
+      "true",
+    );
+  });
+
+  // Verify a route with no project of its own forces nothing open.
+  it("forces nothing open outside a project or session route", async () => {
+    listProjectsMock.mockResolvedValue([PROJECT]);
+    listSessionsMock.mockResolvedValue([SESSION]);
+    renderShellAt("/notes");
+    await screen.findByRole("link", { name: "xwork" });
+
+    expect(screen.getByRole("button", { name: "Sessions for xwork" })).toHaveAttribute(
+      "aria-expanded",
+      "false",
+    );
+    expect(screen.queryByRole("link", { name: /Debounce PTY resize/ })).not.toBeInTheDocument();
+  });
+
+  // Verify icon mode drops the whole block, so no orphan session row survives a collapse and
+  // the shared snapshot is released with it.
+  it("renders no session row in icon mode", async () => {
+    listProjectsMock.mockResolvedValue([PROJECT]);
+    listSessionsMock.mockResolvedValue([SESSION]);
+    renderShellAt("/");
+    await screen.findByRole("link", { name: "xwork" });
+
+    act(() => useShellStore.getState().toggleSidebarCollapsed());
+
+    expect(screen.queryByRole("link", { name: /Debounce PTY resize/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Sessions for xwork" })).not.toBeInTheDocument();
   });
 });

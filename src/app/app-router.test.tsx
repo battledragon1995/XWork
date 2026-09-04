@@ -6,13 +6,16 @@ import { createMemoryRouter, RouterProvider } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ProjectDto } from "@/bindings/projects/projects";
 import { resetProjectsStore } from "@/features/projects/projects-store";
+import { resetSessionsStore } from "@/features/sessions/sessions-store";
+import { resetCliProfilesStore } from "@/features/settings/cli-profiles-store";
+import { createCliProfilesSnapshot } from "@/features/settings/cli-profiles-test-fixture";
 import { resetSettingsStore } from "@/features/settings/settings-store";
 import { createSettingsSnapshot } from "@/features/settings/settings-test-fixture";
 import { readAppInfo } from "@/lib/ipc/app-info";
-import { getProjectGitStatus, listProjects, openProject } from "@/lib/ipc/projects";
-import { resetCliProfilesStore } from "@/features/settings/cli-profiles-store";
-import { createCliProfilesSnapshot } from "@/features/settings/cli-profiles-test-fixture";
 import { getCliProfiles } from "@/lib/ipc/cli-profiles";
+import { IpcCallError } from "@/lib/ipc/ipc-error";
+import { getProject, getProjectGitStatus, listProjects, openProject } from "@/lib/ipc/projects";
+import { getSession, listSessions } from "@/lib/ipc/sessions";
 import { getSettings } from "@/lib/ipc/settings";
 import { AppErrorBoundary } from "./app-error-boundary";
 import { AppProviders } from "./app-providers";
@@ -46,6 +49,20 @@ vi.mock("@/lib/ipc/settings", () => ({
 }));
 vi.mock("@/lib/ipc/app-info", () => ({ readAppInfo: vi.fn() }));
 
+// Replace the Sessions boundary the real session route and the sidebar rows now read, so no
+// case reaches Tauri or observes a runtime session.
+vi.mock("@/lib/ipc/sessions", () => ({
+  closeRuntimeTarget: vi.fn(),
+  createSession: vi.fn(),
+  getCloseImpact: vi.fn(),
+  getSession: vi.fn(),
+  listSessions: vi.fn(async () => []),
+  onSessionsRuntimeChanged: vi.fn(async () => () => {}),
+  renameSession: vi.fn(),
+  selectSessionTool: vi.fn(),
+  setObservedSession: vi.fn(async () => null),
+}));
+
 // Replace the CLI profile boundary the real Terminal route reads, so the router test never
 // touches real shells, profiles or the credential store.
 vi.mock("@/lib/ipc/cli-profiles", () => ({
@@ -60,10 +77,32 @@ vi.mock("@/lib/ipc/cli-profiles", () => ({
 
 const listProjectsMock = vi.mocked(listProjects);
 const openProjectMock = vi.mocked(openProject);
+const getProjectMock = vi.mocked(getProject);
 const getProjectGitStatusMock = vi.mocked(getProjectGitStatus);
 const getSettingsMock = vi.mocked(getSettings);
 const readAppInfoMock = vi.mocked(readAppInfo);
 const getCliProfilesMock = vi.mocked(getCliProfiles);
+const listSessionsMock = vi.mocked(listSessions);
+const getSessionMock = vi.mocked(getSession);
+
+/** One runtime session of the registered project, used by the session-route cases. */
+const SESSION_SUMMARY = {
+  id: "9f3a",
+  projectId: "3f2a",
+  name: "Debounce PTY resize",
+  status: "noToolYet" as const,
+  runningProcessCount: 0,
+  tabCount: 0,
+};
+
+/** The snapshot `get_session` answers with for that session. */
+const SESSION_DETAIL = {
+  summary: SESSION_SUMMARY,
+  tabs: [],
+  activeTabId: null,
+  canReopenLastClosedTab: false,
+  revision: "4",
+};
 
 /** One registered project, so the index route settles on its Home branch. */
 const PROJECT: ProjectDto = {
@@ -80,8 +119,12 @@ const PROJECT: ProjectDto = {
 beforeEach(() => {
   resetQuitStore();
   resetProjectsStore();
+  resetSessionsStore();
   listProjectsMock.mockResolvedValue([PROJECT]);
+  listSessionsMock.mockReset().mockResolvedValue([SESSION_SUMMARY]);
+  getSessionMock.mockReset().mockResolvedValue(SESSION_DETAIL);
   openProjectMock.mockResolvedValue(PROJECT);
+  getProjectMock.mockResolvedValue(PROJECT);
   getProjectGitStatusMock.mockResolvedValue({
     summary: {
       projectId: "3f2a",
@@ -108,6 +151,7 @@ afterEach(() => {
   cleanup();
   resetSettingsStore();
   resetCliProfilesStore();
+  resetSessionsStore();
 });
 
 // Render the production router at one entry so every case shares the same setup.
@@ -283,12 +327,52 @@ describe("createAppRouter", () => {
   });
 
   // Verify the reserved session route renders and keeps the opaque identifier untouched.
-  it("reserves the session route for FE-006 and keeps the raw session id", () => {
+  it("renders the real session route", async () => {
+    renderAt("/sessions/9f3a");
+
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "Debounce PTY resize" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("This area arrives with FE-006.")).not.toBeInTheDocument();
+    expect(getSessionMock).toHaveBeenCalledWith("9f3a");
+  });
+
+  // Verify the session breadcrumb is three levels built from both retained snapshots, never
+  // from the opaque route parameter.
+  it("builds a three-level session breadcrumb", async () => {
+    renderAt("/sessions/9f3a");
+    await screen.findByRole("heading", { level: 1, name: "Debounce PTY resize" });
+
+    await vi.waitFor(() =>
+      expect(readBreadcrumb()).toEqual(["Projects", "xwork", "Debounce PTY resize"]),
+    );
+  });
+
+  // Verify a session the runtime does not know names only the area it belongs to, rather
+  // than echoing an id the user never typed.
+  it("names only the area for an unknown session", async () => {
+    getSessionMock.mockRejectedValue(
+      new IpcCallError("get_session", { code: "unauthorizedWindow" }),
+    );
     renderAt("/sessions/9f3a-B7%20c");
 
-    expect(screen.getByRole("heading", { level: 1, name: "Session" })).toBeInTheDocument();
-    expect(screen.getByText("This area arrives with FE-006.")).toBeInTheDocument();
-    expect(readBreadcrumb()).toEqual(["Session", "9f3a-B7 c"]);
+    await screen.findByText("XWork couldn't open this session.");
+    expect(readBreadcrumb()).toEqual(["Projects"]);
+  });
+
+  // Verify a rename committed elsewhere recomputes the crumb without any navigation.
+  it("follows a renamed session in the breadcrumb", async () => {
+    renderAt("/sessions/9f3a");
+    await vi.waitFor(() =>
+      expect(readBreadcrumb()).toEqual(["Projects", "xwork", "Debounce PTY resize"]),
+    );
+
+    listSessionsMock.mockResolvedValue([{ ...SESSION_SUMMARY, name: "Renamed" }]);
+    await act(async () => {
+      window.dispatchEvent(new Event("focus"));
+    });
+
+    await vi.waitFor(() => expect(readBreadcrumb()).toEqual(["Projects", "xwork", "Renamed"]));
   });
 
   // Verify the project route translates its opaque id through the project snapshot.

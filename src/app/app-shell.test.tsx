@@ -3,8 +3,8 @@ import "@testing-library/jest-dom/vitest";
 import { cleanup, render, screen } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { RouterProvider } from "react-router";
-import { AppProviders } from "./app-providers";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { AppProviders } from "./app-providers";
 import { createAppRouter } from "./app-router";
 
 // Replace the Projects boundary the index route depends on. One project keeps `/` on its Home
@@ -29,6 +29,14 @@ vi.mock("@/lib/ipc/projects", () => ({
     },
   ]),
   onProjectsChanged: vi.fn(async () => () => {}),
+}));
+
+// Replace the Sessions boundary the sidebar block now reads, so these cases stay about the
+// shell and never observe a runtime session.
+vi.mock("@/lib/ipc/sessions", () => ({
+  listSessions: vi.fn(async () => []),
+  onSessionsRuntimeChanged: vi.fn(async () => () => {}),
+  setObservedSession: vi.fn(async () => null),
 }));
 
 // Remove rendered output between tests so each router instance stays isolated.
@@ -96,6 +104,9 @@ describe("AppShell", () => {
       screen.getByRole("link", { name: "Notes" }),
       screen.getByRole("link", { name: "Calendar" }),
       screen.getByRole("button", { name: "Add Project" }),
+      // The expander of a project row precedes its name, which is the order the row is
+      // painted in and therefore the order Tab follows.
+      screen.getByRole("button", { name: "Sessions for xwork" }),
       screen.getByRole("link", { name: "xwork" }),
       screen.getByRole("link", { name: "Settings" }),
       screen.getByRole("button", { name: "Collapse sidebar" }),

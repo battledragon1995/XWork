@@ -1,10 +1,11 @@
-import { Check, Clipboard, FolderOpen, GitBranch, Pin, Plus, TriangleAlert } from "lucide-react";
+import { Check, Clipboard, FolderOpen, GitBranch, Pin, TriangleAlert } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { ProjectDto, ProjectGitSummaryDto } from "@/bindings/projects/projects";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { ProjectActionsMenu } from "./project-actions-menu";
 import { unavailableReasonMessage } from "./project-error-copy";
+import { NewSessionButton } from "./project-session-list";
 
 /** Git line phase needed by the presentational header. */
 export type ProjectOverviewGitPhase = "idle" | "loading" | "ready" | "failed";
@@ -15,6 +16,9 @@ export interface ProjectOverviewHeaderProps {
   gitSummary: ProjectGitSummaryDto | null;
   gitPhase: ProjectOverviewGitPhase;
   isActionsBusy: boolean;
+  /** True while the shared create flow already owns a `create_session` call. */
+  isCreatingSession: boolean;
+  onCreateSession(): void;
   onOpenRename(): void;
   onTogglePinned(): void;
   onOpenFolder(): void;
@@ -198,9 +202,6 @@ export function ProjectOverviewHeader(props: ProjectOverviewHeaderProps) {
   }
 
   const copyLabel = copyState === "copied" ? "Copied" : "Copy path";
-  const newSessionReason = isUnavailable
-    ? "The project folder is unavailable."
-    : "Session creation isn't available yet.";
 
   return (
     <header className="flex min-w-0 flex-col gap-4 @min-[760px]:flex-row @min-[760px]:items-start @min-[760px]:justify-between @min-[760px]:gap-6">
@@ -273,19 +274,14 @@ export function ProjectOverviewHeader(props: ProjectOverviewHeaderProps) {
       </div>
 
       <div className="flex shrink-0 items-center gap-1.5">
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              type="button"
-              aria-disabled="true"
-              className="cursor-default aria-disabled:opacity-60"
-            >
-              <Plus aria-hidden="true" className="size-3.5" />
-              New Session
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent>{newSessionReason}</TooltipContent>
-        </Tooltip>
+        {/* The header entry point and the empty-state entry point are the same component on
+            purpose, so a refused press explains itself the same way in both places. */}
+        <NewSessionButton
+          variant="default"
+          isProjectUnavailable={isUnavailable}
+          isCreating={props.isCreatingSession}
+          onCreateSession={props.onCreateSession}
+        />
         <ProjectActionsMenu
           project={project}
           isBusy={isActionsBusy}

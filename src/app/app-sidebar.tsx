@@ -9,8 +9,8 @@ import {
   SlidersHorizontal,
 } from "lucide-react";
 import type { Transition } from "motion/react";
-import type { ReactNode } from "react";
-import { NavLink } from "react-router";
+import { type ReactNode, useEffect } from "react";
+import { NavLink, useMatches } from "react-router";
 import {
   Sidebar,
   SidebarContent,
@@ -23,6 +23,8 @@ import {
 } from "@/components/animate-ui/components/radix/sidebar";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { SidebarProjectList } from "@/features/projects/sidebar-project-list";
+import { readSessionProjectId, useSessionsStore } from "@/features/sessions/sessions-store";
+import { SidebarSessionRows } from "@/features/sessions/sidebar-session-rows";
 import { cn } from "@/lib/utils/cn";
 import { useShellStore } from "./shell-store";
 import { usePrefersReducedMotion } from "./use-prefers-reduced-motion";
@@ -67,6 +69,34 @@ const SIDEBAR_HIGHLIGHT_TRANSITION: Transition = {
 const ACTIVE_ENTRY_CLASS =
   "aria-[current=page]:bg-cream-strong aria-[current=page]:text-ink aria-[current=page]:[&>svg]:text-ink";
 
+/**
+ * Identify the project the current route belongs to, for both routes that have one.
+ *
+ * `/projects/:projectId` names it directly. `/sessions/:sessionId` does not, so it is
+ * resolved through the retained session snapshot; the subscription is what makes the sidebar
+ * recompute once that snapshot arrives.
+ */
+function useRouteProject(): { activeProjectId: string | null; isSessionRoute: boolean } {
+  useSessionsStore((state) => state.sessionsByProject);
+  const matches = useMatches();
+
+  for (let index = matches.length - 1; index >= 0; index -= 1) {
+    const params = matches[index]?.params ?? {};
+
+    if (typeof params.projectId === "string") {
+      return { activeProjectId: params.projectId, isSessionRoute: false };
+    }
+    if (typeof params.sessionId === "string") {
+      return {
+        activeProjectId: readSessionProjectId(params.sessionId),
+        isSessionRoute: true,
+      };
+    }
+  }
+
+  return { activeProjectId: null, isSessionRoute: false };
+}
+
 // Render the primary navigation, the Projects block and the sidebar footer. The sidebar itself
 // is the single `navigation` landmark of the shell.
 export function AppSidebar() {
@@ -76,6 +106,24 @@ export function AppSidebar() {
   const prefersReducedMotion = usePrefersReducedMotion();
   const collapseLabel = isCollapsed ? "Expand sidebar" : "Collapse sidebar";
   const CollapseIcon = isCollapsed ? ChevronsRight : ChevronsLeft;
+  const { activeProjectId, isSessionRoute } = useRouteProject();
+
+  /**
+   * Keep the session snapshot loaded while anything in the shell reads it: the project rows
+   * below, or the breadcrumb of a session route. Icon mode with no session open releases it
+   * again, so a collapsed sidebar leaks neither a query nor a listener.
+   */
+  const needsSessions = !isCollapsed || isSessionRoute;
+  useEffect(() => {
+    if (!needsSessions) {
+      return;
+    }
+
+    const { acquire, release } = useSessionsStore.getState();
+    acquire();
+
+    return release;
+  }, [needsSessions]);
 
   return (
     // The copied sidebar renders its container as a div, so the landmark is declared here
@@ -105,7 +153,14 @@ export function AppSidebar() {
         {/* The project list and its Add Project action belong to FE-004, which owns the whole
             block. Icon mode drops it entirely, exactly as `#shell-collapsed` shows, and that
             boundary stays here rather than moving into the feature. */}
-        {!isCollapsed && <SidebarProjectList />}
+        {!isCollapsed && (
+          <SidebarProjectList
+            activeProjectId={activeProjectId}
+            // The session rows belong to the sessions feature and are joined to the project
+            // rows here, which is why neither feature imports the other.
+            renderSessionRows={(project) => <SidebarSessionRows projectId={project.id} />}
+          />
+        )}
       </SidebarContent>
 
       <SidebarFooter>

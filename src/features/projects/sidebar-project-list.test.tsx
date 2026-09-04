@@ -282,3 +282,169 @@ describe("SidebarProjectList Add Project", () => {
     await waitFor(() => expect(first).toBeEnabled());
   });
 });
+
+describe("SidebarProjectList session composition", () => {
+  /** Build the block with a session-row slot and an active project chosen by the case. */
+  function slotTree(activeProjectId: string | null, path: string) {
+    return (
+      <MemoryRouter initialEntries={[path]}>
+        <TooltipProvider>
+          <SidebarProvider>
+            <Sidebar collapsible="icon">
+              <SidebarContent>
+                <SidebarProjectList
+                  activeProjectId={activeProjectId}
+                  renderSessionRows={(project) => (
+                    <p data-testid={`slot-${project.id}`}>rows for {project.displayName}</p>
+                  )}
+                />
+              </SidebarContent>
+            </Sidebar>
+          </SidebarProvider>
+        </TooltipProvider>
+      </MemoryRouter>
+    );
+  }
+
+  /** Render the block with a session-row slot at one router entry. */
+  function renderWithSlot(activeProjectId: string | null = null, path = "/") {
+    return render(slotTree(activeProjectId, path));
+  }
+
+  // Verify a project row starts collapsed and renders no child rows.
+  it("starts collapsed", async () => {
+    listProjectsMock.mockResolvedValue([XWORK]);
+
+    renderWithSlot();
+    await screen.findByRole("link", { name: "xwork" });
+
+    expect(screen.getByRole("button", { name: "Sessions for xwork" })).toHaveAttribute(
+      "aria-expanded",
+      "false",
+    );
+    expect(screen.queryByTestId("slot-3f2a")).not.toBeInTheDocument();
+  });
+
+  // Verify the chevron opens and closes the child rows without navigating anywhere.
+  it("toggles the child rows with a pointer", async () => {
+    const user = userEvent.setup();
+    listProjectsMock.mockResolvedValue([XWORK]);
+
+    renderWithSlot();
+    const chevron = await screen.findByRole("button", { name: "Sessions for xwork" });
+
+    await user.click(chevron);
+
+    expect(chevron).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByTestId("slot-3f2a")).toHaveTextContent("rows for xwork");
+    expect(screen.getByRole("link", { name: "xwork" })).not.toHaveAttribute("aria-current");
+
+    await user.click(chevron);
+
+    expect(chevron).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByTestId("slot-3f2a")).not.toBeInTheDocument();
+  });
+
+  // Verify the chevron is reachable and operable from the keyboard alone.
+  it("toggles the child rows from the keyboard", async () => {
+    const user = userEvent.setup();
+    listProjectsMock.mockResolvedValue([XWORK]);
+
+    renderWithSlot();
+    const chevron = await screen.findByRole("button", { name: "Sessions for xwork" });
+    chevron.focus();
+
+    await user.keyboard("{Enter}");
+    expect(chevron).toHaveAttribute("aria-expanded", "true");
+
+    await user.keyboard(" ");
+    expect(chevron).toHaveAttribute("aria-expanded", "false");
+  });
+
+  // Verify expansion is per project, so opening one row leaves the others closed.
+  it("expands each project independently", async () => {
+    const user = userEvent.setup();
+    listProjectsMock.mockResolvedValue([XWORK, PINNED]);
+
+    renderWithSlot();
+    await screen.findByRole("link", { name: "xwork" });
+
+    await user.click(screen.getByRole("button", { name: "Sessions for xwork" }));
+
+    expect(screen.getByTestId("slot-3f2a")).toBeInTheDocument();
+    expect(screen.queryByTestId("slot-9b1c")).not.toBeInTheDocument();
+  });
+
+  // Verify the slot receives the project of its own row rather than a shared value.
+  it("hands each slot its own project", async () => {
+    const user = userEvent.setup();
+    listProjectsMock.mockResolvedValue([XWORK, PINNED]);
+
+    renderWithSlot();
+    await screen.findByRole("link", { name: "xwork" });
+
+    await user.click(screen.getByRole("button", { name: "Sessions for xwork" }));
+    await user.click(screen.getByRole("button", { name: "Sessions for recipe-api" }));
+
+    expect(screen.getByTestId("slot-3f2a")).toHaveTextContent("rows for xwork");
+    expect(screen.getByTestId("slot-9b1c")).toHaveTextContent("rows for recipe-api");
+  });
+
+  // Verify activating the project name both navigates and opens that project's sessions,
+  // which is what §7.5 asks a project row to do.
+  it("opens the sessions of a project whose name is activated", async () => {
+    const user = userEvent.setup();
+    listProjectsMock.mockResolvedValue([XWORK]);
+
+    renderWithSlot();
+    await user.click(await screen.findByRole("link", { name: "xwork" }));
+
+    expect(screen.getByTestId("slot-3f2a")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Sessions for xwork" })).toHaveAttribute(
+      "aria-expanded",
+      "true",
+    );
+  });
+
+  // Verify the project of the current route is open on the first render, so the active
+  // session can never be hidden inside a collapsed row.
+  it("forces the active project open", async () => {
+    listProjectsMock.mockResolvedValue([XWORK, PINNED]);
+
+    renderWithSlot("3f2a", "/sessions/s1");
+    await screen.findByRole("link", { name: "xwork" });
+
+    expect(screen.getByTestId("slot-3f2a")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Sessions for xwork" })).toHaveAttribute(
+      "aria-expanded",
+      "true",
+    );
+    expect(screen.queryByTestId("slot-9b1c")).not.toBeInTheDocument();
+  });
+
+  // Verify a row the user opened by hand stays open after the route moves to another project.
+  it("keeps an explicitly opened row open when the active project changes", async () => {
+    const user = userEvent.setup();
+    listProjectsMock.mockResolvedValue([XWORK, PINNED]);
+
+    const view = render(slotTree(null, "/"));
+    await screen.findByRole("link", { name: "xwork" });
+    await user.click(screen.getByRole("button", { name: "Sessions for xwork" }));
+
+    view.rerender(slotTree("9b1c", "/"));
+
+    expect(screen.getByTestId("slot-3f2a")).toBeInTheDocument();
+    expect(screen.getByTestId("slot-9b1c")).toBeInTheDocument();
+  });
+
+  // Verify the block behaves exactly as it did before FE-006 when no slot is supplied.
+  it("renders no chevron and no child rows without a slot", async () => {
+    listProjectsMock.mockResolvedValue([XWORK]);
+
+    renderList();
+    await screen.findByRole("link", { name: "xwork" });
+
+    expect(screen.queryByRole("button", { name: "Sessions for xwork" })).not.toBeInTheDocument();
+    expect(document.querySelector('[data-slot="sidebar-menu-sub"]')).toBeNull();
+  });
+});

@@ -33,11 +33,15 @@ const SUMMARY: ProjectGitSummaryDto = {
 /** Clipboard double used for success, failure, and retry paths. */
 const writeText = vi.fn<(value: string) => Promise<void>>();
 
+/** Create intent recorded by the cases that exercise the `New Session` control. */
+const onCreateSession = vi.fn();
+
 /** Render a complete header with inert action intents. */
 function renderHeader(
   project: ProjectDto = PROJECT,
   summary: ProjectGitSummaryDto | null = SUMMARY,
   gitPhase: "idle" | "loading" | "ready" | "failed" = "ready",
+  isCreatingSession = false,
 ) {
   return render(
     <TooltipProvider>
@@ -46,6 +50,8 @@ function renderHeader(
         gitSummary={summary}
         gitPhase={gitPhase}
         isActionsBusy={false}
+        isCreatingSession={isCreatingSession}
+        onCreateSession={onCreateSession}
         onOpenRename={vi.fn()}
         onTogglePinned={vi.fn()}
         onOpenFolder={vi.fn()}
@@ -57,6 +63,7 @@ function renderHeader(
 }
 
 beforeEach(() => {
+  onCreateSession.mockReset();
   vi.spyOn(Date, "now").mockReturnValue(new Date(2026, 8, 3, 12).getTime());
   writeText.mockReset();
   writeText.mockResolvedValue(undefined);
@@ -181,6 +188,47 @@ describe("ProjectOverviewHeader", () => {
     expect(await screen.findByRole("tooltip")).toHaveTextContent(
       "The project folder is unavailable.",
     );
+  });
+
+  // Verify the control now really starts a session for an available project.
+  it("raises the create intent for an available project", async () => {
+    const user = userEvent.setup();
+    renderHeader();
+
+    const newSession = screen.getByRole("button", { name: "New Session" });
+    expect(newSession).not.toHaveAttribute("aria-disabled");
+
+    await user.click(newSession);
+
+    expect(onCreateSession).toHaveBeenCalledOnce();
+  });
+
+  // Verify an unavailable root blocks the command instead of only explaining itself.
+  it("refuses to create a session for an unavailable project", async () => {
+    const user = userEvent.setup();
+    renderHeader({ ...PROJECT, availability: { status: "unavailable", reason: "missing" } }, null);
+
+    await user.click(screen.getByRole("button", { name: "New Session" }));
+
+    expect(onCreateSession).not.toHaveBeenCalled();
+  });
+
+  // Verify a create already in flight locks the control and says why, which is what stops a
+  // second press from starting a second session.
+  it("locks New Session while a session is already starting", async () => {
+    const user = userEvent.setup();
+    renderHeader(PROJECT, SUMMARY, "ready", true);
+
+    const newSession = screen.getByRole("button", { name: "New Session" });
+    expect(newSession).toHaveAttribute("aria-disabled", "true");
+
+    await user.hover(newSession);
+    expect(await screen.findByRole("tooltip")).toHaveTextContent(
+      "XWork is already starting a session.",
+    );
+
+    await user.click(newSession);
+    expect(onCreateSession).not.toHaveBeenCalled();
   });
 
   // Verify the header's four focusable controls follow the documented order.

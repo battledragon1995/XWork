@@ -4,10 +4,12 @@ import { Button } from "@/components/ui/button";
 import { INTEGRATION_MESSAGE } from "./project-error-copy";
 import { ProjectGitChanges } from "./project-git-changes";
 import { ProjectOverviewHeader, ProjectUnavailableBanner } from "./project-overview-header";
+import { ProjectSessionList } from "./project-session-list";
 import { RemoveProjectDialog } from "./remove-project-dialog";
 import { RenameProjectDialog } from "./rename-project-dialog";
 import { type ProjectActionFailure, useProjectActions } from "./use-project-actions";
 import { useProjectOverview } from "./use-project-overview";
+import { useProjectSessions } from "./use-project-sessions";
 
 /** Render the non-interactive header shape while the initial open is pending. */
 function ProjectOverviewSkeleton() {
@@ -101,6 +103,26 @@ export function ProjectOverviewRoute() {
     onUnavailable: overview.refreshProject,
   });
 
+  /** Open the session that was just created, which is the only place a create leads. */
+  const handleCreated = useCallback(
+    (sessionId: string) => {
+      void navigate(`/sessions/${sessionId}`);
+    },
+    [navigate],
+  );
+
+  /**
+   * The route owns the create flow so the header button can share it with the empty state.
+   * Both entry points call this one hook instance, and the hook's own lock is what keeps a
+   * double activation from producing two sessions.
+   */
+  const sessions = useProjectSessions({
+    projectId,
+    onCreated: handleCreated,
+    onProjectGone: handleGone,
+    onProjectUnavailable: overview.refreshProject,
+  });
+
   useEffect(() => {
     if (actions.failure?.kind === "gone") {
       // Action commands share the same gone outcome as overview reads; navigation unmounts
@@ -151,6 +173,8 @@ export function ProjectOverviewRoute() {
           gitSummary={gitSummary}
           gitPhase={overview.git.status}
           isActionsBusy={isActionsBusy}
+          isCreatingSession={sessions.isCreating}
+          onCreateSession={() => void sessions.create()}
           onOpenRename={() => actions.openRename(project)}
           onTogglePinned={() => void actions.togglePinned(project)}
           onOpenFolder={() => void actions.openFolder(project)}
@@ -175,6 +199,32 @@ export function ProjectOverviewRoute() {
           </p>
         )}
 
+        {sessions.createFailure !== null && (
+          <p role="alert" className="flex flex-wrap items-center gap-2 text-[13px] text-error">
+            {sessions.createFailure.message}
+            {sessions.createFailure.canRetry && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="text-brand underline underline-offset-4"
+                onClick={() => void sessions.create()}
+              >
+                Try again
+              </Button>
+            )}
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="text-muted underline underline-offset-4"
+              onClick={sessions.dismissCreateFailure}
+            >
+              Dismiss
+            </Button>
+          </p>
+        )}
+
         {actions.failure !== null && !dialogOwnsFailure && actions.failure.kind !== "gone" && (
           <ProjectActionFailureLine
             failure={actions.failure}
@@ -193,40 +243,54 @@ export function ProjectOverviewRoute() {
             onLocateFolder={() => void actions.locateFolder(project)}
             onRequestRemove={() => void actions.requestRemove(project)}
           />
-        ) : (
-          <div className="min-w-0">
-            {overview.git.status === "loading" && (
-              <div
-                role="status"
-                aria-label="Loading project changes"
-                className="h-20 animate-pulse rounded-md bg-surface-card"
-              />
-            )}
-            {overview.git.status === "failed" && (
-              <div
-                role="alert"
-                className="flex flex-wrap items-center gap-2 text-[13px] text-error"
-              >
-                {overview.git.message}
-                {overview.git.message !== INTEGRATION_MESSAGE && (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="text-brand underline underline-offset-4"
-                    onClick={overview.retryGit}
-                  >
-                    Try again
-                  </Button>
+        ) : null}
+
+        <div className="grid gap-6 @min-[900px]:grid-cols-[7fr_5fr]">
+          <div className="grid min-w-0 gap-6">
+            {/* The session block leads the left column; the later right-column features of
+                FE-009 and FE-011 are not pulled forward by this slice. */}
+            <ProjectSessionList
+              projectId={project.id}
+              isProjectUnavailable={isUnavailable}
+              onCreateSession={() => void sessions.create()}
+            />
+
+            {!isUnavailable && (
+              <div className="min-w-0">
+                {overview.git.status === "loading" && (
+                  <div
+                    role="status"
+                    aria-label="Loading project changes"
+                    className="h-20 animate-pulse rounded-md bg-surface-card"
+                  />
                 )}
+                {overview.git.status === "failed" && (
+                  <div
+                    role="alert"
+                    className="flex flex-wrap items-center gap-2 text-[13px] text-error"
+                  >
+                    {overview.git.message}
+                    {overview.git.message !== INTEGRATION_MESSAGE && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="text-brand underline underline-offset-4"
+                        onClick={overview.retryGit}
+                      >
+                        Try again
+                      </Button>
+                    )}
+                  </div>
+                )}
+                {overview.git.status === "ready" &&
+                  overview.git.snapshot.summary.repositoryKind === "worktree" && (
+                    <ProjectGitChanges snapshot={overview.git.snapshot} />
+                  )}
               </div>
             )}
-            {overview.git.status === "ready" &&
-              overview.git.snapshot.summary.repositoryKind === "worktree" && (
-                <ProjectGitChanges snapshot={overview.git.snapshot} />
-              )}
           </div>
-        )}
+        </div>
       </div>
 
       <RenameProjectDialog
