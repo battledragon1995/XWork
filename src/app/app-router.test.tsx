@@ -36,7 +36,11 @@ vi.mock("@/lib/ipc/projects", () => ({
 }));
 
 // Replace both Settings data boundaries so route tests never call Tauri or read real app data.
-vi.mock("@/lib/ipc/settings", () => ({ getSettings: vi.fn() }));
+vi.mock("@/lib/ipc/settings", () => ({
+  getSettings: vi.fn(),
+  updateSettings: vi.fn(),
+  restoreAppearanceDefaults: vi.fn(),
+}));
 vi.mock("@/lib/ipc/app-info", () => ({ readAppInfo: vi.fn() }));
 
 const listProjectsMock = vi.mocked(listProjects);
@@ -136,7 +140,6 @@ describe("createAppRouter", () => {
 
   // Verify every deferred route keeps the frame and names the feature that will own it.
   it.each([
-    ["/settings/appearance", "Appearance", "FE-012"],
     ["/settings/terminal-profiles", "Terminal & CLI Profiles", "FE-013"],
     ["/settings/keyboard-shortcuts", "Keyboard Shortcuts", "FE-014"],
     ["/settings/notifications", "Notifications", "FE-023"],
@@ -148,6 +151,21 @@ describe("createAppRouter", () => {
     expect(screen.getByText(`This section arrives with ${owner}.`)).toBeInTheDocument();
     expect(readBreadcrumb()).toEqual(["Settings", section]);
     expect(screen.getByRole("link", { name: section })).toHaveAttribute("aria-current", "page");
+  });
+
+  // Verify the Appearance section now renders its real page instead of the FE-012 placeholder.
+  it("renders the real Appearance route", async () => {
+    renderAt("/settings/appearance");
+
+    expect(await screen.findByRole("radiogroup", { name: "Theme" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 1, name: "Appearance" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Restore default theme" })).toBeInTheDocument();
+    expect(screen.queryByText("This section arrives with FE-012.")).not.toBeInTheDocument();
+    expect(readBreadcrumb()).toEqual(["Settings", "Appearance"]);
+    expect(screen.getByRole("link", { name: "Appearance" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
   });
 
   // Verify About reads its isolated data source and does not trigger another Settings read.

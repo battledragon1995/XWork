@@ -41,3 +41,101 @@ if (!Element.prototype.scrollIntoView) {
   // Accept a scroll request without moving anything.
   Element.prototype.scrollIntoView = () => {};
 }
+
+/**
+ * jsdom implements no media queries at all, so every component that resolves the operating
+ * system colour scheme would throw. The stub below keeps one controllable list per live
+ * subscription so a test can flip the preference and observe listener cleanup.
+ */
+class MediaQueryListStub extends EventTarget {
+  readonly media: string;
+  matches: boolean;
+  changeListenerCount = 0;
+
+  // Build one list for the given query with the preference recorded for it so far.
+  constructor(media: string, matches: boolean) {
+    super();
+    this.media = media;
+    this.matches = matches;
+  }
+
+  // Count `change` subscriptions so a test can prove the exact listener was removed.
+  addEventListener(
+    type: string,
+    listener: EventListenerOrEventListenerObject | null,
+    options?: AddEventListenerOptions | boolean,
+  ): void {
+    if (type === "change") {
+      this.changeListenerCount += 1;
+    }
+    super.addEventListener(type, listener, options);
+  }
+
+  // Mirror the subscription count when a listener is removed.
+  removeEventListener(
+    type: string,
+    listener: EventListenerOrEventListenerObject | null,
+    options?: EventListenerOptions | boolean,
+  ): void {
+    if (type === "change") {
+      this.changeListenerCount = Math.max(0, this.changeListenerCount - 1);
+    }
+    super.removeEventListener(type, listener, options);
+  }
+
+  // Accept the deprecated Safari API without tracking it; no production code uses it.
+  addListener(): void {}
+
+  // Accept the deprecated Safari removal API without tracking it.
+  removeListener(): void {}
+}
+
+/** Every list handed out since the last reset, so preference changes reach live subscribers. */
+const openMediaQueryLists = new Set<MediaQueryListStub>();
+
+/** Preference currently reported for each query string. */
+const mediaQueryMatches = new Map<string, boolean>();
+
+/** Install the stub so `window.matchMedia` exists for every jsdom test by default. */
+export function installMatchMediaStub(): void {
+  Object.defineProperty(window, "matchMedia", {
+    configurable: true,
+    writable: true,
+    value: (query: string): MediaQueryList => {
+      const list = new MediaQueryListStub(query, mediaQueryMatches.get(query) ?? false);
+      openMediaQueryLists.add(list);
+      return list as unknown as MediaQueryList;
+    },
+  });
+}
+
+/** Set the reported preference for one query and notify every live subscriber. */
+export function setMediaQueryMatches(query: string, matches: boolean): void {
+  mediaQueryMatches.set(query, matches);
+  for (const list of openMediaQueryLists) {
+    if (list.media === query) {
+      list.matches = matches;
+      list.dispatchEvent(new Event("change"));
+    }
+  }
+}
+
+/** Report how many `change` listeners are currently attached to one query. */
+export function mediaQueryListenerCount(query: string): number {
+  let total = 0;
+  for (const list of openMediaQueryLists) {
+    if (list.media === query) {
+      total += list.changeListenerCount;
+    }
+  }
+  return total;
+}
+
+/** Forget every recorded preference and subscriber so cases cannot inherit each other. */
+export function resetMatchMediaStub(): void {
+  openMediaQueryLists.clear();
+  mediaQueryMatches.clear();
+  installMatchMediaStub();
+}
+
+installMatchMediaStub();

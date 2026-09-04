@@ -83,12 +83,80 @@
   /* Elevation */
   --shadow-sm: 0 1px 3px rgb(20 20 19 / 0.08);
   --shadow-pop: 0 8px 24px rgb(20 20 19 / 0.14), 0 1px 3px rgb(20 20 19 / 0.08);
+
+  /* Interface and terminal scale published by FE-012. `--ui-scale` is the ratio the document
+     root is zoomed by; `--terminal-font-size` deliberately lives inside that zoomed pixel
+     space, so it is a size relative to the interface and is never divided back out. */
+  --ui-font-size: 14px;
+  --ui-scale: 1;
+  --terminal-font-size: 13px;
+
+  /* Terminal palette published for FE-008. The values below are the Cream defaults of
+     BE-008, so the window is already correct before the first snapshot arrives. */
+  --terminal-background: #181715;
+  --terminal-foreground: #faf9f5;
+  --terminal-ansi-0: #181715;
+  --terminal-ansi-1: #c64545;
+  --terminal-ansi-2: #5db872;
+  --terminal-ansi-3: #e8a55a;
+  --terminal-ansi-4: #93b4d6;
+  --terminal-ansi-5: #b48ead;
+  --terminal-ansi-6: #5db8a6;
+  --terminal-ansi-7: #a09d96;
+  --terminal-ansi-8: #3d3d3a;
+  --terminal-ansi-9: #e08a8a;
+  --terminal-ansi-10: #8fd19e;
+  --terminal-ansi-11: #f0c48a;
+  --terminal-ansi-12: #b4cde6;
+  --terminal-ansi-13: #d0b0d8;
+  --terminal-ansi-14: #8ed4c6;
+  --terminal-ansi-15: #faf9f5;
 }
 
 /* The window chrome is drawn by the shell itself, so the document must fill the
    webview exactly and never scroll as a whole. */
 :root {
   color-scheme: light;
+}
+
+/* Static Dark table used until a snapshot arrives, and as the base every FE-012 inline
+   variable overrides. The four user-owned colours are the Cream Dark preset of BE-008 and
+   every derived token repeats the exact `color-mix()` formula of `appearance-theme.ts`, so
+   the fallback and the live theme cannot disagree. Semantic colours, the overlay and the
+   shadows are fixed Dark values rather than derivations, because they carry meaning that
+   must survive whatever four colours the user picks. */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --color-canvas: #1e1b18;
+  --color-surface-soft: #26211d;
+  --color-surface-card: color-mix(in srgb, #f7f2ea 8%, #26211d);
+  --color-cream-strong: color-mix(in srgb, #f7f2ea 14%, #26211d);
+  --color-hairline: color-mix(in srgb, #f7f2ea 12%, #1e1b18);
+  --color-hairline-soft: color-mix(in srgb, #f7f2ea 7%, #1e1b18);
+
+  --color-ink: #f7f2ea;
+  --color-body-strong: color-mix(in srgb, #f7f2ea 92%, #1e1b18);
+  --color-body: color-mix(in srgb, #f7f2ea 78%, #1e1b18);
+  --color-muted: color-mix(in srgb, #f7f2ea 58%, #1e1b18);
+  --color-muted-soft: color-mix(in srgb, #f7f2ea 42%, #1e1b18);
+
+  --color-brand: #e08a6c;
+  --color-brand-active: color-mix(in srgb, #f7f2ea 22%, #e08a6c);
+  --color-brand-disabled: color-mix(in srgb, #e08a6c 30%, #1e1b18);
+  --color-on-primary: #ffffff;
+
+  --color-teal: #8ed4c6;
+  --color-amber: #f0c48a;
+  --color-success: #8fd19e;
+  --color-warning: #f0c48a;
+  --color-error: #e08a8a;
+  --color-warn-surface: rgba(240, 196, 138, 0.18);
+  --color-warn-ink: #f0c48a;
+
+  --color-overlay: rgb(0 0 0 / 0.55);
+  --shadow-sm: 0 1px 3px rgb(0 0 0 / 0.4);
+  --shadow-pop: 0 8px 24px rgb(0 0 0 / 0.5), 0 1px 3px rgb(0 0 0 / 0.35);
 }
 
 html,

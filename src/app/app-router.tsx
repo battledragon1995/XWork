@@ -4,6 +4,7 @@ import { ProjectOverviewRoute } from "@/features/projects/project-overview-route
 import { ProjectsRoute } from "@/features/projects/projects-route";
 import { readProjectCrumbLabel } from "@/features/projects/projects-store";
 import { SettingsAboutRoute } from "@/features/settings/settings-about-route";
+import { SettingsAppearanceRoute } from "@/features/settings/settings-appearance-route";
 import { SettingsGeneralRoute } from "@/features/settings/settings-general-route";
 import { SETTINGS_SECTIONS } from "@/features/settings/settings-nav";
 import { SettingsRoute } from "@/features/settings/settings-route";
@@ -23,10 +24,13 @@ function crumbs(build: RouteCrumbHandle["crumbs"]): RouteCrumbHandle {
   return { crumbs: build };
 }
 
-// Select the real FE-011 pages and keep every deferred owner explicit in its placeholder.
+// Select the real pages and keep every deferred owner explicit in its placeholder.
 function settingsSectionElement(section: (typeof SETTINGS_SECTIONS)[number]) {
   if (section.slug === "general") {
     return <SettingsGeneralRoute />;
+  }
+  if (section.slug === "appearance") {
+    return <SettingsAppearanceRoute />;
   }
   if (section.slug === "about") {
     return <SettingsAboutRoute />;
