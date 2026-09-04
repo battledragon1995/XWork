@@ -124,7 +124,7 @@ pub fn apply_close_requested<R: Runtime>(
     Ok(CloseDecision::HideToTray)
 }
 
-/// Reports whether both official Rust-only plugins are initialized.
+/// Reports whether the two official Rust-owned plugins are initialized.
 ///
 /// The check reads the state each plugin publishes during initialization, so it
 /// observes registration without invoking any native dialog or file manager.
@@ -191,9 +191,10 @@ where
     C: FnOnce(&AppHandle<R>) -> ProjectCollaborators + Send + 'static,
 {
     builder
-        // Both official plugins are driven from Rust; no webview receives their commands.
+        // Dialog and opener are Rust-owned; OS exposes only the explicitly granted facts.
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_os::init())
         .setup(
             // Publishes state only after storage migrates, then attaches the required tray.
             move |app| {

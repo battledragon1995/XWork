@@ -5,12 +5,16 @@ import { userEvent } from "@testing-library/user-event";
 import { createMemoryRouter, RouterProvider } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ProjectDto } from "@/bindings/projects/projects";
+import { resetProjectsStore } from "@/features/projects/projects-store";
+import { resetSettingsStore } from "@/features/settings/settings-store";
+import { createSettingsSnapshot } from "@/features/settings/settings-test-fixture";
+import { readAppInfo } from "@/lib/ipc/app-info";
 import { getProjectGitStatus, listProjects, openProject } from "@/lib/ipc/projects";
+import { getSettings } from "@/lib/ipc/settings";
 import { AppErrorBoundary } from "./app-error-boundary";
 import { AppProviders } from "./app-providers";
 import { createAppRouter } from "./app-router";
 import { AppShell } from "./app-shell";
-import { resetProjectsStore } from "@/features/projects/projects-store";
 import { resetQuitStore, useQuitStore } from "./quit-store";
 
 // Replace the Projects boundary the index route, the Projects page and the sidebar block all
@@ -31,9 +35,15 @@ vi.mock("@/lib/ipc/projects", () => ({
   setProjectPinned: vi.fn(),
 }));
 
+// Replace both Settings data boundaries so route tests never call Tauri or read real app data.
+vi.mock("@/lib/ipc/settings", () => ({ getSettings: vi.fn() }));
+vi.mock("@/lib/ipc/app-info", () => ({ readAppInfo: vi.fn() }));
+
 const listProjectsMock = vi.mocked(listProjects);
 const openProjectMock = vi.mocked(openProject);
 const getProjectGitStatusMock = vi.mocked(getProjectGitStatus);
+const getSettingsMock = vi.mocked(getSettings);
+const readAppInfoMock = vi.mocked(readAppInfo);
 
 /** One registered project, so the index route settles on its Home branch. */
 const PROJECT: ProjectDto = {
@@ -62,10 +72,19 @@ beforeEach(() => {
     },
     changes: [],
   });
+  resetSettingsStore();
+  getSettingsMock.mockReset().mockResolvedValue(createSettingsSnapshot());
+  readAppInfoMock.mockReset().mockResolvedValue({
+    appVersion: "0.0.0",
+    osPlatform: "windows",
+    osVersion: "11",
+    osArch: "x86_64",
+  });
 });
 
 afterEach(() => {
   cleanup();
+  resetSettingsStore();
 });
 
 // Render the production router at one entry so every case shares the same setup.
@@ -89,12 +108,74 @@ describe("createAppRouter", () => {
   it.each([
     ["/notes", "Notes", "FE-019"],
     ["/calendar", "Calendar", "FE-021"],
-    ["/settings", "Settings", "FE-011"],
   ])("renders the %s route as the %s area placeholder", (path, area, arrivesWith) => {
     renderAt(path);
 
     expect(screen.getByRole("heading", { level: 1, name: area })).toBeInTheDocument();
     expect(screen.getByText(`This area arrives with ${arrivesWith}.`)).toBeInTheDocument();
+  });
+
+  // Verify the Settings index is replaced by General with matching shell and sub-nav state.
+  it("redirects /settings to the real General route", async () => {
+    const router = createAppRouter(["/notes", "/settings"]);
+    render(
+      <AppProviders>
+        <RouterProvider router={router} />
+      </AppProviders>,
+    );
+
+    expect(await screen.findByRole("heading", { level: 1, name: "General" })).toBeInTheDocument();
+    expect(router.state.location.pathname).toBe("/settings/general");
+    expect(readBreadcrumb()).toEqual(["Settings", "General"]);
+    expect(screen.getByRole("link", { name: "Settings" })).toHaveAttribute("aria-current", "page");
+    expect(screen.getByRole("link", { name: "General" })).toHaveAttribute("aria-current", "page");
+
+    await act(async () => router.navigate(-1));
+    expect(await screen.findByRole("heading", { level: 1, name: "Notes" })).toBeInTheDocument();
+  });
+
+  // Verify every deferred route keeps the frame and names the feature that will own it.
+  it.each([
+    ["/settings/appearance", "Appearance", "FE-012"],
+    ["/settings/terminal-profiles", "Terminal & CLI Profiles", "FE-013"],
+    ["/settings/keyboard-shortcuts", "Keyboard Shortcuts", "FE-014"],
+    ["/settings/notifications", "Notifications", "FE-023"],
+    ["/settings/data", "Data", "FE-015"],
+  ])("renders %s with the %s placeholder", async (path, section, owner) => {
+    renderAt(path);
+
+    expect(screen.getByRole("heading", { level: 1, name: section })).toBeInTheDocument();
+    expect(screen.getByText(`This section arrives with ${owner}.`)).toBeInTheDocument();
+    expect(readBreadcrumb()).toEqual(["Settings", section]);
+    expect(screen.getByRole("link", { name: section })).toHaveAttribute("aria-current", "page");
+  });
+
+  // Verify About reads its isolated data source and does not trigger another Settings read.
+  it("renders the real About route independently", async () => {
+    renderAt("/settings/about");
+
+    expect(await screen.findByText("Version 0.0.0")).toBeInTheDocument();
+    expect(readBreadcrumb()).toEqual(["Settings", "About"]);
+    expect(getSettingsMock).toHaveBeenCalledOnce();
+    expect(readAppInfoMock).toHaveBeenCalledOnce();
+  });
+
+  // Verify a missing Settings child falls through to the shell's existing Not Found route.
+  it("renders Not Found for an unknown Settings child", () => {
+    renderAt("/settings/not-real");
+
+    expect(screen.getByRole("heading", { level: 1, name: "Not found" })).toBeInTheDocument();
+    expect(screen.queryByRole("list", { name: "Settings sections" })).not.toBeInTheDocument();
+  });
+
+  // Verify the nested Settings list does not alter the shell's landmark contract.
+  it("keeps one shell landmark set around Settings", async () => {
+    renderAt("/settings/general");
+    await screen.findByRole("heading", { level: 1, name: "General" });
+
+    expect(screen.getAllByRole("banner")).toHaveLength(1);
+    expect(screen.getAllByRole("navigation")).toHaveLength(1);
+    expect(screen.getAllByRole("main")).toHaveLength(1);
   });
 
   // Verify the Projects route now renders the feature page instead of the shell placeholder,

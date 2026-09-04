@@ -6,9 +6,12 @@ import { RouterProvider } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { ProjectDto } from "@/bindings/projects/projects";
+import { resetProjectsStore } from "@/features/projects/projects-store";
+import { resetSettingsStore } from "@/features/settings/settings-store";
+import { createSettingsSnapshot } from "@/features/settings/settings-test-fixture";
 import { IpcCallError } from "@/lib/ipc/ipc-error";
 import { listProjects } from "@/lib/ipc/projects";
-import { resetProjectsStore } from "@/features/projects/projects-store";
+import { getSettings } from "@/lib/ipc/settings";
 import { AppProviders } from "./app-providers";
 import { createAppRouter } from "./app-router";
 import {
@@ -27,7 +30,11 @@ vi.mock("@/lib/ipc/projects", () => ({
   onProjectsChanged: vi.fn(async () => () => {}),
 }));
 
+// Replace the Settings read used after the sidebar enters the newly implemented frame.
+vi.mock("@/lib/ipc/settings", () => ({ getSettings: vi.fn() }));
+
 const listProjectsMock = vi.mocked(listProjects);
+const getSettingsMock = vi.mocked(getSettings);
 
 /** One registered project, used by the cases that need real rows in the sidebar. */
 const PROJECT: ProjectDto = {
@@ -47,12 +54,15 @@ const originalMatchMedia = window.matchMedia;
 beforeEach(() => {
   resetShellStore();
   resetProjectsStore();
+  resetSettingsStore();
   vi.clearAllMocks();
   listProjectsMock.mockResolvedValue([]);
+  getSettingsMock.mockResolvedValue(createSettingsSnapshot());
 });
 
 afterEach(() => {
   cleanup();
+  resetSettingsStore();
   window.matchMedia = originalMatchMedia;
 });
 
@@ -105,7 +115,7 @@ describe("AppSidebar navigation", () => {
     ["Projects", "Projects"],
     ["Notes", "Notes"],
     ["Calendar", "Calendar"],
-    ["Settings", "Settings"],
+    ["Settings", "General"],
   ])("navigates to the %s area", async (linkName, heading) => {
     const user = userEvent.setup();
     renderShellAt("/");

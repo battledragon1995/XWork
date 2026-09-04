@@ -301,9 +301,9 @@ fn projects_composition_routes_lifecycle_and_projects_commands() {
     }
 }
 
-/// Verifies that both official plugins are initialized by the composition root.
+/// Verifies that the shared composition still initializes after every official plugin.
 #[test]
-fn projects_composition_initializes_dialog_and_opener_plugins() {
+fn composition_initializes_official_plugins() {
     let directory = tempfile::TempDir::new().expect("the temporary directory should be created");
     let mut app = build_isolated_app(directory.path().to_path_buf());
 
