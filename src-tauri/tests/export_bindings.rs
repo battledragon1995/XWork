@@ -12,6 +12,11 @@ use xwork_lib::projects::{
     ProjectGitSummaryDto, ProjectUnavailableReasonDto, ProjectsError, RemoveProjectImpactDto,
     RemoveProjectResultDto,
 };
+use xwork_lib::sessions::{
+    CloseImpactDto, CloseResultDto, CloseTargetDto, PaneContentDto, PaneDto, PaneLayoutNodeDto,
+    SessionChangeKindDto, SessionDetailDto, SessionRuntimeEventDto, SessionStatusDto,
+    SessionSummaryDto, SessionsError, SplitAxisDto, SplitDirectionDto, TabDto,
+};
 use xwork_lib::settings::{
     AppSettingsDto, AppearanceSettingsDto, AppearanceSettingsPatchDto, GeneralSettingsDto,
     InterfaceColorsDto, InterfaceLanguageDto, InterfaceThemeColorsDto, SettingsError,
@@ -130,6 +135,31 @@ fn generated_cli_profiles_binding() -> String {
     .join("\n")
 }
 
+/// Generates the complete Sessions binding in stable dependency order.
+fn generated_sessions_binding() -> String {
+    let config = Config::default();
+    [
+        SessionStatusDto::export_to_string(&config).expect("SessionStatusDto should export"),
+        PaneContentDto::export_to_string(&config).expect("PaneContentDto should export"),
+        PaneDto::export_to_string(&config).expect("PaneDto should export"),
+        SplitAxisDto::export_to_string(&config).expect("SplitAxisDto should export"),
+        PaneLayoutNodeDto::export_to_string(&config).expect("PaneLayoutNodeDto should export"),
+        TabDto::export_to_string(&config).expect("TabDto should export"),
+        SessionSummaryDto::export_to_string(&config).expect("SessionSummaryDto should export"),
+        SessionDetailDto::export_to_string(&config).expect("SessionDetailDto should export"),
+        SplitDirectionDto::export_to_string(&config).expect("SplitDirectionDto should export"),
+        CloseTargetDto::export_to_string(&config).expect("CloseTargetDto should export"),
+        CloseImpactDto::export_to_string(&config).expect("CloseImpactDto should export"),
+        CloseResultDto::export_to_string(&config).expect("CloseResultDto should export"),
+        SessionChangeKindDto::export_to_string(&config)
+            .expect("SessionChangeKindDto should export"),
+        SessionRuntimeEventDto::export_to_string(&config)
+            .expect("SessionRuntimeEventDto should export"),
+        SessionsError::export_to_string(&config).expect("SessionsError should export"),
+    ]
+    .join("\n")
+}
+
 /// Returns one generated binding output path under the frontend bindings root.
 fn binding_path(relative: &[&str]) -> PathBuf {
     let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -188,4 +218,13 @@ fn cli_profiles_binding_matches_rust_contract() {
         binding_path(&["terminal", "cli-profiles.ts"]),
         generated_cli_profiles_binding(),
     );
+}
+
+/// Regenerates the Sessions binding and fails once whenever it is stale.
+#[test]
+fn sessions_binding_matches_rust_contract() {
+    let generated = generated_sessions_binding();
+    assert!(!generated.contains("SessionNotificationContext"));
+    assert!(!generated.contains("SessionAttentionSnapshot"));
+    assert_binding_is_current(binding_path(&["sessions", "sessions.ts"]), generated);
 }

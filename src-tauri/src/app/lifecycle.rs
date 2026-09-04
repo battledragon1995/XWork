@@ -6,7 +6,7 @@ use std::{
 };
 
 use serde::Serialize;
-use tauri::{AppHandle, Runtime, State, WebviewWindow};
+use tauri::{AppHandle, Manager, Runtime, State, WebviewWindow};
 use ts_rs::TS;
 
 use crate::platform::window::{hide_window, minimize_window, toggle_window_maximized};
@@ -131,30 +131,6 @@ pub struct AttentionSession {
     pub session_name: String,
     pub status_label: Option<String>,
     pub attention_sequence: u64,
-}
-
-/// Implements the empty Phase 1 runtime without persisted session state.
-pub(crate) struct EmptyAppRuntime;
-
-impl AppRuntime for EmptyAppRuntime {
-    /// Returns an empty Quit snapshot for the initial application slice.
-    fn quit_summary<'a>(
-        &'a self,
-    ) -> AppRuntimeFuture<'a, Result<QuitSummaryDto, AppLifecycleError>> {
-        Box::pin(async { Ok(QuitSummaryDto::default()) })
-    }
-
-    /// Returns no attention sessions before session runtime is implemented.
-    fn attention_sessions<'a>(
-        &'a self,
-    ) -> AppRuntimeFuture<'a, Result<Vec<AttentionSession>, AppLifecycleError>> {
-        Box::pin(async { Ok(Vec::new()) })
-    }
-
-    /// Completes cleanup because Phase 1 owns no transient runtime resources.
-    fn shutdown_for_quit<'a>(&'a self) -> AppRuntimeFuture<'a, Result<(), AppLifecycleError>> {
-        Box::pin(async { Ok(()) })
-    }
 }
 
 /// Reports the state-machine decision after a Quit request.
@@ -400,7 +376,9 @@ pub(crate) fn hide_main_window<R: Runtime>(
     window: WebviewWindow<R>,
 ) -> Result<(), AppLifecycleError> {
     authorize_window_command(window.label())?;
-    hide_window(&window).map_err(AppLifecycleError::from)
+    hide_window(&window).map_err(AppLifecycleError::from)?;
+    crate::app::notify_sessions_visibility(window.app_handle(), false);
+    Ok(())
 }
 
 /// Minimizes the invoking main window without changing runtime or Quit state.

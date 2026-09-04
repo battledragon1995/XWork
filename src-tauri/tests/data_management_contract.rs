@@ -20,6 +20,11 @@ use xwork_lib::projects::{
     ProjectFolderSelectionDto, ProjectFuture, ProjectIdFactory, ProjectImportPlan, ProjectPlatform,
     ProjectService, ProjectsError,
 };
+use xwork_lib::sessions::{
+    CliProfileLookup, CloseRetention, LaunchableProfile, PaneCloseImpact, PaneContentRef,
+    PaneContentRuntime, PaneRuntimeFuture, ProjectSessionAccess, ProjectSessionAvailability,
+    ReopenHandle, SessionEventSink, SessionManager, SessionRuntimeEventDto, SessionsError,
+};
 use xwork_lib::settings::{
     AppearanceSettingsPatchDto, SettingsBackupSection, SettingsError, SettingsService,
     SettingsSnapshot, SidebarSettingsPatchDto, ThemePresetDto, UpdateSettingsDto,
@@ -32,6 +37,96 @@ use xwork_lib::terminal::{
     CliProfilesClock, CliProfilesCommittedProjection, CliProfilesError, CliProfilesEventSink,
     CliProfilesImportPlan, CliProfilesService,
 };
+
+/// Supplies one available project to the Sessions maintenance-gate test.
+struct GateSessionProjects;
+
+impl ProjectSessionAccess for GateSessionProjects {
+    /// Accepts the isolated project without reading persistent state.
+    fn session_availability<'a>(
+        &'a self,
+        _project_id: &'a str,
+    ) -> PaneRuntimeFuture<'a, Result<ProjectSessionAvailability, SessionsError>> {
+        Box::pin(async { Ok(ProjectSessionAvailability::Available) })
+    }
+
+    /// Returns the isolated project's display order.
+    fn ordered_project_ids<'a>(
+        &'a self,
+    ) -> PaneRuntimeFuture<'a, Result<Vec<String>, SessionsError>> {
+        Box::pin(async { Ok(vec!["project".to_owned()]) })
+    }
+}
+
+/// Rejects profile lookup because the gate test never selects a tool.
+struct GateSessionProfiles;
+
+impl CliProfileLookup for GateSessionProfiles {
+    /// Fails closed if an unrelated profile lookup reaches this fixture.
+    fn launchable_profile<'a>(
+        &'a self,
+        profile_id: &'a str,
+    ) -> PaneRuntimeFuture<'a, Result<LaunchableProfile, SessionsError>> {
+        Box::pin(async move {
+            Err(SessionsError::ProfileNotFound {
+                profile_id: profile_id.to_owned(),
+            })
+        })
+    }
+}
+
+/// Supplies no live pane content for the Sessions maintenance-gate test.
+struct GateSessionContent;
+
+impl PaneContentRuntime for GateSessionContent {
+    /// Reports no blockers for an unreachable content value.
+    fn close_impact<'a>(
+        &'a self,
+        _content: &'a PaneContentRef,
+    ) -> PaneRuntimeFuture<'a, Result<PaneCloseImpact, SessionsError>> {
+        Box::pin(async { Ok(PaneCloseImpact::default()) })
+    }
+
+    /// Closes an unreachable content value without retention.
+    fn close<'a>(
+        &'a self,
+        _content: &'a PaneContentRef,
+        _retention: CloseRetention,
+    ) -> PaneRuntimeFuture<'a, Result<Option<ReopenHandle>, SessionsError>> {
+        Box::pin(async { Ok(None) })
+    }
+
+    /// Rejects an unreachable reopen request.
+    fn reopen<'a>(
+        &'a self,
+        handle: ReopenHandle,
+    ) -> PaneRuntimeFuture<'a, Result<PaneContentRef, SessionsError>> {
+        Box::pin(async move {
+            Err(SessionsError::ContentLifecycleFailed {
+                operation: "reopen".to_owned(),
+                target_id: handle.token,
+            })
+        })
+    }
+
+    /// Accepts idempotent release of an unreachable handle.
+    fn discard<'a>(
+        &'a self,
+        _handle: ReopenHandle,
+    ) -> PaneRuntimeFuture<'a, Result<(), SessionsError>> {
+        Box::pin(async { Ok(()) })
+    }
+}
+
+/// Discards Sessions events while preserving the publication boundary.
+struct GateSessionEvents;
+
+impl SessionEventSink for GateSessionEvents {
+    /// Accepts one committed event without external effects.
+    fn publish(&self, _event: SessionRuntimeEventDto) -> Result<(), SessionsError> {
+        Ok(())
+    }
+}
 
 /// Returns one queued folder selection without opening a native dialog.
 struct QueuedPlatform {
@@ -1600,4 +1695,55 @@ fn cli_profiles_merge_queues_removed_references_and_keeps_other_rows() {
     assert_eq!(harness.queued_accounts(), vec![cli_account(1)]);
     assert_eq!(harness.profile_count(), 2);
     assert!(harness.stored_accounts(&cli_profile_id(1)).is_empty());
+}
+
+/// Verifies session creation shares the write gate while shutdown and resume stay gate-free.
+#[test]
+fn sessions_create_and_reset_share_maintenance_gate() {
+    tauri::async_runtime::block_on(async {
+        let gate = DataMaintenanceGate::new();
+        let manager = SessionManager::with_seams(
+            gate.clone(),
+            Arc::new(GateSessionProjects),
+            Arc::new(GateSessionProfiles),
+            Arc::new(GateSessionContent),
+            Arc::new(GateSessionEvents),
+            true,
+        );
+        let write_permit = gate.write_permit().await;
+        let mut create: Pin<Box<dyn Future<Output = _> + Send + '_>> =
+            Box::pin(manager.create_session("project"));
+        assert!(poll_once(&mut create).is_pending());
+
+        // Runtime impact and shutdown must not re-enter the gate held by Reset.
+        assert_eq!(
+            manager
+                .shutdown_impact()
+                .await
+                .expect("gate-free impact should complete")
+                .session_count,
+            0
+        );
+        manager
+            .shutdown_all()
+            .await
+            .expect("gate-free shutdown should complete");
+        manager.resume_after_reset(true);
+        drop(create);
+        drop(write_permit);
+
+        let created = manager
+            .create_session("project")
+            .await
+            .expect("admission should reopen after reset");
+        assert_eq!(created.summary.project_id, "project");
+        assert_eq!(
+            manager
+                .list_sessions(None)
+                .await
+                .expect("the post-reset list should be readable")
+                .len(),
+            1
+        );
+    });
 }

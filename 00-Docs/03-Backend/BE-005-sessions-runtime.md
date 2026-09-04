@@ -27,6 +27,7 @@ Backend giữ nguồn dữ liệu chính trong bộ nhớ cho toàn bộ phiên,
 - Tỉ lệ split truyền bằng basis point nguyên từ `1000` đến `9000`, không dùng số thực qua IPC. Resize liên tục là state cục bộ của frontend; backend chỉ nhận giá trị khi kết thúc thao tác.
 - Giai đoạn 8 cho phép chọn CLI profile thành `ToolSelection` thật trong pane nhưng chưa tạo process. `BE-007` thay nội dung này bằng `Terminal` qua Rust API nội bộ ở giai đoạn 9; public contract cấu trúc không phải thay đổi.
 - `notification_context` là public Rust query hẹp cho `BE-011`, không phải Tauri command hoặc DTO frontend. Query trả project, tên session và trạng thái observed trong cùng một snapshot; BE-011 dùng snapshot `get_session` công khai hiện có để kiểm tra exact tab/pane/terminal target khi mở notification, không đọc map/lock nội bộ.
+- `attention_sessions` là public Rust query hẹp cho `AppRuntime`/tray, không phải Tauri command hoặc DTO frontend. Query chỉ trả session đang có status `NeedsAttention`, kèm summary và sequence của lần chuyển vào trạng thái đó gần nhất trong cùng một snapshot để tray sắp xếp ổn định mà không phải dựng lịch sử từ Tauri event có thể bị lỡ.
 
 ### Ngoài phạm vi
 
@@ -71,6 +72,7 @@ pub struct SessionManager {
 - State dùng `tokio::sync::RwLock`; map session theo `SessionId`, giữ `Vec<SessionId>` theo từng project để bảo toàn thứ tự tạo và giữ tập project đang commit close để chặn create chen vào snapshot removal.
 - Mỗi mutation của một session được tuần tự hóa; không giữ write lock trong lúc chờ content lifecycle port dừng/khôi phục tài nguyên.
 - `revision` là bộ đếm `u64` toàn manager, serialize thành chuỗi thập phân. Mỗi thay đổi quan sát được tăng đúng một lần.
+- Mỗi session giữ `attention_sequence: Option<u64>` nội bộ. Khi aggregate status chuyển từ giá trị khác sang `NeedsAttention`, field nhận đúng revision của mutation đó; khi rời `NeedsAttention`, field về `None`; cập nhật khác trong lúc vẫn `NeedsAttention` không đổi sequence.
 - `observed_session_id` phản ánh route session hiện tại nhưng không thay thế navigation state của frontend. `main_window_visible` do lifecycle hook của `BE-001` cập nhật; chỉ session thuộc route hiện tại khi cửa sổ đang hiển thị mới được xem là đang được quan sát.
 - `notification_context` clone `project_id`, tên session và hai input visibility dưới cùng read lock, rồi nhả lock trước khi trả; do đó existence và `is_observed` thuộc cùng một snapshot tuyến tính.
 - Snapshot tab vừa đóng nằm trong session sở hữu nó và không được ghi database, file, backup hoặc log.
@@ -672,6 +674,11 @@ pub struct SessionNotificationContext {
     pub is_observed: bool,
 }
 
+pub struct SessionAttentionSnapshot {
+    pub summary: SessionSummaryDto,
+    pub attention_sequence: u64,
+}
+
 pub type PaneRuntimeFuture<'a, T> =
     Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
@@ -759,6 +766,11 @@ impl SessionManager {
         session_id: &str,
     ) -> Result<Option<SessionNotificationContext>, SessionsError>;
 
+    /// Returns current attention sessions with their latest transition sequence.
+    pub async fn attention_sessions(
+        &self,
+    ) -> Result<Vec<SessionAttentionSnapshot>, SessionsError>;
+
     /// Updates whether the main window is visible without changing selected route.
     pub async fn set_main_window_visible(&self, visible: bool);
 
@@ -797,6 +809,8 @@ Ràng buộc của port:
 - `update_pane_activity` chỉ phát domain/Tauri event khi aggregate summary thực sự đổi; terminal bytes vẫn đi bằng Channel của `BE-007`.
 - `notification_context` tính `is_observed = observed_session_id == Some(session_id) && main_window_visible`. Query trả `Ok(None)` khi session không còn trong runtime, kể cả event BE-011 chạy đua với delete; không trả `SessionNotFound`, không tăng revision và không phát event. Snapshot tại read lock là linearization point nếu route/visibility/delete cạnh tranh.
 - `SessionNotificationContext` là type Rust nội bộ giữa capability, không derive `Serialize`, `Deserialize` hoặc `TS` và không xuất vào `src/bindings/sessions/`. Adapter BE-011 map query này vào `NotificationDependencies::session_context` mà không khiến Sessions phụ thuộc Notifications.
+- `attention_sessions` clone `SessionSummaryDto` và `attention_sequence` của đúng các session đang có status `NeedsAttention` dưới cùng một read lock. Query không await project/profile/content port, không tăng revision và không phát event; thứ tự trả về không phải contract vì `AppRuntime`/tray sắp xếp theo `attention_sequence` giảm dần rồi `session_id` tăng dần như `BE-001`.
+- `SessionAttentionSnapshot` là type Rust nội bộ giữa Sessions và app composition, không derive `Serialize`, `Deserialize` hoặc `TS` và không xuất vào `src/bindings/sessions/`. `AppRuntime::attention_sessions` dùng snapshot này, ghép `project_name` qua public `ProjectService::list_projects(None)` và không tự tái dựng sequence từ `sessions://runtime-changed`.
 - Khi mở notification, adapter BE-011 gọi public read-only snapshot `SessionManager::get_session` mà command cùng tên đã dùng, rồi xác nhận đồng thời `project_id`, `session_id`, `tab_id`, `pane_id` và `PaneContentDto::Terminal { terminal_id, .. }`. Snapshot không khớp hoặc session vừa mất được map thành target không còn tồn tại; BE-011 không được đọc state map, giữ lock Sessions hoặc yêu cầu BE-005 tự điều hướng.
 - Adapter `ProjectRuntimeGuard` của `BE-003` gọi `project_removal_impact` và map `ProjectSessionsImpact` sang type do Projects sở hữu. Method không gọi ngược project repository/availability, nên không tạo dependency vòng; project không có session trả toàn bộ count bằng `0`. Lỗi inspect đã làm sạch được adapter map thành `RuntimeInspectionFailed`.
 - `close_project_sessions` là commit cleanup sau khi dialog Remove Project đã được xác nhận và removal gate của `BE-003` đã chặn session mới. Manager tuần tự các lần close cùng project, đặt project-scoped close guard dưới state lock rồi mới lấy snapshot session ID theo thứ tự tạo; `create_session` kiểm guard này lúc commit và trả `ProjectUnavailable` nếu đã đóng gate nội bộ. Manager không giữ state lock trong lúc await content port, dùng cùng close-session path với `confirmed = true`, bỏ qua ID đã được đóng bởi operation cùng lúc và phát một event `Deleted` cho mỗi session thực sự bị xóa.
@@ -834,13 +848,14 @@ Event delivery không phải nguồn dữ liệu duy nhất. Nếu emit thất b
 17. Session/tab name sau trim dài tối đa `80` Unicode scalar value, không có control character; tên trùng được phép vì ID mới là định danh.
 18. Event chỉ được phát sau khi state hợp lệ đã commit. Revision serialize dạng chuỗi thập phân và không được reset trước khi process kết thúc.
 19. `notification_context` trả existence, project/name và observed flag từ một snapshot: chỉ session đúng `observed_session_id` khi `main_window_visible = true` mới observed; tab/pane active, maximize hoặc viewport không thay đổi kết quả này.
-20. Search, Home, Project Overview và tray chỉ dùng owner methods `SessionManager::list_sessions`, `SessionManager::get_session` hoặc domain event public; Notifications dùng thêm `notification_context` và exact `get_session` snapshot, không consumer nào đọc map/lock nội bộ.
-21. Không session ID, tên, layout, snapshot, terminal buffer hoặc process state nào được đưa vào SQLite, backup hay restore.
-22. Project removal impact aggregate mọi session thuộc đúng `project_id` và tính lại blocker hiện tại qua content lifecycle port; session count gồm cả session không có process.
-23. Project-scoped close chỉ được adapter `BE-003` gọi sau xác nhận. Guard nội bộ phải được đặt trước snapshot và giữ đến khi method kết thúc để create đã pass availability trước removal gate cũng không thể commit chen vào; method đóng mỗi session theo invariant close hiện có, không tự xóa project metadata và không biến failure một session thành rollback giả cho session đã đóng.
-24. `create_session` là runtime mutation duy nhất bắt buộc giữ `DataReadPermit`: lấy permit trước project/session mutation guard và giữ qua state commit cùng event publish. Reset giữ write permit nên không session mới chen vào giữa impact, quiesce và transaction; các command session không tạo mới không lấy maintenance permit.
-25. Lock order của create là `DataMaintenanceGate` → project/session mutation guard → Sessions state lock; không re-enter gate. `shutdown_impact`, `shutdown_all` và `resume_after_reset` là gate-free vì reset gọi chúng trong khi đang giữ `DataWritePermit`; không giữ state/content lock qua `.await`.
-26. Mọi Tauri command Sessions authorize exact invoking window `main` từ `WebviewWindow` trước validation, owner-port query hoặc state lock. Window `quick-note` không được đọc session snapshot hay dispatch runtime action; backend consumers tiếp tục dùng public `SessionManager` methods trực tiếp qua composition adapter.
+20. Search, Home và Project Overview chỉ dùng owner methods `SessionManager::list_sessions`, `SessionManager::get_session` hoặc domain event public; tray dùng thêm `attention_sessions`, còn Notifications dùng thêm `notification_context` và exact `get_session` snapshot. Không consumer nào đọc map/lock nội bộ hoặc dựng attention order từ event delivery best-effort.
+21. `attention_sequence` nhận revision của đúng lần gần nhất session chuyển từ status khác sang `NeedsAttention`; sequence không đổi khi activity khác cập nhật nhưng status vẫn `NeedsAttention`, bị xóa khi session rời trạng thái đó và được cấp lại nếu session chuyển vào `NeedsAttention` lần nữa.
+22. Không session ID, tên, layout, snapshot, terminal buffer hoặc process state nào được đưa vào SQLite, backup hay restore.
+23. Project removal impact aggregate mọi session thuộc đúng `project_id` và tính lại blocker hiện tại qua content lifecycle port; session count gồm cả session không có process.
+24. Project-scoped close chỉ được adapter `BE-003` gọi sau xác nhận. Guard nội bộ phải được đặt trước snapshot và giữ đến khi method kết thúc để create đã pass availability trước removal gate cũng không thể commit chen vào; method đóng mỗi session theo invariant close hiện có, không tự xóa project metadata và không biến failure một session thành rollback giả cho session đã đóng.
+25. `create_session` là runtime mutation duy nhất bắt buộc giữ `DataReadPermit`: lấy permit trước project/session mutation guard và giữ qua state commit cùng event publish. Reset giữ write permit nên không session mới chen vào giữa impact, quiesce và transaction; các command session không tạo mới không lấy maintenance permit.
+26. Lock order của create là `DataMaintenanceGate` → project/session mutation guard → Sessions state lock; không re-enter gate. `shutdown_impact`, `shutdown_all` và `resume_after_reset` là gate-free vì reset gọi chúng trong khi đang giữ `DataWritePermit`; không giữ state/content lock qua `.await`.
+27. Mọi Tauri command Sessions authorize exact invoking window `main` từ `WebviewWindow` trước validation, owner-port query hoặc state lock. Window `quick-note` không được đọc session snapshot hay dispatch runtime action; backend consumers tiếp tục dùng public `SessionManager` methods trực tiếp qua composition adapter.
 
 ## Lỗi
 
@@ -967,6 +982,7 @@ pub enum SessionsError {
 - [ ] Close failure không làm mất target và retry idempotent; mutation cạnh tranh nhận `CloseInProgress`.
 - [ ] `sessions://runtime-changed` có revision tăng nghiêm ngặt, snapshot sau mutation, không phát theo output chunk; query resync cho kết quả nhất quán.
 - [ ] `SessionManager::list_sessions`/`get_session` là owner snapshots dùng chung cho commands/consumers và clone nhất quán dưới read lock; `notification_context` trả đúng project/name và `is_observed` cho mọi tổ hợp route + main-window visibility, trả `None` sau delete/Quit, đồng thời không mutate revision/event; adapter BE-011 kiểm exact live tab/pane/terminal qua public `get_session` snapshot.
+- [ ] `attention_sessions` trả cùng snapshot summary + sequence cho đúng các session `NeedsAttention`; sequence nhận revision khi chuyển vào, giữ nguyên khi vẫn attention, bị xóa khi rời trạng thái và tăng khi vào lại; query không mutate và `SessionAttentionSnapshot` không đi vào binding TypeScript.
 - [ ] `shutdown_impact` trả đúng session/process/unsaved counts cho BE-001/BE-012; async `shutdown_all` gate-free chặn mutation mới và clear toàn state chỉ sau cleanup thành công, còn `resume_after_reset` no-fail mở admission mà không restore session.
 - [ ] `create_session` giữ `DataReadPermit` từ trước mutation guard qua state commit/event publish; reset giữ write permit chặn create và runtime quiesce không re-enter gate.
 - [ ] `project_removal_impact` aggregate đúng session/process/unsaved counts; `close_project_sessions` đóng đúng project, chặn create chen vào snapshot, không chạm project khác, thử hết snapshot, emit từng deletion và retry idempotent sau partial failure.
@@ -981,13 +997,13 @@ pub enum SessionsError {
 | File test | Loại | Hành vi kiểm tra |
 |---|---|---|
 | `src-tauri/src/sessions/models.rs` (`#[cfg(test)]`) | Unit | Validate name; status precedence; split/collapse tree; giới hạn bốn pane; active/maximize invariant; ratio; stable tab move. |
-| `src-tauri/src/sessions/manager.rs` (`#[cfg(test)]`) | Unit | Exact-label command authorization tách khỏi owner methods; project/profile port fake; shared list/get owner snapshots; create/read-permit ordering; event revision; visibility/unread; notification context route/visible matrix, missing-after-delete và read-vs-delete linearization; exact target snapshot; close impact gồm unsaved file; partial close failure; project-scoped impact/cleanup/create-close race/retry; single reopen snapshot; async shutdown/reset resume gate. |
-| `src-tauri/tests/sessions_runtime.rs` | Integration | Toàn bộ command thành công từ exact `main`; `quick-note`/label khác nhận `UnauthorizedWindow` trước mọi port/state side effect; command list/get bằng đúng owner snapshot; public Rust `notification_context` và `get_session` adapter contract cho BE-011 không có command mới; typed error serialization; event payload/order; adapter removal đúng và no persistence sau manager restart. |
+| `src-tauri/src/sessions/manager.rs` (`#[cfg(test)]`) | Unit | Exact-label command authorization tách khỏi owner methods; project/profile port fake; shared list/get owner snapshots; create/read-permit ordering; event revision; visibility/unread; attention transition sequence và read-only snapshot; notification context route/visible matrix, missing-after-delete và read-vs-delete linearization; exact target snapshot; close impact gồm unsaved file; partial close failure; project-scoped impact/cleanup/create-close race/retry; single reopen snapshot; async shutdown/reset resume gate. |
+| `src-tauri/tests/sessions_runtime.rs` | Integration | Toàn bộ command thành công từ exact `main`; `quick-note`/label khác nhận `UnauthorizedWindow` trước mọi port/state side effect; command list/get bằng đúng owner snapshot; public Rust `attention_sessions` cho `AppRuntime`/tray và `notification_context` + `get_session` cho BE-011 không có command mới; typed error serialization; event payload/order; adapter removal đúng và no persistence sau manager restart. |
 | `src-tauri/tests/data_management_contract.rs` | Integration | Write permit chặn create session, impact gồm unsaved file và reset await gate-free shutdown rồi resume admission không restore session. |
 | `src-tauri/tests/app_builder.rs` | Integration | Composition root đăng ký state/command và build được bằng Tauri mock runtime. |
-| `src-tauri/tests/export_bindings.rs` | Contract | Export tất cả DTO/error Sessions gồm `UnauthorizedWindow` và fail khi generated TypeScript khác Rust source; xác nhận `SessionNotificationContext` không đi vào binding. |
+| `src-tauri/tests/export_bindings.rs` | Contract | Export tất cả DTO/error Sessions gồm `UnauthorizedWindow` và fail khi generated TypeScript khác Rust source; xác nhận `SessionNotificationContext` và `SessionAttentionSnapshot` không đi vào binding. |
 
-Test manager dùng clock/ID allocator/content port xác định được, không sleep và không tạo process thật. Test process/PTY thật, terminal buffer, input/resize và bốn terminal đồng thời thuộc `BE-007`.
+Test manager dùng revision/ID allocator và content port xác định được, không sleep và không tạo process thật. Test process/PTY thật, terminal buffer, input/resize và bốn terminal đồng thời thuộc `BE-007`.
 
 ## Câu hỏi mở
 

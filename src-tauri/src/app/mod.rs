@@ -14,10 +14,10 @@ use crate::{
         window::{bring_to_front, hide_window},
     },
     projects::{
-        NoProjectRuntimeGuard, ProjectChangedEventDto, ProjectEventSink, ProjectFuture,
-        ProjectPlatform, ProjectService, ProjectsError, TauriProjectEventSink,
-        TauriProjectPlatform,
+        ProjectChangedEventDto, ProjectEventSink, ProjectFuture, ProjectPlatform, ProjectService,
+        ProjectsError, TauriProjectEventSink, TauriProjectPlatform,
     },
+    sessions::{SessionManager, commands as session_commands},
     settings::SettingsService,
     shared::DataMaintenanceGate,
     storage::Storage,
@@ -28,13 +28,18 @@ use crate::{
 };
 
 pub mod data_participants;
+pub mod data_runtime;
 pub mod lifecycle;
 pub mod tray;
 
 use data_participants::{
     CliProfilesDataParticipant, ProjectsDataParticipant, SettingsDataParticipant,
 };
-use lifecycle::{AppLifecycleError, AppLifecycleState, AppRuntime, EmptyAppRuntime};
+use data_runtime::{
+    DeferredProjectRuntimeGuard, PhaseOnePaneContentRuntime, SessionsAppRuntime,
+    SessionsCliProfileLookup, SessionsProjectAccess, TauriSessionEventSink,
+};
+use lifecycle::{AppLifecycleError, AppLifecycleState, AppRuntime};
 
 /// Describes whether a native close event should be intercepted.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -64,10 +69,12 @@ pub fn configure<R: Runtime>(builder: Builder<R>) -> Builder<R> {
     let builder = builder.plugin(tauri_plugin_single_instance::init(
         // Ignores argv and cwd while restoring the existing main window in place.
         |app, _argv, _cwd| {
-            if let Some(window) = app.get_webview_window("main")
-                && bring_to_front(&window).is_err()
-            {
-                eprintln!("single-instance main-window activation failed");
+            if let Some(window) = app.get_webview_window("main") {
+                if bring_to_front(&window).is_err() {
+                    eprintln!("single-instance main-window activation failed");
+                } else {
+                    notify_sessions_visibility(app, true);
+                }
             }
         },
     ));
@@ -75,11 +82,12 @@ pub fn configure<R: Runtime>(builder: Builder<R>) -> Builder<R> {
     configure_app(
         builder,
         None,
-        Arc::new(EmptyAppRuntime),
+        None,
         tray::attach_native_tray,
         native_project_collaborators,
         native_cli_profile_collaborators,
         true,
+        None,
     )
 }
 
@@ -92,12 +100,13 @@ pub fn configure_with_app_data_dir<R: Runtime>(
     configure_app(
         builder,
         Some(app_data_dir),
-        Arc::new(EmptyAppRuntime),
+        None,
         // Skips native tray attachment because these tests observe setup only.
         |_app| Ok(()),
         native_project_collaborators,
         native_cli_profile_collaborators,
         true,
+        Some(true),
     )
 }
 
@@ -116,11 +125,12 @@ where
     configure_app(
         builder,
         Some(app_data_dir),
-        runtime,
+        Some(runtime),
         attach_tray,
         native_project_collaborators,
         native_cli_profile_collaborators,
         true,
+        Some(true),
     )
 }
 
@@ -138,12 +148,13 @@ where
     configure_app(
         builder,
         Some(app_data_dir),
-        Arc::new(EmptyAppRuntime),
+        None,
         // Skips native tray attachment because these tests observe Projects only.
         |_app| Ok(()),
         project_collaborators,
         native_cli_profile_collaborators,
         true,
+        Some(true),
     )
 }
 
@@ -161,7 +172,7 @@ where
     configure_app(
         builder,
         Some(app_data_dir),
-        Arc::new(EmptyAppRuntime),
+        None,
         // Skips native tray attachment because these tests observe CLI profiles only.
         |_app| Ok(()),
         // Replaces both Projects adapters so no dialog or file manager can open.
@@ -174,6 +185,7 @@ where
         cli_profile_collaborators,
         // Command tests drive hydration, cleanup, and checks explicitly instead.
         false,
+        Some(true),
     )
 }
 
@@ -211,7 +223,20 @@ pub fn apply_close_requested<R: Runtime>(
         return Ok(CloseDecision::AllowClose);
     }
     hide_window(window).map_err(AppLifecycleError::from)?;
+    notify_sessions_visibility(window.app_handle(), false);
     Ok(CloseDecision::HideToTray)
+}
+
+/// Reports a successful native show or hide to the Sessions visibility owner.
+pub(crate) fn notify_sessions_visibility<R: Runtime>(app: &AppHandle<R>, visible: bool) {
+    let Some(manager) = app.try_state::<SessionManager>() else {
+        return;
+    };
+    let manager = manager.inner().clone();
+    // Visibility reporting is asynchronous so native window callbacks stay non-blocking.
+    tauri::async_runtime::spawn(async move {
+        manager.set_main_window_visible(visible).await;
+    });
 }
 
 /// Reports whether the two official Rust-owned plugins are initialized.
@@ -285,19 +310,39 @@ fn app_invoke_handler<R: Runtime>() -> impl Fn(tauri::ipc::Invoke<R>) -> bool + 
         crate::terminal::cli_profiles::update_cli_profile,
         crate::terminal::cli_profiles::delete_cli_profile,
         crate::terminal::cli_profiles::set_default_cli_shell,
-        crate::terminal::cli_profiles::check_cli_profile
+        crate::terminal::cli_profiles::check_cli_profile,
+        session_commands::list_sessions,
+        session_commands::get_session,
+        session_commands::create_session,
+        session_commands::rename_session,
+        session_commands::create_tab,
+        session_commands::rename_tab,
+        session_commands::move_tab,
+        session_commands::set_active_tab,
+        session_commands::set_active_pane,
+        session_commands::split_pane,
+        session_commands::set_split_ratio,
+        session_commands::set_maximized_pane,
+        session_commands::select_session_tool,
+        session_commands::select_pane_tool,
+        session_commands::get_close_impact,
+        session_commands::close_runtime_target,
+        session_commands::reopen_last_closed_tab,
+        session_commands::set_observed_session
     ]
 }
 
 /// Wires storage, Projects, lifecycle state, tray attachment, and close handling.
+#[allow(clippy::too_many_arguments)]
 fn configure_app<R, F, C, P>(
     builder: Builder<R>,
     app_data_dir: Option<PathBuf>,
-    runtime: Arc<dyn AppRuntime>,
+    runtime_override: Option<Arc<dyn AppRuntime>>,
     attach_tray: F,
     project_collaborators: C,
     cli_profile_collaborators: P,
     start_background_work: bool,
+    initial_visibility: Option<bool>,
 ) -> Builder<R>
 where
     R: Runtime,
@@ -318,13 +363,23 @@ where
                     None => app.path().app_data_dir()?,
                 };
                 let storage = setup_storage(app, app_data_dir)?;
-                setup_projects(app, storage.clone(), project_collaborators);
+                let project_guard = setup_projects(app, storage.clone(), project_collaborators);
                 setup_settings(app, storage.clone())?;
                 setup_cli_profiles(
                     app,
                     storage,
                     cli_profile_collaborators,
                     start_background_work,
+                );
+                let sessions = setup_sessions(app, project_guard, initial_visibility)?;
+                let runtime = runtime_override.unwrap_or_else(
+                    // Normal composition uses Sessions; focused lifecycle tests may inject a fake.
+                    || {
+                        Arc::new(SessionsAppRuntime::new(
+                            sessions,
+                            app.state::<ProjectService>().inner().clone(),
+                        ))
+                    },
                 );
                 app.manage(AppLifecycleState::new(runtime));
                 attach_tray(app.handle())?;
@@ -374,25 +429,59 @@ fn setup_storage<R: Runtime>(
 }
 
 /// Creates the single maintenance gate and the managed Projects capability.
-fn setup_projects<R, C>(app: &mut App<R>, storage: Storage, project_collaborators: C)
+fn setup_projects<R, C>(
+    app: &mut App<R>,
+    storage: Storage,
+    project_collaborators: C,
+) -> Arc<DeferredProjectRuntimeGuard>
 where
     R: Runtime,
     C: FnOnce(&AppHandle<R>) -> ProjectCollaborators,
 {
     // Exactly one gate exists per process; `BE-005` and `BE-012` reuse this instance.
     let gate = DataMaintenanceGate::new();
+    let runtime_guard = Arc::new(DeferredProjectRuntimeGuard::new());
     let (platform, events) = project_collaborators(app.handle());
     let service = ProjectService::new(
         storage,
         gate.clone(),
         platform,
-        // Stage 4 has no session runtime, so removal closes nothing yet.
-        Arc::new(NoProjectRuntimeGuard),
+        runtime_guard.clone(),
         events,
     );
     app.manage(ProjectsDataParticipant::new(service.clone()));
     app.manage(service);
     app.manage(gate);
+    runtime_guard
+}
+
+/// Constructs, binds, and manages the process-local Sessions capability.
+fn setup_sessions<R: Runtime>(
+    app: &mut App<R>,
+    project_guard: Arc<DeferredProjectRuntimeGuard>,
+    initial_visibility: Option<bool>,
+) -> Result<SessionManager, Box<dyn std::error::Error>> {
+    let main_window_visible = match initial_visibility {
+        Some(visible) => visible,
+        None => app
+            .get_webview_window("main")
+            .ok_or(AppLifecycleError::MainWindowUnavailable)?
+            .is_visible()?,
+    };
+    let projects = app.state::<ProjectService>().inner().clone();
+    let profiles = app.state::<CliProfilesService>().inner().clone();
+    let gate = app.state::<DataMaintenanceGate>().inner().clone();
+    let manager = SessionManager::new(
+        gate,
+        Arc::new(SessionsProjectAccess::new(projects)),
+        Arc::new(SessionsCliProfileLookup::new(profiles)),
+        Arc::new(PhaseOnePaneContentRuntime::new()),
+        Arc::new(TauriSessionEventSink::new(app.handle().clone())),
+        main_window_visible,
+    );
+    project_guard.bind(manager.clone())?;
+    app.manage(manager.clone());
+    Ok(manager)
 }
 
 /// Manages CLI Profiles and starts its hydration, cleanup, and check work.

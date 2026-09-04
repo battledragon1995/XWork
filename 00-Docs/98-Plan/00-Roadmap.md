@@ -35,7 +35,7 @@ Trừ scaffold và chuẩn bị phát hành, một lát cắt chỉ hoàn thành
 | 4 | Projects và Welcome — **đã hoàn thành** | `BE-003` | `FE-002`, `FE-004`; mở rộng `FE-001` | 3 |
 | 5 | Git status và Project Overview — **đã hoàn thành** | `BE-004` | `FE-005` | 4 |
 | 6 | Settings nền tảng  — **đã hoàn thành** | `BE-008` | `FE-011`, `FE-012`; mở rộng `FE-001` | 3 |
-| 7 | CLI profiles | `BE-006` | `FE-013` | 4, 6 |
+| 7 | CLI profiles — **đã hoàn thành** | `BE-006` | `FE-013` | 4, 6 |
 | 8 | Session, tab và pane | `BE-005` | `FE-006`, `FE-007` | 4, 7 |
 | 9 | Terminal và PTY | `BE-007` | `FE-008`; hoàn thiện luồng terminal trong `FE-006`, `FE-007` | 8 |
 | 10 | Keyboard shortcuts | `BE-009` | `FE-014` | 6 |

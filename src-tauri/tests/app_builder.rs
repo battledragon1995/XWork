@@ -20,6 +20,7 @@ use xwork_lib::projects::{
     ProjectChangedEventDto, ProjectEventSink, ProjectFuture, ProjectPlatform, ProjectService,
     ProjectsError,
 };
+use xwork_lib::sessions::SessionManager;
 use xwork_lib::settings::SettingsService;
 use xwork_lib::shared::DataMaintenanceGate;
 use xwork_lib::storage::{Storage, StorageError};
@@ -129,6 +130,11 @@ fn window(
 
 /// Builds one mock invoke request for the supplied command name.
 fn invoke_request(cmd: &str) -> tauri::webview::InvokeRequest {
+    invoke_request_with_body(cmd, serde_json::json!({}))
+}
+
+/// Builds one mock invoke request carrying an explicit JSON payload.
+fn invoke_request_with_body(cmd: &str, body: serde_json::Value) -> tauri::webview::InvokeRequest {
     tauri::webview::InvokeRequest {
         cmd: cmd.to_owned(),
         callback: tauri::ipc::CallbackFn(0),
@@ -136,7 +142,7 @@ fn invoke_request(cmd: &str) -> tauri::webview::InvokeRequest {
         url: "http://tauri.localhost"
             .parse()
             .expect("the mock IPC URL should parse"),
-        body: tauri::ipc::InvokeBody::Json(serde_json::json!({})),
+        body: tauri::ipc::InvokeBody::Json(body),
         headers: Default::default(),
         invoke_key: tauri::test::INVOKE_KEY.to_owned(),
     }
@@ -319,6 +325,151 @@ fn projects_composition_routes_lifecycle_and_projects_commands() {
             "command {command} should be routed but answered {text}"
         );
     }
+}
+
+/// Verifies Sessions shares the application gate and all command routes are registered.
+#[test]
+fn sessions_composition_binds_runtime_and_routes_commands() {
+    let directory = tempfile::TempDir::new().expect("the temporary directory should be created");
+    let mut app = build_isolated_app(directory.path().to_path_buf());
+    run_setup(&mut app);
+
+    let gate = app.state::<DataMaintenanceGate>();
+    let sessions = app.state::<SessionManager>();
+    assert!(sessions.shares_gate_with(gate.inner()));
+    let main = window(&app, "main");
+    tauri::test::assert_ipc_response(
+        &main,
+        invoke_request("list_sessions"),
+        Ok(serde_json::json!([])),
+    );
+    for command in [
+        "get_session",
+        "create_session",
+        "rename_session",
+        "create_tab",
+        "rename_tab",
+        "move_tab",
+        "set_active_tab",
+        "set_active_pane",
+        "split_pane",
+        "set_split_ratio",
+        "set_maximized_pane",
+        "select_session_tool",
+        "select_pane_tool",
+        "get_close_impact",
+        "close_runtime_target",
+        "reopen_last_closed_tab",
+    ] {
+        let error = tauri::test::get_ipc_response(&main, invoke_request(command))
+            .expect_err("an empty payload should reach the routed command and fail decoding");
+        assert!(
+            !format!("{error:?}").contains("not found"),
+            "Sessions command {command} should be routed"
+        );
+    }
+    tauri::test::assert_ipc_response(
+        &main,
+        invoke_request("set_observed_session"),
+        Ok(serde_json::Value::Null),
+    );
+}
+
+/// Verifies every Sessions route rejects a non-main caller before owner work.
+#[test]
+fn sessions_commands_authorize_exact_main_before_dispatch() {
+    let directory = tempfile::TempDir::new().expect("the temporary directory should be created");
+    let mut app = build_isolated_app(directory.path().to_path_buf());
+    run_setup(&mut app);
+    let quick_note = window(&app, "quick-note");
+    let target = serde_json::json!({"kind": "session", "sessionId": "session-missing"});
+    let cases = [
+        ("list_sessions", serde_json::json!({"projectId": null})),
+        (
+            "get_session",
+            serde_json::json!({"sessionId": "session-missing"}),
+        ),
+        (
+            "create_session",
+            serde_json::json!({"projectId": "project-missing"}),
+        ),
+        (
+            "rename_session",
+            serde_json::json!({"sessionId": "session-missing", "name": "Name"}),
+        ),
+        (
+            "create_tab",
+            serde_json::json!({"sessionId": "session-missing"}),
+        ),
+        (
+            "rename_tab",
+            serde_json::json!({"sessionId": "session-missing", "tabId": "tab-missing", "name": "Name"}),
+        ),
+        (
+            "move_tab",
+            serde_json::json!({"sessionId": "session-missing", "tabId": "tab-missing", "beforeTabId": null}),
+        ),
+        (
+            "set_active_tab",
+            serde_json::json!({"sessionId": "session-missing", "tabId": "tab-missing"}),
+        ),
+        (
+            "set_active_pane",
+            serde_json::json!({"sessionId": "session-missing", "tabId": "tab-missing", "paneId": "pane-missing"}),
+        ),
+        (
+            "split_pane",
+            serde_json::json!({"sessionId": "session-missing", "tabId": "tab-missing", "paneId": "pane-missing", "direction": "right"}),
+        ),
+        (
+            "set_split_ratio",
+            serde_json::json!({"sessionId": "session-missing", "tabId": "tab-missing", "splitId": "split-missing", "ratioBasisPoints": 5000}),
+        ),
+        (
+            "set_maximized_pane",
+            serde_json::json!({"sessionId": "session-missing", "tabId": "tab-missing", "paneId": null}),
+        ),
+        (
+            "select_session_tool",
+            serde_json::json!({"sessionId": "session-missing", "profileId": "profile-missing"}),
+        ),
+        (
+            "select_pane_tool",
+            serde_json::json!({"sessionId": "session-missing", "tabId": "tab-missing", "paneId": "pane-missing", "profileId": "profile-missing"}),
+        ),
+        (
+            "get_close_impact",
+            serde_json::json!({"target": target.clone()}),
+        ),
+        (
+            "close_runtime_target",
+            serde_json::json!({"target": target, "confirmed": true}),
+        ),
+        (
+            "reopen_last_closed_tab",
+            serde_json::json!({"sessionId": "session-missing"}),
+        ),
+        (
+            "set_observed_session",
+            serde_json::json!({"sessionId": null}),
+        ),
+    ];
+    for (command, body) in cases {
+        let error =
+            tauri::test::get_ipc_response(&quick_note, invoke_request_with_body(command, body))
+                .expect_err("a non-main Sessions caller should be rejected");
+        assert_eq!(
+            error,
+            serde_json::json!({"code": "unauthorizedWindow"}),
+            "Sessions command {command} must authorize first"
+        );
+    }
+
+    assert!(
+        tauri::async_runtime::block_on(app.state::<SessionManager>().list_sessions(None))
+            .expect("unauthorized commands should leave the owner readable")
+            .is_empty()
+    );
 }
 
 /// Verifies that the shared composition still initializes after every official plugin.

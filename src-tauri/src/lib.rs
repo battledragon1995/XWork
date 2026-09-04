@@ -1,6 +1,7 @@
 pub mod app;
 pub mod platform;
 pub mod projects;
+pub mod sessions;
 pub mod settings;
 pub mod shared;
 pub mod storage;

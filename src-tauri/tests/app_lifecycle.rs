@@ -14,6 +14,7 @@ use xwork_lib::{
         },
         tray::{TrayQuitOutcome, tray_open, tray_quit, tray_select_session},
     },
+    sessions::SessionManager,
     storage::{Storage, StorageError},
 };
 
@@ -24,6 +25,27 @@ struct FakeAppRuntime {
     shutdown_fails: bool,
     summary_calls: AtomicUsize,
     shutdown_calls: AtomicUsize,
+}
+
+/// Verifies lifecycle composition manages Sessions and reports successful hide/show paths.
+#[test]
+fn sessions_visibility_attention_and_quit_are_composed() {
+    let runtime = Arc::new(FakeAppRuntime::new(0));
+    let application = TestApplication::new(runtime.clone());
+    assert!(application.app.try_state::<SessionManager>().is_some());
+    let main = application.window("main");
+
+    assert_eq!(
+        apply_close_requested(&main).expect("native close should hide main"),
+        CloseDecision::HideToTray
+    );
+    tray_open(application.app.handle()).expect("tray open should restore main");
+    assert_eq!(
+        tauri::async_runtime::block_on(tray_quit(application.app.handle()))
+            .expect("empty runtime should quit directly"),
+        TrayQuitOutcome::ReadyToExit
+    );
+    assert_eq!(runtime.shutdown_calls.load(Ordering::SeqCst), 1);
 }
 
 impl FakeAppRuntime {

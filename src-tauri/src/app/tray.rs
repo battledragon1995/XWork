@@ -169,7 +169,9 @@ pub fn tray_open<R: Runtime>(app: &AppHandle<R>) -> Result<(), AppLifecycleError
     let window = app
         .get_webview_window("main")
         .ok_or(AppLifecycleError::MainWindowUnavailable)?;
-    bring_to_front(&window).map_err(AppLifecycleError::from)
+    bring_to_front(&window).map_err(AppLifecycleError::from)?;
+    crate::app::notify_sessions_visibility(app, true);
+    Ok(())
 }
 
 /// Runs the shared Quit state machine and emits a dialog request when required.
@@ -230,6 +232,7 @@ pub async fn tray_select_session<R: Runtime>(
     if window.set_focus().is_err() {
         eprintln!("native window operation failed: Focus");
     }
+    crate::app::notify_sessions_visibility(app, true);
     app.emit_to(
         "main",
         NAVIGATE_SESSION_EVENT,
