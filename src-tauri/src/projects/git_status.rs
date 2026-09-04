@@ -788,6 +788,10 @@ mod tests {
             .args(["merge", "other"])
             .current_dir(directory.path())
             .env("GIT_CONFIG_NOSYSTEM", "1")
+            .env("GIT_AUTHOR_NAME", "XWork Test")
+            .env("GIT_AUTHOR_EMAIL", "xwork@example.invalid")
+            .env("GIT_COMMITTER_NAME", "XWork Test")
+            .env("GIT_COMMITTER_EMAIL", "xwork@example.invalid")
             .output()
             .expect("git.exe should arrange the conflict fixture");
         assert!(!merge.status.success(), "the fixture merge must conflict");
