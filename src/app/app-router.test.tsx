@@ -10,6 +10,9 @@ import { resetSettingsStore } from "@/features/settings/settings-store";
 import { createSettingsSnapshot } from "@/features/settings/settings-test-fixture";
 import { readAppInfo } from "@/lib/ipc/app-info";
 import { getProjectGitStatus, listProjects, openProject } from "@/lib/ipc/projects";
+import { resetCliProfilesStore } from "@/features/settings/cli-profiles-store";
+import { createCliProfilesSnapshot } from "@/features/settings/cli-profiles-test-fixture";
+import { getCliProfiles } from "@/lib/ipc/cli-profiles";
 import { getSettings } from "@/lib/ipc/settings";
 import { AppErrorBoundary } from "./app-error-boundary";
 import { AppProviders } from "./app-providers";
@@ -43,11 +46,24 @@ vi.mock("@/lib/ipc/settings", () => ({
 }));
 vi.mock("@/lib/ipc/app-info", () => ({ readAppInfo: vi.fn() }));
 
+// Replace the CLI profile boundary the real Terminal route reads, so the router test never
+// touches real shells, profiles or the credential store.
+vi.mock("@/lib/ipc/cli-profiles", () => ({
+  getCliProfiles: vi.fn(),
+  createCliProfile: vi.fn(),
+  updateCliProfile: vi.fn(),
+  deleteCliProfile: vi.fn(),
+  setDefaultCliShell: vi.fn(),
+  checkCliProfile: vi.fn(),
+  onCliProfilesChanged: vi.fn(async () => () => {}),
+}));
+
 const listProjectsMock = vi.mocked(listProjects);
 const openProjectMock = vi.mocked(openProject);
 const getProjectGitStatusMock = vi.mocked(getProjectGitStatus);
 const getSettingsMock = vi.mocked(getSettings);
 const readAppInfoMock = vi.mocked(readAppInfo);
+const getCliProfilesMock = vi.mocked(getCliProfiles);
 
 /** One registered project, so the index route settles on its Home branch. */
 const PROJECT: ProjectDto = {
@@ -77,6 +93,8 @@ beforeEach(() => {
     changes: [],
   });
   resetSettingsStore();
+  resetCliProfilesStore();
+  getCliProfilesMock.mockReset().mockResolvedValue(createCliProfilesSnapshot());
   getSettingsMock.mockReset().mockResolvedValue(createSettingsSnapshot());
   readAppInfoMock.mockReset().mockResolvedValue({
     appVersion: "0.0.0",
@@ -89,6 +107,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   resetSettingsStore();
+  resetCliProfilesStore();
 });
 
 // Render the production router at one entry so every case shares the same setup.
@@ -140,7 +159,6 @@ describe("createAppRouter", () => {
 
   // Verify every deferred route keeps the frame and names the feature that will own it.
   it.each([
-    ["/settings/terminal-profiles", "Terminal & CLI Profiles", "FE-013"],
     ["/settings/keyboard-shortcuts", "Keyboard Shortcuts", "FE-014"],
     ["/settings/notifications", "Notifications", "FE-023"],
     ["/settings/data", "Data", "FE-015"],
@@ -151,6 +169,23 @@ describe("createAppRouter", () => {
     expect(screen.getByText(`This section arrives with ${owner}.`)).toBeInTheDocument();
     expect(readBreadcrumb()).toEqual(["Settings", section]);
     expect(screen.getByRole("link", { name: section })).toHaveAttribute("aria-current", "page");
+  });
+
+  // Verify the Terminal section renders its real page instead of the FE-013 placeholder.
+  it("renders the real Terminal & CLI Profiles route", async () => {
+    renderAt("/settings/terminal-profiles");
+
+    expect(await screen.findByLabelText("Default shell")).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { level: 1, name: "Terminal & CLI Profiles" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "New Profile" })).toBeInTheDocument();
+    expect(screen.queryByText("This section arrives with FE-013.")).not.toBeInTheDocument();
+    expect(readBreadcrumb()).toEqual(["Settings", "Terminal & CLI Profiles"]);
+    expect(screen.getByRole("link", { name: "Terminal & CLI Profiles" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
   });
 
   // Verify the Appearance section now renders its real page instead of the FE-012 placeholder.

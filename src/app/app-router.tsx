@@ -9,6 +9,7 @@ import { SettingsGeneralRoute } from "@/features/settings/settings-general-route
 import { SETTINGS_SECTIONS } from "@/features/settings/settings-nav";
 import { SettingsRoute } from "@/features/settings/settings-route";
 import { SettingsSectionPlaceholder } from "@/features/settings/settings-section-placeholder";
+import { SettingsTerminalProfilesRoute } from "@/features/settings/settings-terminal-profiles-route";
 import { AppErrorBoundary } from "./app-error-boundary";
 import { AppShell } from "./app-shell";
 import { AreaPlaceholder, NotFoundPlaceholder } from "./area-placeholder";
@@ -31,6 +32,9 @@ function settingsSectionElement(section: (typeof SETTINGS_SECTIONS)[number]) {
   }
   if (section.slug === "appearance") {
     return <SettingsAppearanceRoute />;
+  }
+  if (section.slug === "terminal-profiles") {
+    return <SettingsTerminalProfilesRoute />;
   }
   if (section.slug === "about") {
     return <SettingsAboutRoute />;
