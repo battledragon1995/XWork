@@ -180,10 +180,17 @@ fn migration_creates_projects_schema() {
     let directory = tempfile::TempDir::new().expect("the temporary directory should be created");
     let storage = Storage::open(directory.path()).expect("storage should open");
 
-    assert_eq!(schema_version(&storage), 2);
+    assert_eq!(schema_version(&storage), 3);
     assert_eq!(
         schema_object_names(&storage, "table"),
-        vec!["projects", "settings"]
+        vec![
+            "cli_profile_environment",
+            "cli_profile_settings",
+            "cli_profiles",
+            "credential_cleanup_queue",
+            "projects",
+            "settings",
+        ]
     );
     assert_eq!(
         schema_object_names(&storage, "index"),
@@ -213,10 +220,17 @@ fn migration_creates_projects_schema() {
     // Reopening must not rerun the migration or change the committed schema version.
     drop(storage);
     let reopened = Storage::open(directory.path()).expect("storage should reopen");
-    assert_eq!(schema_version(&reopened), 2);
+    assert_eq!(schema_version(&reopened), 3);
     assert_eq!(
         schema_object_names(&reopened, "table"),
-        vec!["projects", "settings"]
+        vec![
+            "cli_profile_environment",
+            "cli_profile_settings",
+            "cli_profiles",
+            "credential_cleanup_queue",
+            "projects",
+            "settings",
+        ]
     );
 }
 

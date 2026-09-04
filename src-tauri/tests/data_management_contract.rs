@@ -8,7 +8,12 @@ use std::{
 
 use tempfile::TempDir;
 use tokio::sync::Barrier;
-use xwork_lib::app::data_participants::{ProjectsDataParticipant, SettingsDataParticipant};
+use xwork_lib::app::data_participants::{
+    CliProfilesDataParticipant, ProjectsDataParticipant, SettingsDataParticipant,
+};
+use xwork_lib::platform::command::StubCommandResolver;
+use xwork_lib::platform::credential::InMemoryCredentialStore;
+use xwork_lib::platform::shell::{ShellMode, StubShellResolver};
 use xwork_lib::projects::{
     CURRENT_PATH_IDENTITY, NoProjectRuntimeGuard, ProjectBackupRecordV1, ProjectChangedEventDto,
     ProjectClock, ProjectCommittedProjection, ProjectDto, ProjectEventSink,
@@ -21,6 +26,12 @@ use xwork_lib::settings::{
 };
 use xwork_lib::shared::DataMaintenanceGate;
 use xwork_lib::storage::Storage;
+use xwork_lib::terminal::{
+    CliEnvironmentBackupRecordV1, CliProfileBackupRecordV1, CliProfileEnvironmentInputDto,
+    CliProfileIdFactory, CliProfileInputDto, CliProfilesBackupV1, CliProfilesChangedDto,
+    CliProfilesClock, CliProfilesCommittedProjection, CliProfilesError, CliProfilesEventSink,
+    CliProfilesImportPlan, CliProfilesService,
+};
 
 /// Returns one queued folder selection without opening a native dialog.
 struct QueuedPlatform {
@@ -870,4 +881,723 @@ fn settings_mutation_is_blocked_by_write_permit() {
         .expect("the admitted mutation should commit");
     worker.join().expect("the mutation thread should join");
     assert_eq!(updated.sidebar.width_px, 310);
+}
+
+/// Returns one pinned fixture timestamp for CLI profile mutations.
+struct FixedCliClock;
+
+impl CliProfilesClock for FixedCliClock {
+    /// Returns the pinned fixture timestamp.
+    fn now_ms(&self) -> Result<i64, CliProfilesError> {
+        Ok(1_700_000_000_000)
+    }
+}
+
+/// Returns deterministic CLI profile identifiers and credential accounts.
+#[derive(Default)]
+struct SequentialCliIds {
+    next: Mutex<u32>,
+}
+
+impl SequentialCliIds {
+    /// Returns the next fixture counter value.
+    fn next(&self) -> u32 {
+        let mut next = self
+            .next
+            .lock()
+            .expect("the fixture lock should be available");
+        *next += 1;
+        *next
+    }
+}
+
+impl CliProfileIdFactory for SequentialCliIds {
+    /// Returns the next canonical fixture profile identifier.
+    fn new_profile_id(&self) -> String {
+        format!("profile-{:08x}-0000-4000-8000-000000000000", self.next())
+    }
+
+    /// Returns the next opaque fixture credential account.
+    fn new_credential_account(&self) -> String {
+        format!("{:08x}-0000-4000-8000-aaaaaaaaaaaa", self.next())
+    }
+}
+
+/// Records every published CLI profile invalidation for publication assertions.
+#[derive(Default)]
+struct RecordingCliSink {
+    published: Mutex<Vec<CliProfilesChangedDto>>,
+}
+
+impl RecordingCliSink {
+    /// Returns every recorded change as a revision, kind, and profile triple.
+    fn recorded(&self) -> Vec<(String, String, Option<String>)> {
+        self.published
+            .lock()
+            .expect("the fixture lock should be available")
+            .iter()
+            .map(
+                // Reduces each payload to the three fields assertions inspect.
+                |event| {
+                    (
+                        event.revision.clone(),
+                        format!("{:?}", event.kind),
+                        event.profile_id.clone(),
+                    )
+                },
+            )
+            .collect()
+    }
+}
+
+impl CliProfilesEventSink for RecordingCliSink {
+    /// Records one publication attempt and always succeeds.
+    fn publish(&self, event: CliProfilesChangedDto) -> Result<(), CliProfilesError> {
+        self.published
+            .lock()
+            .expect("the fixture lock should be available")
+            .push(event);
+        Ok(())
+    }
+}
+
+/// Owns one isolated CLI profiles service and its maintenance collaborators.
+struct CliProfilesHarness {
+    service: CliProfilesService,
+    participant: CliProfilesDataParticipant,
+    storage: Storage,
+    gate: DataMaintenanceGate,
+    commands: Arc<StubCommandResolver>,
+    credentials: Arc<InMemoryCredentialStore>,
+    events: Arc<RecordingCliSink>,
+    _app_data: TempDir,
+}
+
+impl CliProfilesHarness {
+    /// Builds one hydrated service over a fresh migrated database.
+    fn new() -> Self {
+        let app_data = TempDir::new().expect("the temporary app data should be created");
+        let storage = Storage::open(app_data.path()).expect("isolated storage should open");
+        let shells = Arc::new(StubShellResolver::windows_like());
+        shells.set_available("pwsh", "pwsh.exe", ShellMode::PowerShell);
+        shells.set_resolved(
+            "cmd",
+            StubShellResolver::resolved("cmd", "cmd.exe", ShellMode::WindowsCommandPrompt),
+        );
+        let credentials = Arc::new(InMemoryCredentialStore::new());
+        let events = Arc::new(RecordingCliSink::default());
+        let commands = Arc::new(StubCommandResolver::new());
+        let gate = DataMaintenanceGate::new();
+        let service = CliProfilesService::with_seams(
+            storage.clone(),
+            gate.clone(),
+            commands.clone(),
+            shells,
+            credentials.clone(),
+            events.clone(),
+            Arc::new(FixedCliClock),
+            Arc::new(SequentialCliIds::default()),
+        );
+        // Hydration completes before any assertion so later polls observe admission only.
+        tauri::async_runtime::block_on(service.snapshot()).expect("hydration should succeed");
+        Self {
+            participant: CliProfilesDataParticipant::new(service.clone()),
+            service,
+            storage,
+            gate,
+            commands,
+            credentials,
+            events,
+            _app_data: app_data,
+        }
+    }
+
+    /// Seeds one custom profile row with its ordered environment entries.
+    fn seed_profile(
+        &self,
+        id: &str,
+        name: &str,
+        shell_id: Option<&str>,
+        environment: &[(&str, Option<&str>, Option<&str>)],
+    ) {
+        self.storage
+            .with_connection(
+                // Fixtures are written through the same storage seam production uses.
+                |connection| {
+                    connection
+                        .execute(
+                            "INSERT INTO cli_profiles \
+                             (id, name, command, arguments_json, shell_id, icon, color, \
+                              created_at_ms, updated_at_ms) \
+                             VALUES (?1, ?2, 'fixture-tool', '[\"--flag\"]', ?3, 'Fx', \
+                              '#112233', 100, 200)",
+                            rusqlite::params![id, name, shell_id],
+                        )
+                        .map_err(|_| CliProfilesError::PersistenceFailed)?;
+                    for (position, (env_name, value, account)) in environment.iter().enumerate() {
+                        connection
+                            .execute(
+                                "INSERT INTO cli_profile_environment \
+                                 (profile_id, position, name, value, is_secret, \
+                                  credential_account) \
+                                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                                rusqlite::params![
+                                    id,
+                                    position as i64,
+                                    env_name,
+                                    value,
+                                    i64::from(account.is_some()),
+                                    account
+                                ],
+                            )
+                            .map_err(|_| CliProfilesError::PersistenceFailed)?;
+                    }
+                    Ok::<_, CliProfilesError>(())
+                },
+            )
+            .expect("the profile fixture should be inserted");
+    }
+
+    /// Queues one credential reference so reset behaviour stays observable.
+    fn enqueue_account(&self, account: &str) {
+        self.storage
+            .with_connection(
+                // The queue fixture uses the production storage seam as well.
+                |connection| {
+                    connection
+                        .execute(
+                            "INSERT INTO credential_cleanup_queue \
+                             (credential_account, queued_at_ms) VALUES (?1, 5)",
+                            rusqlite::params![account],
+                        )
+                        .map_err(|_| CliProfilesError::PersistenceFailed)?;
+                    Ok::<_, CliProfilesError>(())
+                },
+            )
+            .expect("the queue fixture should be inserted");
+    }
+
+    /// Reads every queued credential reference in sorted order.
+    fn queued_accounts(&self) -> Vec<String> {
+        self.storage
+            .with_connection(
+                // Reads the durable outbox without depending on private helpers.
+                |connection| {
+                    let mut statement = connection
+                        .prepare(
+                            "SELECT credential_account FROM credential_cleanup_queue \
+                             ORDER BY credential_account",
+                        )
+                        .map_err(|_| CliProfilesError::PersistenceFailed)?;
+                    let accounts = statement
+                        .query_map(
+                            [],
+                            // Decodes one queued credential reference.
+                            |row| row.get::<_, String>(0),
+                        )
+                        .and_then(|rows| rows.collect::<Result<Vec<_>, _>>())
+                        .map_err(|_| CliProfilesError::PersistenceFailed)?;
+                    Ok::<_, CliProfilesError>(accounts)
+                },
+            )
+            .expect("the cleanup queue should be readable")
+    }
+
+    /// Reads the credential references one persisted profile still owns.
+    fn stored_accounts(&self, profile_id: &str) -> Vec<String> {
+        self.storage
+            .with_connection(
+                // Reads persisted metadata so no assertion depends on the cache.
+                |connection| {
+                    let mut statement = connection
+                        .prepare(
+                            "SELECT credential_account FROM cli_profile_environment \
+                             WHERE profile_id = ?1 AND credential_account IS NOT NULL \
+                             ORDER BY position",
+                        )
+                        .map_err(|_| CliProfilesError::PersistenceFailed)?;
+                    let accounts = statement
+                        .query_map(
+                            rusqlite::params![profile_id],
+                            // Decodes one persisted credential reference.
+                            |row| row.get::<_, String>(0),
+                        )
+                        .and_then(|rows| rows.collect::<Result<Vec<_>, _>>())
+                        .map_err(|_| CliProfilesError::PersistenceFailed)?;
+                    Ok::<_, CliProfilesError>(accounts)
+                },
+            )
+            .expect("the environment rows should be readable")
+    }
+
+    /// Counts the persisted custom profiles of the isolated database.
+    fn profile_count(&self) -> i64 {
+        self.storage
+            .with_connection(
+                // Counts rows through the same storage seam production code uses.
+                |connection| {
+                    connection
+                        .query_row(
+                            "SELECT COUNT(*) FROM cli_profiles",
+                            [],
+                            // Decodes the aggregate profile count.
+                            |row| row.get::<_, i64>(0),
+                        )
+                        .map_err(
+                            // Fixture queries reuse the owner error contract.
+                            |_| CliProfilesError::PersistenceFailed,
+                        )
+                },
+            )
+            .expect("the profile count should be readable")
+    }
+}
+
+/// Builds one minimal CLI profile input with a single secret entry.
+fn cli_profile_input(name: &str) -> CliProfileInputDto {
+    CliProfileInputDto {
+        name: name.to_owned(),
+        command: "fixture-tool".to_owned(),
+        arguments: Vec::new(),
+        shell_id: None,
+        icon: "Fx".to_owned(),
+        color: "#112233".to_owned(),
+        environment: vec![CliProfileEnvironmentInputDto {
+            name: "TOKEN".to_owned(),
+            value: Some("BE006_SECRET_CANARY".to_owned()),
+            is_secret: true,
+        }],
+    }
+}
+
+/// Verifies a held maintenance write permit blocks an ordinary profile mutation.
+#[test]
+fn cli_profiles_ordinary_mutation_is_blocked_by_write_permit() {
+    let harness = CliProfilesHarness::new();
+    let mut writer: Pin<Box<dyn Future<Output = _> + Send + '_>> =
+        Box::pin(harness.gate.write_permit());
+    let write_permit = match poll_once(&mut writer) {
+        Poll::Ready(permit) => permit,
+        Poll::Pending => panic!("an idle gate should admit the write permit"),
+    };
+
+    let mut create: Pin<Box<dyn Future<Output = _> + Send + '_>> =
+        Box::pin(harness.service.create_profile(cli_profile_input("Blocked")));
+    assert!(poll_once(&mut create).is_pending());
+
+    // The blocked mutation never reached the database, the credential store, or an event.
+    assert_eq!(harness.profile_count(), 0);
+    assert_eq!(harness.credentials.call_counts(), (0, 0, 0));
+    assert!(harness.events.recorded().is_empty());
+
+    drop(write_permit);
+    drop(create);
+    let snapshot = tauri::async_runtime::block_on(
+        harness.service.create_profile(cli_profile_input("Allowed")),
+    )
+    .expect("the mutation should proceed after maintenance finishes");
+    assert_eq!(snapshot.profiles.len(), 4);
+    assert_eq!(harness.profile_count(), 1);
+}
+
+/// Returns one canonical fixture profile identifier.
+fn cli_profile_id(index: u32) -> String {
+    format!("profile-{index:08x}-0000-4000-8000-000000000000")
+}
+
+/// Returns one opaque fixture credential account.
+fn cli_account(index: u32) -> String {
+    format!("{index:08x}-0000-4000-8000-aaaaaaaaaaaa")
+}
+
+/// Builds one backup record with the supplied environment entries.
+fn backup_record(
+    id: &str,
+    name: &str,
+    shell_id: Option<&str>,
+    environment: Vec<CliEnvironmentBackupRecordV1>,
+) -> CliProfileBackupRecordV1 {
+    CliProfileBackupRecordV1 {
+        id: id.to_owned(),
+        name: name.to_owned(),
+        command: "fixture-tool".to_owned(),
+        arguments: vec!["--flag".to_owned()],
+        shell_id: shell_id.map(str::to_owned),
+        icon: "Fx".to_owned(),
+        color: "#112233".to_owned(),
+        environment,
+        created_at_ms: 100,
+        updated_at_ms: 200,
+    }
+}
+
+/// Verifies that the export carries metadata and secret references only.
+#[test]
+fn cli_profiles_export_contains_metadata_and_secret_references_only() {
+    let harness = CliProfilesHarness::new();
+    harness.seed_profile(
+        &cli_profile_id(1),
+        "Seeded",
+        Some("cmd"),
+        &[
+            ("PLAIN", Some("visible"), None),
+            ("TOKEN", None, Some(&cli_account(1))),
+        ],
+    );
+    harness
+        .credentials
+        .seed(&cli_account(1), "BE006_SECRET_CANARY");
+
+    let exported = harness
+        .storage
+        .with_transaction(
+            // The coordinator owns the transaction the owner method must reuse.
+            |tx| harness.participant.export(tx),
+        )
+        .expect("the export should succeed");
+
+    assert_eq!(exported.default_shell_id, "system");
+    assert_eq!(exported.custom_profiles.len(), 1);
+    let record = &exported.custom_profiles[0];
+    assert_eq!(record.id, cli_profile_id(1));
+    assert_eq!(record.arguments, vec!["--flag".to_owned()]);
+    assert_eq!(record.shell_id.as_deref(), Some("cmd"));
+    assert_eq!(
+        record.environment,
+        vec![
+            CliEnvironmentBackupRecordV1::Plain {
+                name: "PLAIN".to_owned(),
+                value: "visible".to_owned(),
+            },
+            CliEnvironmentBackupRecordV1::SecretReference {
+                name: "TOKEN".to_owned(),
+                credential_account: cli_account(1),
+            },
+        ]
+    );
+    // The export never reads a secret value from the credential store.
+    assert_eq!(harness.credentials.call_counts(), (0, 0, 0));
+    let serialized = serde_json::to_string(&exported).expect("the export should serialize");
+    assert!(!serialized.contains("BE006_SECRET_CANARY"));
+}
+
+/// Verifies the plan and projection are owned sendable values.
+#[test]
+fn cli_profiles_plan_and_projection_are_owned_values() {
+    assert_owned_and_sendable::<CliProfilesImportPlan>();
+    assert_owned_and_sendable::<CliProfilesCommittedProjection>();
+    assert_owned_and_sendable::<CliProfilesBackupV1>();
+}
+
+/// Verifies every owner method runs while maintenance holds the write permit.
+#[test]
+fn cli_profiles_prepare_is_gate_and_storage_reentry_free() {
+    let harness = CliProfilesHarness::new();
+    harness.seed_profile(&cli_profile_id(1), "Seeded", None, &[]);
+    let incoming = CliProfilesBackupV1 {
+        default_shell_id: "cmd".to_owned(),
+        custom_profiles: vec![backup_record(
+            &cli_profile_id(2),
+            "Imported",
+            None,
+            Vec::new(),
+        )],
+    };
+    // A re-entrant permit or nested Storage call would deadlock this transaction.
+    let write_permit = tauri::async_runtime::block_on(harness.gate.write_permit());
+
+    let counts = harness
+        .storage
+        .with_transaction(|tx| {
+            let plan = harness.participant.prepare_import(tx, &incoming)?;
+            let projection = harness.participant.apply_import(tx, &plan)?;
+            harness.participant.publish_after_commit(projection);
+            Ok::<_, CliProfilesError>(plan.counts)
+        })
+        .expect("every owner method should run inside the coordinator transaction");
+
+    assert_eq!(counts.inserts, 1);
+    assert_eq!(counts.updates, 0);
+    assert_eq!(counts.unchanged, 0);
+    drop(write_permit);
+    // The local profile outside the backup survives the merge.
+    assert_eq!(harness.profile_count(), 2);
+}
+
+/// Verifies that a matching local secret reference survives the merge untouched.
+#[test]
+fn cli_profiles_merge_preserves_local_matching_secret_reference() {
+    let harness = CliProfilesHarness::new();
+    harness.seed_profile(
+        &cli_profile_id(1),
+        "Seeded",
+        None,
+        &[("TOKEN", None, Some(&cli_account(1)))],
+    );
+    let incoming = CliProfilesBackupV1 {
+        default_shell_id: "system".to_owned(),
+        custom_profiles: vec![backup_record(
+            &cli_profile_id(1),
+            "Renamed",
+            None,
+            vec![CliEnvironmentBackupRecordV1::SecretReference {
+                name: "TOKEN".to_owned(),
+                credential_account: cli_account(1),
+            }],
+        )],
+    };
+
+    let counts = harness
+        .storage
+        .with_transaction(|tx| {
+            let plan = harness.participant.prepare_import(tx, &incoming)?;
+            harness.participant.apply_import(tx, &plan)?;
+            Ok::<_, CliProfilesError>(plan.counts)
+        })
+        .expect("the merge should commit");
+
+    assert_eq!(counts.updates, 1);
+    // The reference is retained, so nothing may be queued for deletion.
+    assert!(harness.queued_accounts().is_empty());
+    assert_eq!(
+        harness.stored_accounts(&cli_profile_id(1)),
+        vec![cli_account(1)]
+    );
+}
+
+/// Verifies that a credential reference owned by another profile is rejected.
+#[test]
+fn cli_profiles_merge_rejects_cross_identity_credential_alias() {
+    let harness = CliProfilesHarness::new();
+    harness.seed_profile(
+        &cli_profile_id(1),
+        "Owner",
+        None,
+        &[("TOKEN", None, Some(&cli_account(1)))],
+    );
+    let incoming = CliProfilesBackupV1 {
+        default_shell_id: "system".to_owned(),
+        custom_profiles: vec![backup_record(
+            &cli_profile_id(2),
+            "Alias",
+            None,
+            vec![CliEnvironmentBackupRecordV1::SecretReference {
+                name: "TOKEN".to_owned(),
+                credential_account: cli_account(1),
+            }],
+        )],
+    };
+
+    let error = harness
+        .storage
+        .with_transaction(|tx| harness.participant.prepare_import(tx, &incoming))
+        .expect_err("an aliased credential must be rejected before any write");
+
+    assert_eq!(error, CliProfilesError::PersistenceFailed);
+    assert_eq!(harness.profile_count(), 1);
+    assert!(harness.queued_accounts().is_empty());
+}
+
+/// Verifies that a rolled-back coordinator transaction publishes nothing.
+#[test]
+fn cli_profiles_rollback_publishes_nothing() {
+    let harness = CliProfilesHarness::new();
+    let incoming = CliProfilesBackupV1 {
+        default_shell_id: "cmd".to_owned(),
+        custom_profiles: vec![backup_record(
+            &cli_profile_id(1),
+            "Imported",
+            None,
+            Vec::new(),
+        )],
+    };
+
+    let error = harness
+        .storage
+        .with_transaction(|tx| {
+            let plan = harness.participant.prepare_import(tx, &incoming)?;
+            let _projection = harness.participant.apply_import(tx, &plan)?;
+            // The coordinator aborts after applying, so nothing may be published.
+            Err::<(), CliProfilesError>(CliProfilesError::PersistenceFailed)
+        })
+        .expect_err("the coordinator rollback should surface");
+
+    assert_eq!(error, CliProfilesError::PersistenceFailed);
+    assert_eq!(harness.profile_count(), 0);
+    assert!(harness.events.recorded().is_empty());
+    let snapshot = tauri::async_runtime::block_on(harness.service.snapshot())
+        .expect("hydration should succeed");
+    assert_eq!(snapshot.revision, "0");
+    assert_eq!(snapshot.default_shell_id, "system");
+    assert_eq!(snapshot.profiles.len(), 3);
+}
+
+/// Verifies that a committed merge publishes exactly one owned projection.
+#[test]
+fn cli_profiles_commit_publishes_owned_projection() {
+    let harness = CliProfilesHarness::new();
+    let incoming = CliProfilesBackupV1 {
+        default_shell_id: "cmd".to_owned(),
+        custom_profiles: vec![backup_record(
+            &cli_profile_id(1),
+            "Imported",
+            None,
+            Vec::new(),
+        )],
+    };
+
+    let projection = harness
+        .storage
+        .with_transaction(|tx| {
+            let plan = harness.participant.prepare_import(tx, &incoming)?;
+            harness.participant.apply_import(tx, &plan)
+        })
+        .expect("the merge should commit");
+    harness.participant.publish_after_commit(projection);
+
+    let snapshot = tauri::async_runtime::block_on(harness.service.snapshot())
+        .expect("the published cache should be readable");
+    assert_eq!(snapshot.revision, "1");
+    assert_eq!(snapshot.default_shell_id, "cmd");
+    assert_eq!(snapshot.effective_default_shell_id, "cmd");
+    assert_eq!(snapshot.profiles.len(), 4);
+    assert_eq!(snapshot.profiles[3].name, "Imported");
+    // One bulk invalidation carries no profile identifier at all.
+    assert_eq!(
+        harness.events.recorded(),
+        vec![("1".to_owned(), "Updated".to_owned(), None)]
+    );
+}
+
+/// Verifies that a reset clears profiles while keeping the cleanup queue.
+#[test]
+fn cli_profiles_reset_keeps_cleanup_queue_and_builtins() {
+    let harness = CliProfilesHarness::new();
+    harness.seed_profile(
+        &cli_profile_id(1),
+        "Seeded",
+        Some("cmd"),
+        &[("TOKEN", None, Some(&cli_account(1)))],
+    );
+    harness.enqueue_account(&cli_account(9));
+
+    let projection = harness
+        .storage
+        .with_transaction(
+            // The reset shares the coordinator transaction with every other owner.
+            |tx| harness.participant.apply_reset(tx),
+        )
+        .expect("the reset should commit");
+    harness.participant.publish_after_commit(projection);
+
+    assert_eq!(harness.profile_count(), 0);
+    // The queue keeps its earlier row and gains the cleared reference.
+    assert_eq!(
+        harness.queued_accounts(),
+        vec![cli_account(1), cli_account(9)]
+    );
+    let snapshot = tauri::async_runtime::block_on(harness.service.snapshot())
+        .expect("the published cache should be readable");
+    assert_eq!(snapshot.default_shell_id, "system");
+    assert_eq!(snapshot.effective_default_shell_id, "pwsh");
+    assert_eq!(
+        snapshot
+            .profiles
+            .iter()
+            .map(
+                // Only the three built-ins may survive a reset.
+                |profile| profile.id.clone()
+            )
+            .collect::<Vec<_>>(),
+        vec![
+            "builtin:codex".to_owned(),
+            "builtin:claude".to_owned(),
+            "builtin:terminal".to_owned(),
+        ]
+    );
+}
+
+/// Verifies that a foreign secret reference stays metadata and blocks a launch.
+#[test]
+fn cli_profiles_foreign_secret_reference_fails_at_launch() {
+    let harness = CliProfilesHarness::new();
+    harness
+        .commands
+        .set_found("fixture-tool", PathBuf::from("C:\\fixture\\fixture.exe"));
+    let incoming = CliProfilesBackupV1 {
+        default_shell_id: "system".to_owned(),
+        custom_profiles: vec![backup_record(
+            &cli_profile_id(1),
+            "Imported",
+            // A shell identifier from another platform falls back to the default.
+            Some("zsh"),
+            vec![CliEnvironmentBackupRecordV1::SecretReference {
+                name: "TOKEN".to_owned(),
+                credential_account: "foreign-machine-account".to_owned(),
+            }],
+        )],
+    };
+
+    let projection = harness
+        .storage
+        .with_transaction(|tx| {
+            let plan = harness.participant.prepare_import(tx, &incoming)?;
+            harness.participant.apply_import(tx, &plan)
+        })
+        .expect("the merge should commit");
+    harness.participant.publish_after_commit(projection);
+
+    let snapshot = tauri::async_runtime::block_on(harness.service.snapshot())
+        .expect("the published cache should be readable");
+    assert_eq!(snapshot.profiles[3].shell_id, None);
+    assert_eq!(snapshot.profiles[3].effective_shell_id, "pwsh");
+    let entry = &snapshot.profiles[3].environment[0];
+    assert!(entry.is_secret);
+    assert_eq!(entry.value, None);
+    assert!(entry.has_stored_value);
+
+    // The metadata survived, so only the launch reports the missing credential.
+    assert_eq!(
+        tauri::async_runtime::block_on(harness.service.resolve_for_launch(&cli_profile_id(1)))
+            .err(),
+        Some(CliProfilesError::SecretNotFound)
+    );
+}
+
+/// Verifies that a removed local reference is queued while other rows remain.
+#[test]
+fn cli_profiles_merge_queues_removed_references_and_keeps_other_rows() {
+    let harness = CliProfilesHarness::new();
+    harness.seed_profile(
+        &cli_profile_id(1),
+        "Replaced",
+        None,
+        &[("TOKEN", None, Some(&cli_account(1)))],
+    );
+    harness.seed_profile(&cli_profile_id(2), "Untouched", None, &[]);
+    let incoming = CliProfilesBackupV1 {
+        default_shell_id: "system".to_owned(),
+        custom_profiles: vec![backup_record(
+            &cli_profile_id(1),
+            "Replaced",
+            None,
+            vec![CliEnvironmentBackupRecordV1::Plain {
+                name: "PLAIN".to_owned(),
+                value: "visible".to_owned(),
+            }],
+        )],
+    };
+
+    harness
+        .storage
+        .with_transaction(|tx| {
+            let plan = harness.participant.prepare_import(tx, &incoming)?;
+            harness.participant.apply_import(tx, &plan)
+        })
+        .expect("the merge should commit");
+
+    // The dropped reference is queued and the untouched local profile remains.
+    assert_eq!(harness.queued_accounts(), vec![cli_account(1)]);
+    assert_eq!(harness.profile_count(), 2);
+    assert!(harness.stored_accounts(&cli_profile_id(1)).is_empty());
 }

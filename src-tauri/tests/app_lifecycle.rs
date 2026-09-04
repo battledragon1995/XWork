@@ -441,6 +441,6 @@ fn isolated_lifecycle_composition_manages_storage() {
                 },
             )
             .expect("isolated storage should be readable"),
-        2
+        3
     );
 }

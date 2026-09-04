@@ -8,7 +8,9 @@ use std::{
     },
 };
 use tauri::{Manager, WebviewWindow, WebviewWindowBuilder};
-use xwork_lib::app::data_participants::{ProjectsDataParticipant, SettingsDataParticipant};
+use xwork_lib::app::data_participants::{
+    CliProfilesDataParticipant, ProjectsDataParticipant, SettingsDataParticipant,
+};
 use xwork_lib::app::lifecycle::{
     AppLifecycleError, AppLifecycleState, AppRuntime, AppRuntimeFuture, AttentionSession,
     QuitSummaryDto,
@@ -21,6 +23,7 @@ use xwork_lib::projects::{
 use xwork_lib::settings::SettingsService;
 use xwork_lib::shared::DataMaintenanceGate;
 use xwork_lib::storage::{Storage, StorageError};
+use xwork_lib::terminal::CliProfilesService;
 
 /// Supplies an empty runtime to isolated composition tests.
 struct EmptyTestRuntime;
@@ -146,7 +149,7 @@ fn composition_root_builds_and_manages_storage() {
     let mut app = build_isolated_app(directory.path().to_path_buf());
     run_setup(&mut app);
 
-    assert_eq!(managed_schema_version(&app), 2);
+    assert_eq!(managed_schema_version(&app), 3);
 }
 
 /// Verifies that a regular file cannot be used as the app data directory.
@@ -175,7 +178,7 @@ fn composition_root_fails_for_newer_database() {
     let database_path = directory.path().join(Storage::DATABASE_FILE_NAME);
     let connection = Connection::open(database_path).expect("the fixture database should open");
     connection
-        .pragma_update(None, "user_version", 3)
+        .pragma_update(None, "user_version", 4)
         .expect("the fixture schema version should be set");
     drop(connection);
 
@@ -209,6 +212,7 @@ fn lifecycle_composition_orders_setup_and_registers_commands() {
                 && app.try_state::<AppLifecycleState>().is_some()
                 && app.try_state::<ProjectService>().is_some()
                 && app.try_state::<SettingsService>().is_some()
+                && app.try_state::<CliProfilesService>().is_some()
                 && app.try_state::<DataMaintenanceGate>().is_some();
             tray_observation.store(ready, Ordering::SeqCst);
             Ok(())
@@ -234,7 +238,7 @@ fn projects_composition_manages_storage_project_and_gate() {
     let mut app = build_isolated_app(directory.path().to_path_buf());
     run_setup(&mut app);
 
-    assert_eq!(managed_schema_version(&app), 2);
+    assert_eq!(managed_schema_version(&app), 3);
     let gate = app.state::<DataMaintenanceGate>();
     let service = app.state::<ProjectService>();
     let settings = app.state::<SettingsService>();
@@ -244,6 +248,11 @@ fn projects_composition_manages_storage_project_and_gate() {
     assert!(app.try_state::<ProjectsDataParticipant>().is_some());
     assert!(settings.shares_gate_with(gate.inner()));
     assert!(app.try_state::<SettingsDataParticipant>().is_some());
+    let cli_profiles = app.state::<CliProfilesService>();
+    // The CLI profiles service must receive the exact gate the composition created.
+    assert!(cli_profiles.shares_gate_with(gate.inner()));
+    assert!(!cli_profiles.shares_gate_with(&DataMaintenanceGate::new()));
+    assert!(app.try_state::<CliProfilesDataParticipant>().is_some());
     assert!(
         tauri::async_runtime::block_on(service.list_projects(None))
             .expect("the managed service should query its migrated database")
@@ -270,6 +279,12 @@ fn projects_composition_routes_lifecycle_and_projects_commands() {
         invoke_request("list_projects"),
         Ok(serde_json::json!([])),
     );
+    let profiles = tauri::test::get_ipc_response(&main, invoke_request("get_cli_profiles"))
+        .expect("the CLI profiles command should be routed")
+        .deserialize::<serde_json::Value>()
+        .expect("the CLI profiles response should contain JSON");
+    assert_eq!(profiles["profiles"][0]["id"], "builtin:codex");
+
     let settings = tauri::test::get_ipc_response(&main, invoke_request("get_settings"))
         .expect("the settings command should be routed")
         .deserialize::<serde_json::Value>()
@@ -289,6 +304,11 @@ fn projects_composition_routes_lifecycle_and_projects_commands() {
         "get_remove_project_impact",
         "remove_project",
         "update_settings",
+        "create_cli_profile",
+        "update_cli_profile",
+        "delete_cli_profile",
+        "set_default_cli_shell",
+        "check_cli_profile",
     ] {
         // A routed command answers with its own typed failure, never a routing error.
         let error = tauri::test::get_ipc_response(&main, invoke_request(command))
@@ -332,6 +352,8 @@ fn projects_composition_publishes_nothing_when_startup_fails() {
     assert!(app.try_state::<ProjectsDataParticipant>().is_none());
     assert!(app.try_state::<SettingsService>().is_none());
     assert!(app.try_state::<SettingsDataParticipant>().is_none());
+    assert!(app.try_state::<CliProfilesService>().is_none());
+    assert!(app.try_state::<CliProfilesDataParticipant>().is_none());
 }
 
 /// Verifies that a database newer than the registry blocks the Projects capability.
@@ -341,7 +363,7 @@ fn projects_composition_publishes_nothing_for_a_newer_database() {
     let database_path = directory.path().join(Storage::DATABASE_FILE_NAME);
     let connection = Connection::open(database_path).expect("the fixture database should open");
     connection
-        .pragma_update(None, "user_version", 3)
+        .pragma_update(None, "user_version", 4)
         .expect("the fixture schema version should be set");
     drop(connection);
     let mut app = build_isolated_app(directory.path().to_path_buf());

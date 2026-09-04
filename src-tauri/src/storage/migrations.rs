@@ -21,6 +21,11 @@ pub(crate) const MIGRATIONS: &[Migration] = &[
         name: "create_settings",
         sql: include_str!("../../migrations/0002_create_settings.sql"),
     },
+    Migration {
+        version: 3,
+        name: "create_cli_profiles",
+        sql: include_str!("../../migrations/0003_create_cli_profiles.sql"),
+    },
 ];
 
 /// Applies every missing migration after validating the complete registry.

@@ -4,6 +4,7 @@ pub mod projects;
 pub mod settings;
 pub mod shared;
 pub mod storage;
+pub mod terminal;
 
 /// Starts the XWork desktop application with the real Tauri runtime.
 pub fn run() {

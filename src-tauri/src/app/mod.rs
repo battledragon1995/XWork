@@ -1,23 +1,39 @@
-use std::{path::PathBuf, sync::Arc};
+use std::{
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
 use tauri::{App, AppHandle, Builder, Manager, Runtime, WebviewWindow, WindowEvent};
 
 use crate::{
-    platform::window::{bring_to_front, hide_window},
+    platform::{
+        command::{CommandResolver, NativeCommandResolver},
+        credential::{CredentialStore, KeyringCredentialStore},
+        environment::ProcessEnvironmentSnapshot,
+        shell::{NativeShellResolver, ShellResolver},
+        window::{bring_to_front, hide_window},
+    },
     projects::{
-        NoProjectRuntimeGuard, ProjectEventSink, ProjectPlatform, ProjectService,
-        TauriProjectEventSink, TauriProjectPlatform,
+        NoProjectRuntimeGuard, ProjectChangedEventDto, ProjectEventSink, ProjectFuture,
+        ProjectPlatform, ProjectService, ProjectsError, TauriProjectEventSink,
+        TauriProjectPlatform,
     },
     settings::SettingsService,
     shared::DataMaintenanceGate,
     storage::Storage,
+    terminal::{
+        CliProfileIdFactory, CliProfilesClock, CliProfilesEventSink, CliProfilesService,
+        SystemCliProfilesClock, TauriCliProfilesEventSink, UuidCliProfileIdFactory,
+    },
 };
 
 pub mod data_participants;
 pub mod lifecycle;
 pub mod tray;
 
-use data_participants::{ProjectsDataParticipant, SettingsDataParticipant};
+use data_participants::{
+    CliProfilesDataParticipant, ProjectsDataParticipant, SettingsDataParticipant,
+};
 use lifecycle::{AppLifecycleError, AppLifecycleState, AppRuntime, EmptyAppRuntime};
 
 /// Describes whether a native close event should be intercepted.
@@ -31,6 +47,17 @@ pub enum CloseDecision {
 /// Supplies the platform and event adapters injected into `ProjectService`.
 #[doc(hidden)]
 pub type ProjectCollaborators = (Arc<dyn ProjectPlatform>, Arc<dyn ProjectEventSink>);
+
+/// Supplies every operating-system and determinism seam of `CliProfilesService`.
+#[doc(hidden)]
+pub type CliProfileCollaborators = (
+    Arc<dyn CommandResolver>,
+    Arc<dyn ShellResolver>,
+    Arc<dyn CredentialStore>,
+    Arc<dyn CliProfilesEventSink>,
+    Arc<dyn CliProfilesClock>,
+    Arc<dyn CliProfileIdFactory>,
+);
 
 /// Applies the desktop application's composition to a Tauri builder.
 pub fn configure<R: Runtime>(builder: Builder<R>) -> Builder<R> {
@@ -51,6 +78,8 @@ pub fn configure<R: Runtime>(builder: Builder<R>) -> Builder<R> {
         Arc::new(EmptyAppRuntime),
         tray::attach_native_tray,
         native_project_collaborators,
+        native_cli_profile_collaborators,
+        true,
     )
 }
 
@@ -67,6 +96,8 @@ pub fn configure_with_app_data_dir<R: Runtime>(
         // Skips native tray attachment because these tests observe setup only.
         |_app| Ok(()),
         native_project_collaborators,
+        native_cli_profile_collaborators,
+        true,
     )
 }
 
@@ -88,6 +119,8 @@ where
         runtime,
         attach_tray,
         native_project_collaborators,
+        native_cli_profile_collaborators,
+        true,
     )
 }
 
@@ -109,7 +142,64 @@ where
         // Skips native tray attachment because these tests observe Projects only.
         |_app| Ok(()),
         project_collaborators,
+        native_cli_profile_collaborators,
+        true,
     )
+}
+
+/// Applies composition with isolated storage and fake CLI profile collaborators.
+#[doc(hidden)]
+pub fn configure_with_cli_profiles_for_tests<R, C>(
+    builder: Builder<R>,
+    app_data_dir: PathBuf,
+    cli_profile_collaborators: C,
+) -> Builder<R>
+where
+    R: Runtime,
+    C: FnOnce(&AppHandle<R>) -> CliProfileCollaborators + Send + 'static,
+{
+    configure_app(
+        builder,
+        Some(app_data_dir),
+        Arc::new(EmptyAppRuntime),
+        // Skips native tray attachment because these tests observe CLI profiles only.
+        |_app| Ok(()),
+        // Replaces both Projects adapters so no dialog or file manager can open.
+        |_app_handle| {
+            (
+                Arc::new(UnusedTestPlatform),
+                Arc::new(DiscardingTestEventSink),
+            )
+        },
+        cli_profile_collaborators,
+        // Command tests drive hydration, cleanup, and checks explicitly instead.
+        false,
+    )
+}
+
+/// Rejects every native call so CLI profile tests never open a dialog.
+struct UnusedTestPlatform;
+
+impl ProjectPlatform for UnusedTestPlatform {
+    /// Fails because CLI profile tests must not reach the native picker.
+    fn select_folder<'a>(&'a self) -> ProjectFuture<'a, Result<Option<PathBuf>, ProjectsError>> {
+        Box::pin(async { Err(ProjectsError::FolderPickerFailed) })
+    }
+
+    /// Fails because CLI profile tests must not reach the native opener.
+    fn open_folder<'a>(&'a self, _path: &'a Path) -> ProjectFuture<'a, Result<(), ProjectsError>> {
+        Box::pin(async { Err(ProjectsError::OpenFolderFailed) })
+    }
+}
+
+/// Discards every published Projects change during CLI profile tests.
+struct DiscardingTestEventSink;
+
+impl ProjectEventSink for DiscardingTestEventSink {
+    /// Accepts the payload without emitting it to any webview.
+    fn publish(&self, _event: ProjectChangedEventDto) -> Result<(), ProjectsError> {
+        Ok(())
+    }
 }
 
 /// Applies close-to-tray semantics to the exact main webview window.
@@ -140,6 +230,22 @@ pub fn notify_settings_shutdown<R: Runtime>(app: &AppHandle<R>) {
     if let Some(service) = app.try_state::<SettingsService>() {
         service.begin_shutdown();
     }
+}
+
+/// Builds the native discovery, credential, and event adapters used at startup.
+fn native_cli_profile_collaborators<R: Runtime>(app: &AppHandle<R>) -> CliProfileCollaborators {
+    // One captured environment snapshot keeps command and shell discovery consistent.
+    let environment = ProcessEnvironmentSnapshot::from_process();
+    (
+        Arc::new(NativeCommandResolver::new(environment.clone())),
+        Arc::new(NativeShellResolver::new(NativeCommandResolver::new(
+            environment,
+        ))),
+        Arc::new(KeyringCredentialStore::new()),
+        Arc::new(TauriCliProfilesEventSink::new(app.clone())),
+        Arc::new(SystemCliProfilesClock),
+        Arc::new(UuidCliProfileIdFactory),
+    )
 }
 
 /// Builds the native dialog and opener adapters used by production startup.
@@ -173,22 +279,31 @@ fn app_invoke_handler<R: Runtime>() -> impl Fn(tauri::ipc::Invoke<R>) -> bool + 
         crate::projects::commands::remove_project,
         crate::settings::get_settings,
         crate::settings::update_settings,
-        crate::settings::restore_appearance_defaults
+        crate::settings::restore_appearance_defaults,
+        crate::terminal::cli_profiles::get_cli_profiles,
+        crate::terminal::cli_profiles::create_cli_profile,
+        crate::terminal::cli_profiles::update_cli_profile,
+        crate::terminal::cli_profiles::delete_cli_profile,
+        crate::terminal::cli_profiles::set_default_cli_shell,
+        crate::terminal::cli_profiles::check_cli_profile
     ]
 }
 
 /// Wires storage, Projects, lifecycle state, tray attachment, and close handling.
-fn configure_app<R, F, C>(
+fn configure_app<R, F, C, P>(
     builder: Builder<R>,
     app_data_dir: Option<PathBuf>,
     runtime: Arc<dyn AppRuntime>,
     attach_tray: F,
     project_collaborators: C,
+    cli_profile_collaborators: P,
+    start_background_work: bool,
 ) -> Builder<R>
 where
     R: Runtime,
     F: FnOnce(&AppHandle<R>) -> Result<(), AppLifecycleError> + Send + 'static,
     C: FnOnce(&AppHandle<R>) -> ProjectCollaborators + Send + 'static,
+    P: FnOnce(&AppHandle<R>) -> CliProfileCollaborators + Send + 'static,
 {
     builder
         // Dialog and opener are Rust-owned; OS exposes only the explicitly granted facts.
@@ -204,7 +319,13 @@ where
                 };
                 let storage = setup_storage(app, app_data_dir)?;
                 setup_projects(app, storage.clone(), project_collaborators);
-                setup_settings(app, storage)?;
+                setup_settings(app, storage.clone())?;
+                setup_cli_profiles(
+                    app,
+                    storage,
+                    cli_profile_collaborators,
+                    start_background_work,
+                );
                 app.manage(AppLifecycleState::new(runtime));
                 attach_tray(app.handle())?;
                 Ok(())
@@ -272,6 +393,44 @@ where
     app.manage(ProjectsDataParticipant::new(service.clone()));
     app.manage(service);
     app.manage(gate);
+}
+
+/// Manages CLI Profiles and starts its hydration, cleanup, and check work.
+fn setup_cli_profiles<R, P>(
+    app: &mut App<R>,
+    storage: Storage,
+    cli_profile_collaborators: P,
+    start_background_work: bool,
+) where
+    R: Runtime,
+    P: FnOnce(&AppHandle<R>) -> CliProfileCollaborators,
+{
+    let gate = app.state::<DataMaintenanceGate>().inner().clone();
+    let (commands, shells, credentials, events, clock, ids) =
+        cli_profile_collaborators(app.handle());
+    let service = CliProfilesService::with_seams(
+        storage,
+        gate,
+        commands,
+        shells,
+        credentials,
+        events,
+        clock,
+        ids,
+    );
+    app.manage(CliProfilesDataParticipant::new(service.clone()));
+    app.manage(service.clone());
+
+    if !start_background_work {
+        return;
+    }
+    // Hydration is asynchronous so a slow credential store cannot delay the window.
+    tauri::async_runtime::spawn(async move {
+        if let Err(error) = service.run_startup().await {
+            // A hydration failure stays observable through every public command.
+            eprintln!("cli profiles startup failed: {error}");
+        }
+    });
 }
 
 /// Hydrates and manages Settings with the process-wide maintenance gate.

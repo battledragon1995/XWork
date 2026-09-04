@@ -18,6 +18,12 @@ use xwork_lib::settings::{
     SidebarSettingsDto, SidebarSettingsPatchDto, TerminalPaletteDto, ThemeModeDto, ThemePresetDto,
     UpdateSettingsDto,
 };
+use xwork_lib::terminal::{
+    CliProfileAvailabilityDto, CliProfileAvailabilityStatusDto, CliProfileDto,
+    CliProfileEnvironmentDto, CliProfileEnvironmentInputDto, CliProfileInputDto, CliProfileKindDto,
+    CliProfilesChangeKindDto, CliProfilesChangedDto, CliProfilesError, CliProfilesSnapshotDto,
+    CliShellDto,
+};
 
 /// Generates the complete lifecycle binding in its stable contract order.
 fn generated_lifecycle_binding() -> String {
@@ -97,6 +103,33 @@ fn generated_settings_binding() -> String {
     .join("\n")
 }
 
+/// Generates the complete CLI profiles binding in stable contract order.
+fn generated_cli_profiles_binding() -> String {
+    let config = Config::default();
+    [
+        CliProfileKindDto::export_to_string(&config).expect("CliProfileKindDto should export"),
+        CliProfileAvailabilityStatusDto::export_to_string(&config)
+            .expect("CliProfileAvailabilityStatusDto should export"),
+        CliProfileAvailabilityDto::export_to_string(&config)
+            .expect("CliProfileAvailabilityDto should export"),
+        CliProfileEnvironmentDto::export_to_string(&config)
+            .expect("CliProfileEnvironmentDto should export"),
+        CliProfileEnvironmentInputDto::export_to_string(&config)
+            .expect("CliProfileEnvironmentInputDto should export"),
+        CliProfileInputDto::export_to_string(&config).expect("CliProfileInputDto should export"),
+        CliShellDto::export_to_string(&config).expect("CliShellDto should export"),
+        CliProfileDto::export_to_string(&config).expect("CliProfileDto should export"),
+        CliProfilesSnapshotDto::export_to_string(&config)
+            .expect("CliProfilesSnapshotDto should export"),
+        CliProfilesChangeKindDto::export_to_string(&config)
+            .expect("CliProfilesChangeKindDto should export"),
+        CliProfilesChangedDto::export_to_string(&config)
+            .expect("CliProfilesChangedDto should export"),
+        CliProfilesError::export_to_string(&config).expect("CliProfilesError should export"),
+    ]
+    .join("\n")
+}
+
 /// Returns one generated binding output path under the frontend bindings root.
 fn binding_path(relative: &[&str]) -> PathBuf {
     let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -146,4 +179,13 @@ fn projects_binding_matches_rust_contract() {
 #[test]
 fn settings_binding_matches_rust_contract() {
     assert_binding_is_current(binding_path(&["settings.ts"]), generated_settings_binding());
+}
+
+/// Regenerates the CLI profiles binding and fails once whenever it is stale.
+#[test]
+fn cli_profiles_binding_matches_rust_contract() {
+    assert_binding_is_current(
+        binding_path(&["terminal", "cli-profiles.ts"]),
+        generated_cli_profiles_binding(),
+    );
 }
