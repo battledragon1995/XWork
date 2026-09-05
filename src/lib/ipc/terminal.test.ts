@@ -44,7 +44,12 @@ beforeEach(() => {
 
 /** Verifies raw bytes, little-endian sequence and strict frame length validation. */
 it("decodes exact v1 terminal frames", () => {
-  expect(decodeTerminalFrame(frame(0x0102030405060708n, [0xf0, 0x9f, 0x99, 0x82]))).toEqual({
+  const encoded = frame(0x0102030405060708n, [0xf0, 0x9f, 0x99, 0x82]);
+  expect(decodeTerminalFrame(encoded)).toEqual({
+    sequence: 0x0102030405060708n,
+    payload: Uint8Array.from([0xf0, 0x9f, 0x99, 0x82]),
+  });
+  expect(decodeTerminalFrame(encoded.buffer as ArrayBuffer)).toEqual({
     sequence: 0x0102030405060708n,
     payload: Uint8Array.from([0xf0, 0x9f, 0x99, 0x82]),
   });
@@ -58,7 +63,7 @@ it("routes malformed channel frames to recovery", () => {
   const received = vi.fn();
   const malformed = vi.fn();
   const channel = terminalOutputChannel(received, malformed);
-  channel.onmessage(frame(2n, [65]));
+  channel.onmessage(frame(2n, [65]).buffer as ArrayBuffer);
   channel.onmessage(Uint8Array.from([1]));
   expect(received).toHaveBeenCalledWith({ sequence: 2n, payload: Uint8Array.from([65]) });
   expect(malformed).toHaveBeenCalledTimes(1);

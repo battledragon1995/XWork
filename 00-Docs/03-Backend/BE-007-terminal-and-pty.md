@@ -53,7 +53,7 @@ Backend tạo một PTY thật cho tool đã chọn, chạy shell hoặc CLI t�
 | `src-tauri/tests/fixtures/pty_child_tree.ps1` | Fixture Windows tạo child process để xác nhận close/Quit không để process mồ côi. |
 | `src/bindings/terminal/` | Binding TypeScript do ts-rs sinh; không sửa tay. |
 
-Không có migration và không đổi capability permission. Main webview chỉ gọi custom command đã đăng ký; backend tự thực hiện PTY/process access. CSP hiện tại đã có `'wasm-unsafe-eval'`; implementation phải giữ và kiểm chứng, không nới thêm source hoặc wildcard.
+Không có migration và không đổi capability permission. Main webview chỉ gọi custom command đã đăng ký; backend tự thực hiện PTY/process access. CSP giữ `'wasm-unsafe-eval'` và không thêm external source hoặc wildcard. Production cho phép `style-src-attr 'unsafe-inline'` vì WTerm tạo màu/kiểu chữ ô bằng thuộc tính style; `style-src 'self'` và chính sách script vẫn giữ nguyên.
 
 Dependency Windows phải dùng `windows-sys = 0.61.2` đã có trong lockfile với features `Win32_Foundation`, `Win32_System_JobObjects` và `Win32_System_Threading`; dependency Unix dùng `libc` chỉ sau `cfg(unix)`. `portable-pty` khóa exact `=0.9.0` theo TechStack, không bật backend PTY thay thế.
 
@@ -532,8 +532,8 @@ Trong cửa sổ pending giữa spawn và `attach_runtime_content`, chỉ Channe
 3. Start lấy project/profile từ tool selection backend. Frontend không truyền project ID, profile ID, path, command, args hoặc env nên không thể đổi cwd hay executable của pane.
 4. BE-003 được hỏi availability ngay trước profile resolution/spawn; BE-006 recheck command/shell và đọc secret ngay trước spawn. Bất kỳ lỗi nào giữ pane ở `ToolSelection` và không attach terminal nửa vời.
 5. `portable_pty::native_pty_system()` là authority: Windows dùng ConPTY, macOS dùng native PTY. Không fallback pipe giả hoặc shell plugin nếu PTY unavailable.
-6. `ResolvedCliLaunchKind::InteractiveShell` spawn shell executable trực tiếp. `Command` spawn CLI executable trực tiếp bằng `CommandBuilder::new`, gọi `arg` cho từng argument và `env` cho từng environment; không nối input thành shell string. Selected `ResolvedShell` đặt `COMSPEC` trên Windows hoặc `SHELL` trên macOS để CLI/subprocess dùng đúng shell đã chọn.
-7. Environment kế thừa process XWork, sau đó đặt `TERM=xterm-256color`, `COLORTERM=truecolor`, shell hint, cuối cùng overlay environment profile. Riêng `COMSPEC`/`SHELL` effective được đặt lại sau overlay để shell selection không bị env row làm sai. Secret buffer bị drop/zeroize ngay sau spawn call.
+6. `ResolvedCliLaunchKind::InteractiveShell` spawn shell executable trực tiếp. `Command` spawn CLI executable trực tiếp bằng `CommandBuilder::new`, gọi `arg` cho từng argument và `env` cho từng environment; không nối input thành shell string. Trên macOS, selected `ResolvedShell` đặt `SHELL` để CLI/subprocess dùng đúng shell đã chọn. Trên Windows, process giữ `COMSPEC` kế thừa vì biến này phải trỏ tới command processor tương thích `cmd.exe`; selected PowerShell vẫn được spawn trực tiếp cho Terminal nhưng không được ghi vào `COMSPEC` của CLI.
+7. Environment kế thừa process XWork, sau đó đặt `TERM=xterm-256color`, `COLORTERM=truecolor` và overlay environment profile. Trên macOS, `SHELL` effective được đặt lại sau overlay để shell selection không bị env row làm sai. Secret buffer bị drop/zeroize ngay sau spawn call.
 8. Working directory luôn là canonical root BE-003 trả ở lần launch. Locate project sau đó không đổi cwd của process đang chạy.
 9. Slave PTY bị drop ngay sau spawn; master reader, writer/control và child/process-tree handle chỉ tồn tại trong backend. PID/OS handle không qua IPC.
 10. PTY reader không giả định boundary UTF-8/ANSI. Read lớn được chia frame tối đa 32 KiB, empty read không tạo frame; chỉ EOF kết thúc stream.
@@ -695,7 +695,7 @@ pub enum TerminalError {
 - [ ] Close pane/tab/session/remove project/Quit dừng đúng process tree; Windows child fixture không còn sống sau Job Object cleanup; timeout giữ Sessions target để retry.
 - [ ] Close tab retain một terminal stopped; reopen giữ cùng ID/output, không spawn; evict/delete/Quit discard token/ring/core state.
 - [ ] WTerm 0.3.4 dùng Ghostty core/WASM embedded, không WebSocketTransport; alternate screen, mouse, synchronized output, Unicode/emoji/IME/clipboard/find/link pass Windows WebView2 checklist.
-- [ ] Generated binding `src/bindings/terminal/` khớp Rust DTO/error và không được sửa tay; CSP production/dev vẫn chỉ nới `'wasm-unsafe-eval'` cần thiết.
+- [ ] Generated binding `src/bindings/terminal/` khớp Rust DTO/error và không được sửa tay; CSP production/dev cho phép WASM và style attribute của ô WTerm, không cho inline script hoặc external source mới.
 - [ ] Ba command clipboard/link chỉ chạy từ main cho terminal hợp lệ, dùng Rust adapter, từ chối NUL/URL ngoài allowlist, trả error đã làm sạch và không tác động PTY; binding cùng registration được kiểm thử.
 - [ ] Mọi function/method/callback/helper/test mới có comment; framing/attach compensation/termination escalation có inline invariant comment.
 - [ ] `cargo fmt --check`, `cargo clippy --all-targets --all-features -- -D warnings` và toàn bộ Rust test pass trên Windows.
@@ -724,8 +724,8 @@ Test tự động không dùng project đang phát triển, credential thật ho
 - Chọn FE terminal registry sống độc lập DOM pane để thỏa background/reopen/full scrollback; backend ring chỉ là recovery window có giới hạn, tránh giữ output không giới hạn hai lần.
 - Chọn spawn sau first measured resize thay vì `80x24` tạm để tránh prompt/reflow thừa và phù hợp hành vi deferred PTY spawn của WTerm.
 - Chọn input sequence + ack vì nhiều invoke bất đồng bộ không tự tạo total order; resize dùng sequence last-write-wins vì intermediate size không có giá trị nghiệp vụ.
-- Chọn direct `CommandBuilder` cho CLI và shell hint environment: đây là cách duy nhất giữ command/args/env tách biệt xuyên tới OS spawn, tránh quote/injection qua shell string. Shell profile Terminal vẫn spawn interactive trực tiếp.
-- Cụm “profile dùng shell mặc định/riêng” trong BE-006 được chốt ở đây theo nghĩa shell context: Terminal spawn shell đó, còn CLI spawn trực tiếp và nhận `COMSPEC`/`SHELL` tương ứng. Không cho selected shell parse command người dùng, vì cách đó sẽ mâu thuẫn yêu cầu TechStack và wireframe rằng arguments không được ghép thành shell string.
+- Chọn direct `CommandBuilder` cho CLI và shell hint `SHELL` trên macOS: đây là cách duy nhất giữ command/args/env tách biệt xuyên tới OS spawn, tránh quote/injection qua shell string. Shell profile Terminal vẫn spawn interactive trực tiếp.
+- Cụm “profile dùng shell mặc định/riêng” trong BE-006 được chốt ở đây theo nghĩa shell context: Terminal spawn shell đó, còn CLI spawn trực tiếp. macOS nhận `SHELL` tương ứng; Windows giữ `COMSPEC` kế thừa để `.cmd` luôn đi qua command processor tương thích. Không cho selected shell parse command người dùng, vì cách đó sẽ mâu thuẫn yêu cầu TechStack và wireframe rằng arguments không được ghép thành shell string.
 - Chọn BEL/OSC 9/777 làm attention signal thay vì đoán keyword hoặc timeout; ưu tiên không báo sai khi chưa có protocol riêng từ từng AI CLI.
 - Chọn ETX + deadline + Windows Job Object/macOS process group để vừa cho CLI thoát có kiểm soát vừa bảo đảm close/Quit không treo vô hạn hoặc bỏ child process.
 - Chọn một lifecycle router late-bind bằng `Weak` ở composition root để thỏa hai chiều tích hợp Terminal↔Sessions mà không tạo dependency implementation hoặc reference cycle.

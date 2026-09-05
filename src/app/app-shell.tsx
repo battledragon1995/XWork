@@ -38,7 +38,7 @@ export function AppShell() {
   useLifecycleEvents();
 
   return (
-    <div className="grid h-full grid-rows-[40px_minmax(0,1fr)] bg-canvas">
+    <div className="grid h-full grid-cols-[minmax(0,1fr)] grid-rows-[40px_minmax(0,1fr)] bg-canvas">
       <AppTopbar onQuit={() => void startQuit()} isCheckingQuit={isCheckingQuit} />
       <SidebarProvider
         data-testid="shell-body"
@@ -50,7 +50,7 @@ export function AppShell() {
             "--sidebar-width-icon": `${COLLAPSED_SIDEBAR_WIDTH_PX}px`,
           } as CSSProperties
         }
-        className="relative h-full min-h-0"
+        className="relative h-full min-h-0 min-w-0"
       >
         <AppSidebar />
         {!isCollapsed && <SidebarResizeHandle />}

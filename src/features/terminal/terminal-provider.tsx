@@ -1,7 +1,6 @@
-import { createContext, useContext, useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
+import { TerminalRegistryContext } from "./terminal-context";
 import { TerminalRegistry } from "./terminal-registry";
-
-const TerminalRegistryContext = createContext<TerminalRegistry | null>(null);
 
 /** Owns all terminal resources independently of mounted routes and pane views. */
 export function TerminalProvider(props: { children: ReactNode }) {
@@ -19,11 +18,4 @@ export function TerminalProvider(props: { children: ReactNode }) {
       {props.children}
     </TerminalRegistryContext.Provider>
   );
-}
-
-/** Reads the root registry and fails clearly when app composition omitted its provider. */
-export function useTerminalRegistry(): TerminalRegistry {
-  const registry = useContext(TerminalRegistryContext);
-  if (registry === null) throw new Error("TerminalProvider is missing from app composition.");
-  return registry;
 }

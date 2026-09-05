@@ -3,7 +3,9 @@ import type { PaneContentDto } from "@/bindings/sessions/sessions";
 import { Button } from "@/components/ui/button";
 import { IpcCallError } from "@/lib/ipc/ipc-error";
 import { openTerminalLink, writeTerminalClipboard } from "@/lib/ipc/terminal";
+import { pasteFromClipboard, selectedTerminalText } from "./terminal-action-helpers";
 import { TerminalActions } from "./terminal-actions";
+import { useTerminalRegistry } from "./terminal-context";
 import { terminalErrorCopy } from "./terminal-error-copy";
 import { TerminalFindBar } from "./terminal-find-bar";
 import {
@@ -11,7 +13,6 @@ import {
   findTerminalMatches,
   type TerminalSearchMatch,
 } from "./terminal-search";
-import { useTerminalRegistry } from "./terminal-provider";
 import "./terminal.css";
 
 /** Public terminal render-slot contract consumed only by the app composition layer. */
@@ -41,7 +42,7 @@ export function TerminalPane(props: TerminalPaneProps) {
   const state = useSyncExternalStore(entry.subscribe, entry.getSnapshot, entry.getSnapshot);
   const host = useRef<HTMLDivElement>(null);
   const [findOpen, setFindOpen] = useState(false);
-  const [query, setQuery] = useState("");
+  const [query, setQuery] = useState(entry.findQuery ?? "");
   const [searching, setSearching] = useState(false);
   const [matches, setMatches] = useState<TerminalSearchMatch[]>([]);
   const [activeMatch, setActiveMatch] = useState<number | null>(null);
@@ -57,10 +58,20 @@ export function TerminalPane(props: TerminalPaneProps) {
     const element = host.current;
     if (element === null || !props.isVisible) return;
     const detach = entry.attach(element);
-    const observer = new ResizeObserver(() => entry.adapter.measureAndResize());
+    let resizeFrame: number | null = null;
+    /** Moves terminal measurement outside ResizeObserver delivery to prevent layout loops. */
+    const scheduleResize = (): void => {
+      if (resizeFrame !== null) cancelAnimationFrame(resizeFrame);
+      resizeFrame = requestAnimationFrame(() => {
+        resizeFrame = null;
+        entry.adapter.measureAndResize();
+      });
+    };
+    const observer = new ResizeObserver(scheduleResize);
     observer.observe(element);
     return () => {
       observer.disconnect();
+      if (resizeFrame !== null) cancelAnimationFrame(resizeFrame);
       detach();
     };
   }, [entry, props.isVisible]);
@@ -107,6 +118,11 @@ export function TerminalPane(props: TerminalPaneProps) {
   useEffect(() => {
     if (historyOpen) historySurface.current?.focus();
   }, [historyOpen]);
+
+  useEffect(() => {
+    // A reused component can switch to another retained entry without remounting.
+    setQuery(entry.findQuery ?? "");
+  }, [entry]);
 
   useEffect(() => {
     if (
@@ -199,7 +215,31 @@ export function TerminalPane(props: TerminalPaneProps) {
   };
 
   const running = state.terminal?.state === "running";
+  const waitingForOutput =
+    state.phase === "ready" &&
+    running &&
+    state.lastApplied === 0n &&
+    state.terminal?.latestOutputSequence === "0";
   const clearAvailable = entry.adapter.historyCore?.usingAltScreen() !== true;
+
+  /** Stores one query on the retained entry before updating the mounted find view. */
+  const updateQuery = (next: string): void => {
+    entry.findQuery = next;
+    setQuery(next);
+  };
+
+  /** Captures native WebView paste and routes its Rust clipboard result to the active entry. */
+  const pasteNative = async (event: React.ClipboardEvent<HTMLElement>): Promise<void> => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (!running || state.terminal === null) return;
+    try {
+      await pasteFromClipboard(entry, state.terminal.id);
+      setActionFailure(null);
+    } catch (error) {
+      setActionFailure(terminalErrorCopy(error instanceof IpcCallError ? error.payload : null));
+    }
+  };
 
   /** Opens one immutable, temporary history snapshot for accessible review. */
   const openHistory = (): void => {
@@ -238,23 +278,13 @@ export function TerminalPane(props: TerminalPaneProps) {
       }}
       onContextMenu={(event) => {
         const anchor = (event.target as Element).closest<HTMLAnchorElement>("a.term-link");
-        const selectedLink = findPlainWebLinks(window.getSelection()?.toString() ?? "")[0];
+        const selectedLink = findPlainWebLinks(selectedTerminalText(entry.adapter.element))[0];
         const target = anchor?.href ?? selectedLink;
         if (target === undefined) return;
         event.preventDefault();
         setLinkTarget(target);
       }}
-      onDoubleClick={() => {
-        queueMicrotask(() => {
-          const selection = window.getSelection()?.toString() ?? "";
-          const [url] = findPlainWebLinks(selection);
-          if (url !== undefined) void openLink(url);
-        });
-      }}
-      onPaste={(event) => {
-        // Native WebView clipboard payloads never reach WTerm; Paste always reads through Rust.
-        event.preventDefault();
-      }}
+      onPasteCapture={pasteNative}
     >
       <TerminalActions
         entry={entry}
@@ -274,7 +304,7 @@ export function TerminalPane(props: TerminalPaneProps) {
           searching={searching}
           matchCount={matches.length}
           activeMatch={activeMatch}
-          onQuery={setQuery}
+          onQuery={updateQuery}
           onMove={moveMatch}
           onClose={() => {
             setFindOpen(false);
@@ -296,6 +326,11 @@ export function TerminalPane(props: TerminalPaneProps) {
       {state.phase === "recovering" && (
         <div role="status" aria-busy="true" className="terminal-recovery-status">
           Reconnecting output…
+        </div>
+      )}
+      {waitingForOutput && (
+        <div role="status" className="terminal-empty-status">
+          Waiting for output. You can type a command below.
         </div>
       )}
       {(state.phase === "error" || state.phase === "unrecoverable") && (
@@ -338,13 +373,20 @@ export function TerminalPane(props: TerminalPaneProps) {
           {actionFailure}
         </div>
       )}
+      {state.terminal?.state === "closing" && (
+        <div className="terminal-exit-status" role="status">
+          Stopping {state.terminal.title}…
+        </div>
+      )}
       {state.terminal !== null &&
-        state.terminal.state !== "running" &&
+        (state.terminal.state === "exited" || state.terminal.state === "failed") &&
         (state.finalSequence === null || state.lastApplied >= state.finalSequence) && (
           <div className="terminal-exit-status" role="status">
             {state.terminal.state === "exited"
               ? `Process exited${state.terminal.exitCode === null ? "" : ` (${state.terminal.exitCode})`}`
-              : "Process stopped with an error"}
+              : state.terminal.wasTerminated
+                ? "Process stopped."
+                : "Terminal failed."}
           </div>
         )}
       {historyOpen && (

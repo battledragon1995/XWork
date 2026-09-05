@@ -54,6 +54,14 @@ function renderShellAt(path: string) {
 }
 
 describe("AppShell", () => {
+  // Keep the outer grid's intrinsic column from expanding with terminal rows.
+  it("bounds the shell grid and sidebar body to the window", () => {
+    renderShellAt("/");
+    const body = screen.getByTestId("shell-body");
+    expect(body).toHaveClass("min-w-0");
+    expect(body.parentElement).toHaveClass("grid-cols-[minmax(0,1fr)]");
+  });
+
   // Verify the shell publishes exactly one of each landmark the specification requires.
   it("exposes one banner, one navigation and one main landmark", () => {
     renderShellAt("/");

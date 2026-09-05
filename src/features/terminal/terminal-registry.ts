@@ -77,6 +77,8 @@ export class TerminalRegistryEntry {
   private pendingResize: PtySizeDto | null = null;
   private resizeSending = false;
   private activationGeneration = 0;
+  /** Keeps the view-owned find query for this terminal across route detachment. */
+  findQuery = "";
   readonly adapter: WTermAdapter;
 
   /** Creates one target-owned entry and its persistent WTerm adapter. */
@@ -158,11 +160,12 @@ export class TerminalRegistryEntry {
 
   /** Enqueues terminal input without allowing unbounded memory growth. */
   sendInput(data: string): boolean {
+    const running = this.state.terminal?.state === "running";
+    const starting = this.state.phase === "starting" && this.state.terminal === null;
     if (
       data.length === 0 ||
       this.inputLocked ||
-      this.state.phase !== "ready" ||
-      this.state.terminal?.state !== "running"
+      (!starting && !(running && this.state.phase === "ready"))
     ) {
       return false;
     }
@@ -292,6 +295,7 @@ export class TerminalRegistryEntry {
     this.gapTimer = null;
     this.frames.clear();
     this.inputQueue = [];
+    this.findQuery = "";
     this.adapter.destroy();
     this.registry.remove(this);
     this.listeners.clear();
@@ -324,6 +328,9 @@ export class TerminalRegistryEntry {
           this.scheduleRecovery();
         }
         this.registry.onStarted(this.target.sessionId);
+        // Flush terminal protocol replies and resizes produced before invoke completion.
+        void this.drainInput();
+        void this.drainResize();
       })
       .catch((error: unknown) => {
         if (this.disposed) return;

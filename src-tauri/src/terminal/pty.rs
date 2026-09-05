@@ -302,7 +302,7 @@ fn build_command(profile: ResolvedCliProfile, cwd: PathBuf) -> CommandBuilder {
         environment,
         ..
     } = profile;
-    let (mut command, shell_path) = match launch_kind {
+    let (mut command, _shell_path) = match launch_kind {
         ResolvedCliLaunchKind::InteractiveShell { shell } => {
             let path = shell.executable;
             (CommandBuilder::new(&path), path)
@@ -323,10 +323,8 @@ fn build_command(profile: ResolvedCliProfile, cwd: PathBuf) -> CommandBuilder {
     for (name, value) in environment {
         command.env(name, value.as_str());
     }
-    #[cfg(windows)]
-    command.env("COMSPEC", shell_path);
     #[cfg(unix)]
-    command.env("SHELL", shell_path);
+    command.env("SHELL", _shell_path);
     command
 }
 
@@ -501,7 +499,7 @@ mod tests {
         #[cfg(windows)]
         assert_eq!(
             command.get_env("COMSPEC"),
-            Some(OsStr::new("C:/Fixture Shell/shell.exe"))
+            std::env::var_os("COMSPEC").as_deref()
         );
     }
 
@@ -523,5 +521,10 @@ mod tests {
         );
         assert_eq!(command.get_argv()[1], OsStr::new("space value"));
         assert_eq!(command.get_argv()[2], OsStr::new("& literal"));
+        #[cfg(windows)]
+        assert_eq!(
+            command.get_env("COMSPEC"),
+            std::env::var_os("COMSPEC").as_deref()
+        );
     }
 }

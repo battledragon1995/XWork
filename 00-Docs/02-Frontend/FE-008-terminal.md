@@ -83,7 +83,7 @@ Người dùng chạy và tương tác với Terminal/Codex/Claude/custom CLI ng
 | `src-tauri/tests/terminal_runtime.rs` | Regression stream/PTY boundary hiện có. |
 | `src-tauri/tests/terminal_pty_windows.rs` | Regression ConPTY với input/resize/burst. |
 
-Không có migration. Cấu hình CSP và capability hiện có đủ cho WASM cùng custom command main-only; không thêm quyền clipboard/opener cho JavaScript. Các file này được kiểm chứng qua build, không cần sửa cấu hình để nới quyền.
+Không có migration. CSP cho phép `'wasm-unsafe-eval'` và production cần `style-src-attr 'unsafe-inline'` để WTerm áp dụng màu/kiểu chữ động cho từng ô; `style-src 'self'` và chính sách script giữ nguyên. Capability custom command main-only không đổi; không thêm quyền clipboard/opener cho JavaScript. Kiểm chứng WASM và style ô trên cả dev lẫn production.
 
 ## UI và hành vi
 

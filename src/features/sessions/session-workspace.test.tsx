@@ -34,11 +34,11 @@ vi.mock("./use-workspace-mutations", () => ({ useWorkspaceMutations: () => mutat
 afterEach(cleanup);
 
 describe("SessionWorkspace", () => {
-  // Verify the active tab and pane render and session menu intents remain route-owned.
-  it("composes tabs, panes, and session intents", async () => {
+  // Verify the active tab stays width-constrained and session menu intents remain route-owned.
+  it("composes constrained tabs, panes, and session intents", async () => {
     const user = userEvent.setup();
     const onRenameSession = vi.fn();
-    render(
+    const view = render(
       <TooltipProvider>
         <MemoryRouter>
           <SessionWorkspace
@@ -51,6 +51,10 @@ describe("SessionWorkspace", () => {
           />
         </MemoryRouter>
       </TooltipProvider>,
+    );
+    expect(view.container.firstElementChild?.lastElementChild).toHaveClass(
+      "min-w-0",
+      "overflow-hidden",
     );
     expect(screen.getByRole("tab", { name: /Codex/ })).toHaveAttribute("aria-selected", "true");
     expect(screen.getByText("Codex is ready to run.")).toBeInTheDocument();

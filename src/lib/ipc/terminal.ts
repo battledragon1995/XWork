@@ -21,6 +21,9 @@ export interface TerminalOutputFrame {
   payload: Uint8Array;
 }
 
+/** Raw byte containers produced by Tauri's direct and fetched Channel paths. */
+type TerminalFrameBytes = ArrayBuffer | Uint8Array | number[];
+
 /** Calls one PTY command through the normalized error boundary. */
 function invokeTerminal<TResult>(
   command: string,
@@ -38,8 +41,13 @@ function invokeInteraction<TResult>(
 }
 
 /** Decodes one v1 little-endian raw output frame and rejects malformed boundaries. */
-export function decodeTerminalFrame(raw: Uint8Array | number[]): TerminalOutputFrame {
-  const bytes = raw instanceof Uint8Array ? raw : Uint8Array.from(raw);
+export function decodeTerminalFrame(raw: TerminalFrameBytes): TerminalOutputFrame {
+  const bytes =
+    raw instanceof Uint8Array
+      ? raw
+      : raw instanceof ArrayBuffer
+        ? new Uint8Array(raw)
+        : Uint8Array.from(raw);
   if (bytes.byteLength < 13 || bytes[0] !== 1) {
     throw new Error("Malformed terminal output frame.");
   }
@@ -56,7 +64,7 @@ export function decodeTerminalFrame(raw: Uint8Array | number[]): TerminalOutputF
 export function terminalOutputChannel(
   onFrame: (frame: TerminalOutputFrame) => void,
   onMalformed: () => void,
-): Channel<Uint8Array | number[]> {
+): Channel<TerminalFrameBytes> {
   return new Channel((raw) => {
     try {
       onFrame(decodeTerminalFrame(raw));
@@ -72,7 +80,7 @@ export function startTerminal(
   tabId: string,
   paneId: string,
   initialSize: PtySizeDto,
-  onOutput: Channel<Uint8Array | number[]>,
+  onOutput: Channel<TerminalFrameBytes>,
 ): Promise<TerminalDto> {
   return invokeTerminal("start_terminal", { sessionId, tabId, paneId, initialSize, onOutput });
 }
@@ -86,7 +94,7 @@ export function getTerminal(terminalId: string): Promise<TerminalDto> {
 export function subscribeTerminalOutput(
   terminalId: string,
   afterSequence: bigint,
-  onOutput: Channel<Uint8Array | number[]>,
+  onOutput: Channel<TerminalFrameBytes>,
 ): Promise<TerminalSubscriptionDto> {
   return invokeTerminal("subscribe_terminal_output", {
     terminalId,

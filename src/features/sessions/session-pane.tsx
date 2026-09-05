@@ -167,7 +167,7 @@ export function SessionPane(props: {
         </span>
       </header>
 
-      <div className="min-h-0 flex-1">
+      <div className="min-h-0 min-w-0 flex-1 overflow-hidden">
         {props.pane.content.kind === "empty" ? (
           <PaneContentPicker
             catalog={props.catalog}

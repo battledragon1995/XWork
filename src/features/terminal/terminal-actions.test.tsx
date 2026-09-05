@@ -1,6 +1,6 @@
 import { expect, it, vi } from "vitest";
 import type { TerminalRegistryEntry } from "./terminal-registry";
-import { pasteFromClipboard } from "./terminal-actions";
+import { pasteFromClipboard } from "./terminal-action-helpers";
 
 /** Creates the activation and paste surface required by the race test. */
 function fakeEntry() {

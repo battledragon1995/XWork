@@ -124,6 +124,10 @@ describe("SessionPane", () => {
       </TooltipProvider>,
     );
     expect(screen.getByTestId("terminal-slot")).toHaveTextContent("pane-1");
+    expect(screen.getByTestId("terminal-slot").parentElement).toHaveClass(
+      "min-w-0",
+      "overflow-hidden",
+    );
     expect(renderTerminal).toHaveBeenCalledWith(
       expect.objectContaining({
         sessionId: "session-1",

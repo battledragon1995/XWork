@@ -36,7 +36,7 @@ export interface WTermAdapterFactory {
       onData(data: string): void;
     },
   ): WTermSurface;
-  measure(host: HTMLElement): TerminalGridSize | null;
+  measure(host: HTMLElement, surface?: HTMLElement): TerminalGridSize | null;
 }
 
 /** Callbacks emitted by one persistent terminal renderer. */
@@ -64,8 +64,6 @@ export class WTermAdapter {
   private surface: WTermSurface | null = null;
   private host: HTMLElement | null = null;
   private initialization: Promise<void> | null = null;
-  private readonly archivedRows: string[] = [];
-  private archivedScrollbackCount = 0;
 
   /** Creates a parked terminal surface with explicit transport callbacks. */
   constructor(
@@ -97,7 +95,7 @@ export class WTermAdapter {
     if (this.initialization !== null) return this.initialization;
     this.initialization = (async () => {
       await document.fonts?.ready;
-      const measured = initialSize ?? this.factory.measure(host);
+      const measured = initialSize ?? this.factory.measure(host, this.root);
       if (measured === null || measured.columns < 2 || measured.rows < 1) {
         throw new Error("The terminal needs a measurable pane before starting.");
       }
@@ -116,6 +114,8 @@ export class WTermAdapter {
       });
       this.surface = surface;
       await surface.init();
+      // XWork owns the pane height; WTerm's one-time pixel lock would clip later window resizes.
+      this.root.style.height = "100%";
     })().catch((error: unknown) => {
       this.surface?.destroy();
       this.surface = null;
@@ -156,7 +156,7 @@ export class WTermAdapter {
   /** Measures and applies the grid of the attached host when it is visible. */
   measureAndResize(): TerminalGridSize | null {
     if (this.host === null) return null;
-    const size = this.factory.measure(this.host);
+    const size = this.factory.measure(this.host, this.root);
     if (size !== null) this.resize(size);
     return size;
   }
@@ -166,20 +166,24 @@ export class WTermAdapter {
     this.surface?.focus();
   }
 
-  /** Clears only the primary screen while archiving every searchable row in RAM. */
+  /** Clears only the primary screen after moving its non-empty viewport into core scrollback. */
   clearScreen(): boolean {
     if (this.surface === null || this.core === null || this.core.usingAltScreen()) return false;
-    const snapshot = this.readHistoryRows();
-    this.archivedRows.splice(0, this.archivedRows.length, ...snapshot);
-    this.archivedScrollbackCount = this.core.getScrollbackCount();
-    this.surface.write("\u001b[2J\u001b[H");
+    const viewport = readViewportRows(this.core);
+    if (viewport.some((row) => row !== "")) {
+      const rows = this.core.getRows();
+      // Newlines at the bottom move each current viewport row through Ghostty's renderable ring.
+      this.surface.write(`\u001b[${rows};1H${"\r\n".repeat(rows)}\u001b[H`);
+    } else {
+      this.surface.write("\u001b[2J\u001b[H");
+    }
     return true;
   }
 
   /** Returns all archived and current core rows for find and Browse History. */
   readHistoryRows(): string[] {
-    if (this.core === null) return [...this.archivedRows];
-    return [...this.archivedRows, ...readCoreRows(this.core, this.archivedScrollbackCount)];
+    if (this.core === null) return [];
+    return readCoreRows(this.core);
   }
 
   /** Scrolls the retained DOM viewport to its newest rendered row and restores input focus. */
@@ -196,8 +200,6 @@ export class WTermAdapter {
     this.core = null;
     this.host = null;
     this.initialization = null;
-    this.archivedRows.length = 0;
-    this.archivedScrollbackCount = 0;
   }
 }
 
@@ -215,14 +217,13 @@ function cellText(cell: CellData): string {
 }
 
 /** Reads all retained scrollback and viewport rows directly from Ghostty memory. */
-export function readCoreRows(core: TerminalHistoryCore, scrollbackStart = 0): string[] {
+export function readCoreRows(core: TerminalHistoryCore): string[] {
   const rows: string[] = [];
   const columns = core.getCols();
-  for (
-    let offset = Math.min(scrollbackStart, core.getScrollbackCount());
-    offset < core.getScrollbackCount();
-    offset += 1
-  ) {
+  const scrollbackCount = core.getScrollbackCount();
+  for (let index = 0; index < scrollbackCount; index += 1) {
+    // Ghostty addresses scrollback from newest to oldest; DOM rows render oldest first.
+    const offset = scrollbackCount - 1 - index;
     const length = Math.min(columns, core.getScrollbackLineLen(offset));
     let text = "";
     for (let column = 0; column < length; column += 1) {
@@ -240,8 +241,25 @@ export function readCoreRows(core: TerminalHistoryCore, scrollbackStart = 0): st
   return rows;
 }
 
+/** Reads only the current viewport without including retained scrollback rows. */
+function readViewportRows(core: TerminalHistoryCore): string[] {
+  const rows: string[] = [];
+  const columns = core.getCols();
+  for (let row = 0; row < core.getRows(); row += 1) {
+    let text = "";
+    for (let column = 0; column < columns; column += 1) {
+      text += cellText(core.getCell(row, column));
+    }
+    rows.push(text.trimEnd());
+  }
+  return rows;
+}
+
 /** Measures the current pane using the same font and zoomed CSS pixel space as WTerm. */
-function measureTerminalGrid(host: HTMLElement): TerminalGridSize | null {
+export function measureTerminalGrid(
+  host: HTMLElement,
+  surface?: HTMLElement,
+): TerminalGridSize | null {
   const bounds = host.getBoundingClientRect();
   if (bounds.width <= 0 || bounds.height <= 0) return null;
   const probe = document.createElement("span");
@@ -251,9 +269,30 @@ function measureTerminalGrid(host: HTMLElement): TerminalGridSize | null {
   const cell = probe.getBoundingClientRect();
   probe.remove();
   if (cell.width <= 0 || cell.height <= 0) return null;
+  const style = surface === undefined ? null : getComputedStyle(surface);
+  const horizontalPadding =
+    (Number.parseFloat(style?.paddingLeft ?? "") || 0) +
+    (Number.parseFloat(style?.paddingRight ?? "") || 0);
+  const horizontalBorder =
+    (Number.parseFloat(style?.borderLeftWidth ?? "") || 0) +
+    (Number.parseFloat(style?.borderRightWidth ?? "") || 0);
+  const verticalInset =
+    (Number.parseFloat(style?.paddingTop ?? "") || 0) +
+    (Number.parseFloat(style?.paddingBottom ?? "") || 0) +
+    (Number.parseFloat(style?.borderTopWidth ?? "") || 0) +
+    (Number.parseFloat(style?.borderBottomWidth ?? "") || 0);
+  // clientWidth excludes the live scrollbar that otherwise feeds terminal width back into layout.
+  const measuredWidth =
+    surface !== undefined && surface.clientWidth > 0
+      ? surface.clientWidth - horizontalPadding
+      : bounds.width - horizontalPadding - horizontalBorder;
   return {
-    columns: Math.max(2, Math.min(500, Math.floor(bounds.width / cell.width))),
-    rows: Math.max(1, Math.min(300, Math.floor(bounds.height / cell.height))),
+    columns: Math.max(2, Math.min(500, Math.floor(measuredWidth / cell.width))),
+    // WTerm rounds its row height up before locking the surface height during initialization.
+    rows: Math.max(
+      1,
+      Math.min(300, Math.floor((bounds.height - verticalInset) / Math.ceil(cell.height))),
+    ),
   };
 }
 

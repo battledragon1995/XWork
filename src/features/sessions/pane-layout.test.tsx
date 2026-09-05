@@ -35,6 +35,9 @@ describe("PaneLayout", () => {
       screen.getByRole("separator", { name: "Resize panes left and right" }),
     ).toBeInTheDocument();
     expect(document.querySelector("#split-1")).toHaveAttribute("data-group");
+    for (const panel of document.querySelectorAll<HTMLElement>("[data-panel]")) {
+      expect(panel.firstElementChild).toHaveStyle({ overflow: "hidden" });
+    }
   });
 
   // Verify maximize hides without unmounting the other pane and disables the separator.

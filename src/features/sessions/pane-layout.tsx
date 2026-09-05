@@ -73,7 +73,7 @@ function SplitNode(
         defaultSize={`${percent}%`}
         minSize="10%"
         maxSize="90%"
-        style={isMaximized ? { overflow: "visible" } : undefined}
+        style={{ overflow: isMaximized ? "visible" : "hidden" }}
       >
         <LayoutNode {...props} node={node.first} />
       </Panel>
@@ -96,7 +96,7 @@ function SplitNode(
         defaultSize={`${100 - percent}%`}
         minSize="10%"
         maxSize="90%"
-        style={isMaximized ? { overflow: "visible" } : undefined}
+        style={{ overflow: isMaximized ? "visible" : "hidden" }}
       >
         <LayoutNode {...props} node={node.second} />
       </Panel>
@@ -139,7 +139,7 @@ function LayoutNode(props: PaneLayoutProps & { node: PaneLayoutNodeDto }) {
 /** Render one complete one-to-four-pane tab layout. */
 export function PaneLayout(props: PaneLayoutProps) {
   return (
-    <div className="relative h-full min-h-0 overflow-hidden p-2">
+    <div className="relative h-full min-h-0 min-w-0 overflow-hidden p-2">
       <LayoutNode {...props} node={props.tab.layout} />
     </div>
   );

@@ -2,7 +2,7 @@ import { expect, it, vi } from "vitest";
 import type { TerminalDto } from "@/bindings/terminal/terminal";
 import type { TerminalOutputFrame } from "@/lib/ipc/terminal";
 import { IpcCallError } from "@/lib/ipc/ipc-error";
-import type { WTermAdapter } from "./wterm-adapter";
+import type { WTermAdapter, WTermAdapterCallbacks } from "./wterm-adapter";
 import {
   splitUtf8,
   TerminalRegistry,
@@ -118,6 +118,24 @@ it("starts one terminal across concurrent and repeated view mounts", async () =>
   expect(entry.getSnapshot().terminal?.id).toBe("terminal-1");
 });
 
+/** Verifies find queries are isolated per retained entry and released with disposal. */
+it("retains one find query per terminal entry until disposal", () => {
+  const { ipc } = ipcFixture();
+  const registry = new TerminalRegistry(ipc, () => adapterFixture().adapter);
+  const firstTarget = target();
+  const secondTarget = { ...target(), paneId: "pane-4" };
+  const first = registry.entry(firstTarget);
+  const second = registry.entry(secondTarget);
+
+  first.findQuery = "first query";
+  second.findQuery = "second query";
+
+  expect(registry.entry(firstTarget).findQuery).toBe("first query");
+  expect(registry.entry(secondTarget).findQuery).toBe("second query");
+  first.dispose();
+  expect(registry.entry(firstTarget).findQuery).toBe("");
+});
+
 /** Verifies pane activation never prevents the matching mounted host from detaching. */
 it("detaches the mounted host after activation changes", async () => {
   const { ipc } = ipcFixture();
@@ -154,6 +172,39 @@ it("applies reordered output contiguously even before start resolves", async () 
   resolveStart(terminal());
   await flush();
   expect(entry.getSnapshot().phase).toBe("ready");
+});
+
+/** Verifies renderer protocol replies and measured resizes survive a slow launch acknowledgement. */
+it("flushes startup renderer traffic after the terminal identity arrives", async () => {
+  let resolveStart!: (value: TerminalDto) => void;
+  let callbacks!: WTermAdapterCallbacks;
+  const { ipc } = ipcFixture();
+  vi.mocked(ipc.startTerminal).mockReturnValue(
+    new Promise((resolve) => {
+      resolveStart = resolve;
+    }),
+  );
+  const { adapter } = adapterFixture();
+  const entry = new TerminalRegistry(ipc, (next) => {
+    callbacks = next;
+    return adapter;
+  }).entry(target());
+  entry.attach(document.createElement("div"));
+  await flush();
+
+  expect(callbacks.onData("\u001b[1;1R")).toBe(true);
+  callbacks.onResize({ columns: 79, rows: 23 });
+  expect(ipc.writeTerminal).not.toHaveBeenCalled();
+  expect(ipc.resizeTerminal).not.toHaveBeenCalled();
+
+  resolveStart(terminal());
+  await flush();
+
+  expect(ipc.writeTerminal).toHaveBeenCalledWith("terminal-1", 1n, "\u001b[1;1R");
+  expect(ipc.resizeTerminal).toHaveBeenCalledWith("terminal-1", 1n, {
+    columns: 79,
+    rows: 23,
+  });
 });
 
 /** Verifies a sustained gap reconnects from only the last successfully applied sequence. */
