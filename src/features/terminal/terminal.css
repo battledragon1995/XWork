@@ -1,0 +1,266 @@
+.terminal-pane {
+  position: relative;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--terminal-background);
+  color: var(--terminal-foreground);
+}
+
+.terminal-host,
+.xwork-terminal-surface {
+  height: 100%;
+  min-height: 0;
+}
+
+.xwork-terminal-surface {
+  --term-fg: var(--terminal-foreground);
+  --term-bg: var(--terminal-background);
+  --term-cursor: var(--terminal-foreground);
+  --term-color-0: var(--terminal-ansi-0);
+  --term-color-1: var(--terminal-ansi-1);
+  --term-color-2: var(--terminal-ansi-2);
+  --term-color-3: var(--terminal-ansi-3);
+  --term-color-4: var(--terminal-ansi-4);
+  --term-color-5: var(--terminal-ansi-5);
+  --term-color-6: var(--terminal-ansi-6);
+  --term-color-7: var(--terminal-ansi-7);
+  --term-color-8: var(--terminal-ansi-8);
+  --term-color-9: var(--terminal-ansi-9);
+  --term-color-10: var(--terminal-ansi-10);
+  --term-color-11: var(--terminal-ansi-11);
+  --term-color-12: var(--terminal-ansi-12);
+  --term-color-13: var(--terminal-ansi-13);
+  --term-color-14: var(--terminal-ansi-14);
+  --term-color-15: var(--terminal-ansi-15);
+  --term-font-family: var(--font-mono);
+  --term-font-size: var(--terminal-font-size);
+  --term-line-height: 1.35;
+  --term-row-height: calc(var(--terminal-font-size) * 1.35);
+  position: relative;
+  box-sizing: border-box;
+  overflow: hidden;
+  overflow-anchor: none;
+  padding: 10px;
+  outline: none;
+  background: var(--term-bg);
+  color: var(--term-fg);
+  font-family: var(--term-font-family);
+  font-size: var(--term-font-size);
+  line-height: var(--term-line-height);
+}
+
+.xwork-terminal-surface.has-scrollback {
+  overflow-y: auto;
+}
+
+.term-grid,
+.term-row {
+  display: block;
+  white-space: pre;
+}
+
+.term-grid {
+  contain: layout paint style;
+}
+
+.term-row {
+  height: var(--term-row-height);
+  line-height: var(--term-row-height);
+}
+
+.term-link {
+  color: inherit;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+}
+
+.term-row > span,
+.term-row > .term-link,
+.term-link > span {
+  display: inline-block;
+  height: var(--term-row-height);
+  vertical-align: top;
+}
+
+.term-block {
+  width: 1ch;
+  overflow: hidden;
+}
+
+.term-wide {
+  width: 2ch;
+  overflow: hidden;
+}
+
+.term-scrollback-spacer {
+  display: block;
+  pointer-events: none;
+}
+
+.term-cursor {
+  outline: 1px solid var(--term-cursor);
+  outline-offset: -1px;
+}
+
+.wterm.focused .term-cursor {
+  background: var(--term-cursor);
+  color: var(--term-bg);
+  outline: none;
+}
+
+.wterm.focused.cursor-blink .term-cursor {
+  animation: terminal-cursor-blink 1s step-end infinite;
+}
+
+.xwork-terminal-measure {
+  position: absolute;
+  visibility: hidden;
+  font-family: var(--font-mono);
+  font-size: var(--terminal-font-size);
+  line-height: 1.35;
+  white-space: pre;
+}
+
+.terminal-actions,
+.terminal-find-bar {
+  position: absolute;
+  z-index: 5;
+  top: 4px;
+  right: 8px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  border: 1px solid color-mix(in srgb, var(--terminal-foreground) 18%, transparent);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--terminal-background) 92%, transparent);
+  color: var(--terminal-foreground);
+  box-shadow: var(--shadow-sm);
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.terminal-pane:focus-within .terminal-actions,
+.terminal-pane:hover .terminal-actions,
+.terminal-find-bar {
+  opacity: 1;
+}
+
+.terminal-find-bar {
+  z-index: 6;
+  padding: 3px;
+}
+
+.terminal-find-input {
+  width: 180px;
+  border: 1px solid color-mix(in srgb, var(--terminal-foreground) 25%, transparent);
+  border-radius: var(--radius-xs);
+  background: var(--terminal-background);
+  padding: 4px 7px;
+  color: var(--terminal-foreground);
+  outline: none;
+}
+
+.terminal-find-count {
+  min-width: 70px;
+  color: color-mix(in srgb, var(--terminal-foreground) 65%, transparent);
+  font-size: 11px;
+  text-align: center;
+}
+
+.terminal-overlay {
+  position: absolute;
+  z-index: 4;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  gap: 8px;
+  background: var(--terminal-background);
+  color: color-mix(in srgb, var(--terminal-foreground) 70%, transparent);
+  text-align: center;
+}
+
+.terminal-overlay-error {
+  justify-items: center;
+  color: var(--terminal-foreground);
+}
+
+.terminal-action-error,
+.terminal-exit-status,
+.terminal-recovery-status {
+  position: absolute;
+  z-index: 4;
+  right: 8px;
+  bottom: 8px;
+  max-width: calc(100% - 16px);
+  border-radius: var(--radius-sm);
+  background: var(--color-dark-elevated);
+  padding: 5px 9px;
+  color: var(--terminal-foreground);
+  font-size: 12px;
+  box-shadow: var(--shadow-sm);
+}
+
+.terminal-action-error {
+  color: var(--color-error);
+}
+
+.terminal-recovery-status {
+  left: 8px;
+  right: auto;
+}
+
+.terminal-history {
+  position: absolute;
+  z-index: 8;
+  inset: 12px;
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  border: 1px solid color-mix(in srgb, var(--terminal-foreground) 18%, transparent);
+  border-radius: var(--radius-md);
+  background: var(--terminal-background);
+  box-shadow: var(--shadow-pop);
+}
+
+.terminal-history-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+}
+
+.terminal-history-content {
+  min-height: 0;
+  width: 100%;
+  flex: 1;
+  overflow: auto;
+  resize: none;
+  border: 0;
+  background: transparent;
+  padding: 10px;
+  color: inherit;
+  font-family: var(--font-mono);
+  font-size: var(--terminal-font-size);
+  outline: none;
+  margin: 0;
+  user-select: text;
+  white-space: pre;
+}
+
+@keyframes terminal-cursor-blink {
+  0%,
+  100% {
+    background: var(--term-cursor);
+  }
+  50% {
+    background: transparent;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .terminal-actions {
+    transition: none;
+  }
+}

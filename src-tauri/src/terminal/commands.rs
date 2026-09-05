@@ -4,8 +4,8 @@ use tauri::{
 };
 
 use super::{
-    PtySizeDto, TerminalDto, TerminalError, TerminalInputAckDto, TerminalManager,
-    TerminalResizeAckDto, TerminalSubscriptionDto,
+    PtySizeDto, TerminalDto, TerminalError, TerminalInputAckDto, TerminalInteractionError,
+    TerminalInteractions, TerminalManager, TerminalResizeAckDto, TerminalSubscriptionDto,
 };
 
 /// Restricts every Terminal command to the exact main webview label.
@@ -15,6 +15,11 @@ fn authorize_main_caller(label: &str) -> Result<(), TerminalError> {
     } else {
         Err(TerminalError::UnauthorizedWindow)
     }
+}
+
+/// Clones managed interaction state so no Tauri state borrow crosses an await.
+fn take_interactions(state: State<'_, TerminalInteractions>) -> TerminalInteractions {
+    state.inner().clone()
 }
 
 /// Clones managed state so no Tauri state borrow crosses an await.
@@ -105,5 +110,50 @@ pub async fn acknowledge_terminal_attention<R: Runtime>(
     authorize_main_caller(window.label())?;
     take_manager(state)
         .acknowledge_terminal_attention(&terminal_id)
+        .await
+}
+
+/// Reads plain text for an explicit paste into an attached running terminal.
+#[tauri::command]
+pub async fn read_terminal_clipboard<R: Runtime>(
+    window: WebviewWindow<R>,
+    state: State<'_, TerminalInteractions>,
+    terminal_id: String,
+) -> Result<Option<String>, TerminalInteractionError> {
+    if window.label() != "main" {
+        return Err(TerminalInteractionError::UnauthorizedWindow);
+    }
+    take_interactions(state).read_text(&terminal_id).await
+}
+
+/// Writes explicitly selected terminal text or a link target to the OS clipboard.
+#[tauri::command]
+pub async fn write_terminal_clipboard<R: Runtime>(
+    window: WebviewWindow<R>,
+    state: State<'_, TerminalInteractions>,
+    terminal_id: String,
+    text: String,
+) -> Result<(), TerminalInteractionError> {
+    if window.label() != "main" {
+        return Err(TerminalInteractionError::UnauthorizedWindow);
+    }
+    take_interactions(state)
+        .write_text(&terminal_id, text)
+        .await
+}
+
+/// Opens a user-activated HTTP or HTTPS URL in the default browser.
+#[tauri::command]
+pub async fn open_terminal_link<R: Runtime>(
+    window: WebviewWindow<R>,
+    state: State<'_, TerminalInteractions>,
+    terminal_id: String,
+    url: String,
+) -> Result<(), TerminalInteractionError> {
+    if window.label() != "main" {
+        return Err(TerminalInteractionError::UnauthorizedWindow);
+    }
+    take_interactions(state)
+        .open_web_url(&terminal_id, url)
         .await
 }

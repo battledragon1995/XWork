@@ -3,7 +3,6 @@ import { HomeRoute } from "@/features/home/home-route";
 import { ProjectOverviewRoute } from "@/features/projects/project-overview-route";
 import { ProjectsRoute } from "@/features/projects/projects-route";
 import { readProjectCrumbLabel } from "@/features/projects/projects-store";
-import { SessionRoute } from "@/features/sessions/session-route";
 import { readSessionCrumb } from "@/features/sessions/sessions-store";
 import { SettingsAboutRoute } from "@/features/settings/settings-about-route";
 import { SettingsAppearanceRoute } from "@/features/settings/settings-appearance-route";
@@ -14,6 +13,7 @@ import { SettingsSectionPlaceholder } from "@/features/settings/settings-section
 import { SettingsTerminalProfilesRoute } from "@/features/settings/settings-terminal-profiles-route";
 import { AppErrorBoundary } from "./app-error-boundary";
 import { AppShell } from "./app-shell";
+import { SessionTerminalRoute } from "./session-terminal-route";
 import { AreaPlaceholder, NotFoundPlaceholder } from "./area-placeholder";
 
 // Breadcrumb metadata a route contributes. Labels live in the route table so no store
@@ -104,7 +104,7 @@ export function createAppRouter(initialEntries: string[] = ["/"]) {
           },
           {
             path: "sessions/:sessionId",
-            element: <SessionRoute />,
+            element: <SessionTerminalRoute />,
             errorElement: <AppErrorBoundary />,
             handle: crumbs((params) => {
               const crumb = readSessionCrumb(params.sessionId);

@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AppearanceThemeSync } from "@/features/settings/appearance-theme-sync";
+import { TerminalProvider } from "@/features/terminal";
 import { QuitDialog } from "./quit-dialog";
 
 // Compose the application-level providers and hosts the shell needs exactly once: the shared
@@ -11,7 +12,7 @@ export function AppProviders(props: { children: ReactNode }) {
   return (
     <TooltipProvider>
       <AppearanceThemeSync />
-      {props.children}
+      <TerminalProvider>{props.children}</TerminalProvider>
       <QuitDialog />
     </TooltipProvider>
   );

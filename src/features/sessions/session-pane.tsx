@@ -17,6 +17,7 @@ import { PaneContentPicker } from "./pane-content-picker";
 import { PaneContentPlaceholder } from "./pane-content-placeholder";
 import { PANE_LIMIT } from "./session-layout";
 import type { ToolCatalogData } from "./use-tool-catalog";
+import type { SessionTerminalRenderer } from "./session-route";
 
 /** Resolve the visible pane title from backend content. */
 function paneTitle(pane: PaneDto): string {
@@ -42,6 +43,10 @@ export function SessionPane(props: {
   onToggleMaximize(): void;
   onClose(): void;
   onSelectProfile(profile: CliProfileDto): void;
+  sessionId?: string;
+  renderTerminal?: SessionTerminalRenderer;
+  onRefreshSession?(): void;
+  onCheckProfile?(profileId: string): void;
 }) {
   const splitDisabled = props.paneCount >= PANE_LIMIT || props.isBusy;
   const splitTooltip =
@@ -170,6 +175,20 @@ export function SessionPane(props: {
             isLocked={props.isBusy}
             onSelect={props.onSelectProfile}
           />
+        ) : (props.pane.content.kind === "toolSelection" ||
+            props.pane.content.kind === "terminal") &&
+          props.renderTerminal !== undefined ? (
+          props.renderTerminal({
+            sessionId: props.sessionId ?? "",
+            tabId: props.tabId,
+            paneId: props.pane.id,
+            content: props.pane.content,
+            isActive: props.isActive,
+            isVisible: !props.isHiddenByMaximize,
+            onActivate: props.onActivate,
+            onRefreshSession: props.onRefreshSession ?? (() => undefined),
+            onCheckProfile: props.onCheckProfile ?? (() => undefined),
+          })
         ) : (
           <PaneContentPlaceholder content={props.pane.content} profiles={props.profiles} />
         )}

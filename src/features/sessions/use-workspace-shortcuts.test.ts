@@ -59,4 +59,37 @@ describe("useWorkspaceShortcuts", () => {
     expect(editable.defaultPrevented).toBe(false);
     input.remove();
   });
+
+  // Verify every descendant of Terminal keeps CLI control keys, even when it is not editable.
+  it("ignores shortcuts originating anywhere inside a terminal subtree", () => {
+    const onClosePane = vi.fn();
+    const view = renderHook(() =>
+      useWorkspaceShortcuts({
+        isEnabled: true,
+        onCreateTab: vi.fn(),
+        onCloseTab: vi.fn(),
+        onReopenTab: vi.fn(),
+        onSplit: vi.fn(),
+        onToggleMaximize: vi.fn(),
+        onClosePane,
+      }),
+    );
+    const terminal = document.createElement("div");
+    terminal.dataset.terminalRoot = "true";
+    const cell = document.createElement("span");
+    terminal.append(cell);
+    document.body.append(terminal);
+    const event = new KeyboardEvent("keydown", {
+      code: "KeyW",
+      ctrlKey: true,
+      shiftKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    cell.dispatchEvent(event);
+    expect(onClosePane).not.toHaveBeenCalled();
+    expect(event.defaultPrevented).toBe(false);
+    terminal.remove();
+    view.unmount();
+  });
 });

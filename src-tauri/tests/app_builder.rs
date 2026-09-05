@@ -24,7 +24,7 @@ use xwork_lib::sessions::SessionManager;
 use xwork_lib::settings::SettingsService;
 use xwork_lib::shared::DataMaintenanceGate;
 use xwork_lib::storage::{Storage, StorageError};
-use xwork_lib::terminal::CliProfilesService;
+use xwork_lib::terminal::{CliProfilesService, TerminalInteractions};
 
 /// Supplies an empty runtime to isolated composition tests.
 struct EmptyTestRuntime;
@@ -336,6 +336,7 @@ fn sessions_composition_binds_runtime_and_routes_commands() {
 
     let gate = app.state::<DataMaintenanceGate>();
     let sessions = app.state::<SessionManager>();
+    assert!(app.try_state::<TerminalInteractions>().is_some());
     assert!(sessions.shares_gate_with(gate.inner()));
     let main = window(&app, "main");
     tauri::test::assert_ipc_response(
@@ -360,6 +361,9 @@ fn sessions_composition_binds_runtime_and_routes_commands() {
         "get_close_impact",
         "close_runtime_target",
         "reopen_last_closed_tab",
+        "read_terminal_clipboard",
+        "write_terminal_clipboard",
+        "open_terminal_link",
     ] {
         let error = tauri::test::get_ipc_response(&main, invoke_request(command))
             .expect_err("an empty payload should reach the routed command and fail decoding");

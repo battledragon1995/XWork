@@ -269,6 +269,51 @@ pub enum TerminalError {
     RuntimeShuttingDown,
 }
 
+/// Describes stable terminal clipboard and web-link failures.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(
+    tag = "code",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
+#[ts(
+    tag = "code",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
+#[ts(export_to = "terminal/terminal.ts")]
+pub enum TerminalInteractionError {
+    UnauthorizedWindow,
+    InvalidRuntimeId,
+    TerminalNotFound { terminal_id: String },
+    TerminalNotRunning { terminal_id: String },
+    ClipboardUnavailable,
+    UnsupportedClipboardText,
+    InvalidLink,
+    LinkOpenFailed,
+    RuntimeShuttingDown,
+}
+
+impl Display for TerminalInteractionError {
+    /// Formats only a stable error category and never terminal content or native details.
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
+        let message = match self {
+            Self::UnauthorizedWindow => "the invoking window cannot use terminal interactions",
+            Self::InvalidRuntimeId => "the terminal identifier is invalid",
+            Self::TerminalNotFound { .. } => "the terminal no longer exists",
+            Self::TerminalNotRunning { .. } => "the terminal is not running",
+            Self::ClipboardUnavailable => "the clipboard is unavailable",
+            Self::UnsupportedClipboardText => "the clipboard has no supported text",
+            Self::InvalidLink => "the link is invalid",
+            Self::LinkOpenFailed => "the link could not be opened",
+            Self::RuntimeShuttingDown => "the terminal runtime is shutting down",
+        };
+        formatter.write_str(message)
+    }
+}
+
+impl std::error::Error for TerminalInteractionError {}
+
 impl Display for TerminalError {
     /// Formats only a stable category and never payload data.
     fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {

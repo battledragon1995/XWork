@@ -9,6 +9,7 @@ import { SessionTabStrip } from "./session-tab-strip";
 import { useToolCatalog } from "./use-tool-catalog";
 import { useWorkspaceMutations } from "./use-workspace-mutations";
 import { useWorkspaceShortcuts } from "./use-workspace-shortcuts";
+import type { SessionTerminalRenderer } from "./session-route";
 
 /** Render the complete backend-owned tab and pane workspace for a nonempty session. */
 export function SessionWorkspace(props: {
@@ -18,6 +19,7 @@ export function SessionWorkspace(props: {
   onRefresh(): void;
   onRenameSession(): void;
   onDeleteSession(): void;
+  renderTerminal?: SessionTerminalRenderer;
 }) {
   const catalog = useToolCatalog();
   const mutations = useWorkspaceMutations({
@@ -177,6 +179,10 @@ export function SessionWorkspace(props: {
           onSelectProfile={(paneId, profile: CliProfileDto) =>
             void mutations.selectPaneTool(activeTab.id, paneId, profile.id)
           }
+          sessionId={props.detail.summary.id}
+          renderTerminal={props.renderTerminal}
+          onRefreshSession={props.onRefresh}
+          onCheckProfile={(profileId) => void catalog.check(profileId)}
         />
       </div>
 

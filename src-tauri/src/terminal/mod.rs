@@ -1,5 +1,6 @@
 pub mod cli_profiles;
 pub mod commands;
+mod interactions;
 mod manager;
 mod models;
 mod pty;
@@ -19,12 +20,16 @@ pub use cli_profiles::{
     CliProfilesBackupV1, CliProfilesCommittedProjection, CliProfilesImportCounts,
     CliProfilesImportPlan,
 };
+pub use interactions::{
+    NativeTerminalInteractionAdapter, TerminalInteractionAdapter, TerminalInteractions,
+    UnavailableTerminalInteractionAdapter,
+};
 pub use manager::{
     TERMINAL_STATE_CHANGED_EVENT, TerminalEventSink, TerminalManager, TerminalManagerWeak,
 };
 pub use models::{
     PtySizeDto, TerminalActivity, TerminalDependencies, TerminalDto, TerminalError, TerminalFuture,
-    TerminalInputAckDto, TerminalPaneTarget, TerminalProcessStateDto,
+    TerminalInputAckDto, TerminalInteractionError, TerminalPaneTarget, TerminalProcessStateDto,
     TerminalProfileUnavailableReasonDto, TerminalResizeAckDto, TerminalStateChangeKindDto,
     TerminalStateChangedDto, TerminalSubscriptionDto,
 };

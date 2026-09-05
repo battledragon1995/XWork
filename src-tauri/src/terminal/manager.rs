@@ -796,7 +796,7 @@ impl TerminalManager {
     }
 
     /// Returns whether Quit has closed manager admission.
-    fn is_shutting_down(&self) -> bool {
+    pub(crate) fn is_shutting_down(&self) -> bool {
         self.inner
             .state
             .lock()

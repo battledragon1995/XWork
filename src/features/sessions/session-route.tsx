@@ -10,12 +10,29 @@ import { SessionToolPicker } from "./session-tool-picker";
 import { SessionWorkspace } from "./session-workspace";
 import { useSessionDetail } from "./use-session-detail";
 import { useSessionLifecycle } from "./use-session-lifecycle";
+import type { PaneContentDto } from "@/bindings/sessions/sessions";
 
 /** Copy for a session that could not be opened for any reason other than being gone. */
 export const SESSION_OPEN_FAILED_MESSAGE = "XWork couldn't open this session.";
 
 /** Control that opened the current dialog, so closing hands focus back to the right one. */
 type FocusTarget = "rename" | "menu";
+
+/** App-owned render slot that keeps Terminal implementation outside the Sessions feature. */
+export interface SessionTerminalSlotProps {
+  sessionId: string;
+  tabId: string;
+  paneId: string;
+  content: Extract<PaneContentDto, { kind: "toolSelection" | "terminal" }>;
+  isActive: boolean;
+  isVisible: boolean;
+  onActivate(): void;
+  onRefreshSession(): void;
+  onCheckProfile(profileId: string): void;
+}
+
+/** Optional app composition surface for terminal content. */
+export type SessionTerminalRenderer = (props: SessionTerminalSlotProps) => React.ReactNode;
 
 /** Render the non-interactive route shape while the first read is pending. */
 function SessionRouteSkeleton() {
@@ -100,7 +117,7 @@ function SessionHeader(props: {
  * have a way in even once a session has tabs; FE-007 may fold those two entries into the tab
  * strip and drop the header from the branch it owns.
  */
-export function SessionRoute() {
+export function SessionRoute(props: { renderTerminal?: SessionTerminalRenderer }) {
   const { sessionId = "" } = useParams();
   const navigate = useNavigate();
   const detail = useSessionDetail(sessionId);
@@ -256,6 +273,7 @@ export function SessionRoute() {
           onRefresh={detail.refresh}
           onRenameSession={() => openRename("menu")}
           onDeleteSession={() => void openDelete()}
+          renderTerminal={props.renderTerminal}
         />
         {dialogs}
       </div>

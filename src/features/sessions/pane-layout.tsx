@@ -6,9 +6,11 @@ import { PaneSplitHandle, ratioFromGroupLayout } from "./pane-split-handle";
 import { countPanes, paneIndex, ratioToPercent } from "./session-layout";
 import { SessionPane } from "./session-pane";
 import type { ToolCatalogData } from "./use-tool-catalog";
+import type { SessionTerminalRenderer } from "./session-route";
 
 /** Callbacks shared by every recursive pane node. */
 export interface PaneLayoutProps {
+  sessionId?: string;
   tab: TabDto;
   rootPath: string | null;
   catalog: ToolCatalogData;
@@ -21,6 +23,9 @@ export interface PaneLayoutProps {
   onToggleMaximize(paneId: string): void;
   onClosePane(paneId: string): void;
   onSelectProfile(paneId: string, profile: CliProfileDto): void;
+  renderTerminal?: SessionTerminalRenderer;
+  onRefreshSession?(): void;
+  onCheckProfile?(profileId: string): void;
 }
 
 /** Render one split node and keep its temporary visual ratio local to that node. */
@@ -123,6 +128,10 @@ function LayoutNode(props: PaneLayoutProps & { node: PaneLayoutNodeDto }) {
       onToggleMaximize={() => props.onToggleMaximize(node.pane.id)}
       onClose={() => props.onClosePane(node.pane.id)}
       onSelectProfile={(profile) => props.onSelectProfile(node.pane.id, profile)}
+      sessionId={props.sessionId}
+      renderTerminal={props.renderTerminal}
+      onRefreshSession={props.onRefreshSession}
+      onCheckProfile={props.onCheckProfile}
     />
   );
 }

@@ -23,8 +23,9 @@ use crate::{
     storage::Storage,
     terminal::{
         CliProfileIdFactory, CliProfilesClock, CliProfilesEventSink, CliProfilesService,
-        NativePtyFactory, SystemCliProfilesClock, TauriCliProfilesEventSink, TerminalManager,
-        UuidCliProfileIdFactory,
+        NativePtyFactory, NativeTerminalInteractionAdapter, SystemCliProfilesClock,
+        TauriCliProfilesEventSink, TerminalInteractions, TerminalManager,
+        UnavailableTerminalInteractionAdapter, UuidCliProfileIdFactory,
     },
 };
 
@@ -68,18 +69,20 @@ pub type CliProfileCollaborators = (
 
 /// Applies the desktop application's composition to a Tauri builder.
 pub fn configure<R: Runtime>(builder: Builder<R>) -> Builder<R> {
-    let builder = builder.plugin(tauri_plugin_single_instance::init(
-        // Ignores argv and cwd while restoring the existing main window in place.
-        |app, _argv, _cwd| {
-            if let Some(window) = app.get_webview_window("main") {
-                if bring_to_front(&window).is_err() {
-                    eprintln!("single-instance main-window activation failed");
-                } else {
-                    notify_sessions_visibility(app, true);
+    let builder = builder
+        .plugin(tauri_plugin_clipboard_manager::init())
+        .plugin(tauri_plugin_single_instance::init(
+            // Ignores argv and cwd while restoring the existing main window in place.
+            |app, _argv, _cwd| {
+                if let Some(window) = app.get_webview_window("main") {
+                    if bring_to_front(&window).is_err() {
+                        eprintln!("single-instance main-window activation failed");
+                    } else {
+                        notify_sessions_visibility(app, true);
+                    }
                 }
-            }
-        },
-    ));
+            },
+        ));
 
     configure_app(
         builder,
@@ -90,6 +93,7 @@ pub fn configure<R: Runtime>(builder: Builder<R>) -> Builder<R> {
         native_cli_profile_collaborators,
         true,
         None,
+        true,
     )
 }
 
@@ -109,6 +113,7 @@ pub fn configure_with_app_data_dir<R: Runtime>(
         native_cli_profile_collaborators,
         true,
         Some(true),
+        false,
     )
 }
 
@@ -133,6 +138,7 @@ where
         native_cli_profile_collaborators,
         true,
         Some(true),
+        false,
     )
 }
 
@@ -157,6 +163,7 @@ where
         native_cli_profile_collaborators,
         true,
         Some(true),
+        false,
     )
 }
 
@@ -188,6 +195,7 @@ where
         // Command tests drive hydration, cleanup, and checks explicitly instead.
         false,
         Some(true),
+        false,
     )
 }
 
@@ -336,7 +344,10 @@ fn app_invoke_handler<R: Runtime>() -> impl Fn(tauri::ipc::Invoke<R>) -> bool + 
         crate::terminal::commands::subscribe_terminal_output,
         crate::terminal::commands::write_terminal,
         crate::terminal::commands::resize_terminal,
-        crate::terminal::commands::acknowledge_terminal_attention
+        crate::terminal::commands::acknowledge_terminal_attention,
+        crate::terminal::commands::read_terminal_clipboard,
+        crate::terminal::commands::write_terminal_clipboard,
+        crate::terminal::commands::open_terminal_link
     ]
 }
 
@@ -351,6 +362,7 @@ fn configure_app<R, F, C, P>(
     cli_profile_collaborators: P,
     start_background_work: bool,
     initial_visibility: Option<bool>,
+    native_terminal_interactions: bool,
 ) -> Builder<R>
 where
     R: Runtime,
@@ -381,7 +393,8 @@ where
                 );
                 let (sessions, content_router) =
                     setup_sessions(app, project_guard, initial_visibility)?;
-                let terminal = setup_terminal(app, &sessions, content_router)?;
+                let terminal =
+                    setup_terminal(app, &sessions, content_router, native_terminal_interactions)?;
                 let runtime = runtime_override.unwrap_or_else(
                     // Normal composition uses Sessions; focused lifecycle tests may inject a fake.
                     || {
@@ -501,6 +514,7 @@ fn setup_terminal<R: Runtime>(
     app: &mut App<R>,
     sessions: &Arc<SessionManager>,
     content_router: Arc<PaneContentRuntimeRouter>,
+    native_interactions: bool,
 ) -> Result<TerminalManager, Box<dyn std::error::Error>> {
     let dependencies = Arc::new(AppTerminalDependencies::new(
         app.state::<ProjectService>().inner().clone(),
@@ -513,6 +527,12 @@ fn setup_terminal<R: Runtime>(
         Arc::new(NativePtyFactory),
     );
     content_router.bind_terminal(&manager)?;
+    let adapter: Arc<dyn crate::terminal::TerminalInteractionAdapter> = if native_interactions {
+        Arc::new(NativeTerminalInteractionAdapter::new(app.handle().clone()))
+    } else {
+        Arc::new(UnavailableTerminalInteractionAdapter)
+    };
+    app.manage(TerminalInteractions::new(manager.clone(), adapter));
     app.manage(manager.clone());
     Ok(manager)
 }

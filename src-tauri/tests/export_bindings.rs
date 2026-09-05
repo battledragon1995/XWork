@@ -28,8 +28,9 @@ use xwork_lib::terminal::{
     CliProfileEnvironmentDto, CliProfileEnvironmentInputDto, CliProfileInputDto, CliProfileKindDto,
     CliProfilesChangeKindDto, CliProfilesChangedDto, CliProfilesError, CliProfilesSnapshotDto,
     CliShellDto, PtySizeDto, TerminalDto, TerminalError, TerminalInputAckDto,
-    TerminalProcessStateDto, TerminalProfileUnavailableReasonDto, TerminalResizeAckDto,
-    TerminalStateChangeKindDto, TerminalStateChangedDto, TerminalSubscriptionDto,
+    TerminalInteractionError, TerminalProcessStateDto, TerminalProfileUnavailableReasonDto,
+    TerminalResizeAckDto, TerminalStateChangeKindDto, TerminalStateChangedDto,
+    TerminalSubscriptionDto,
 };
 
 /// Generates the complete lifecycle binding in its stable contract order.
@@ -157,6 +158,8 @@ fn generated_terminal_binding() -> String {
         TerminalStateChangedDto::export_to_string(&config)
             .expect("TerminalStateChangedDto should export"),
         TerminalError::export_to_string(&config).expect("TerminalError should export"),
+        TerminalInteractionError::export_to_string(&config)
+            .expect("TerminalInteractionError should export"),
     ]
     .join("\n")
 }

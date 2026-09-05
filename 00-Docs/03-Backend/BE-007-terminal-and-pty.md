@@ -34,10 +34,12 @@ Backend tạo một PTY thật cho tool đã chọn, chạy shell hoặc CLI t�
 | `src-tauri/Cargo.toml` | Khai báo `portable-pty = "=0.9.0"`, Tokio/Serde/ts-rs cần dùng, `windows-sys` cho Job Object và `libc` cho signal process group theo target. |
 | `src-tauri/Cargo.lock` | Khóa dependency Rust do Cargo sinh; không sửa tay. |
 | `src-tauri/src/lib.rs` | Export/giữ public module `terminal` và `platform`. |
-| `src-tauri/src/app/mod.rs` | Ghép `TerminalManager`, adapter Projects/Profiles/Sessions, router content lifecycle một lần, managed state và sáu command. |
+| `src-tauri/src/app/mod.rs` | Ghép `TerminalManager`, adapter Projects/Profiles/Sessions, router content lifecycle một lần, managed state, sáu command PTY và ba command clipboard/link. |
 | `src-tauri/src/terminal/mod.rs` | Re-export model, command và Rust integration contract công khai của capability Terminal. |
 | `src-tauri/src/terminal/models.rs` | Runtime ID, size, state, DTO/event/error public và consumer-side port của Terminal. |
-| `src-tauri/src/terminal/commands.rs` | Sáu Tauri command mỏng cho start/query/subscribe/input/resize/ack attention. |
+| `src-tauri/src/terminal/commands.rs` | Sáu Tauri command PTY và ba command tương tác clipboard/link mỏng. |
+| `src-tauri/src/terminal/interactions.rs` | Contract adapter clipboard/opener, validation và service tương tác theo terminal. |
+| `src-tauri/tests/terminal_interactions.rs` | Integration/contract test clipboard/link qua fake adapter, không đụng clipboard hoặc browser thật. |
 | `src-tauri/src/terminal/manager.rs` | Ownership terminal map, launch gate theo pane, orchestration dependency, lifecycle/reopen và activity propagation sang Sessions. |
 | `src-tauri/src/terminal/pty.rs` | Adapter `portable-pty`, `CommandBuilder`, reader/control worker, spawn/wait/resize/input/terminate. |
 | `src-tauri/src/terminal/stream.rs` | Sequence, raw frame codec, bounded replay ring, subscriber replacement, channel sender và attention scanner. |
@@ -320,6 +322,81 @@ pub async fn acknowledge_terminal_attention(
 | Validation | Caller `main`; terminal tồn tại và đang attach. |
 | Side effect | Nếu cờ đang bật, clear cờ, gọi `update_pane_activity` của BE-005 và phát `attentionChanged`; no-op nếu đã clear. Không gửi byte vào PTY. |
 | Lỗi trả về | `UnauthorizedWindow`, `InvalidRuntimeId`, `TerminalNotFound`. |
+
+### Tương tác clipboard và mở liên kết — contract bổ sung cho FE-008
+
+Phần này được người dùng chấp thuận cùng FE-008 ngày 2026-09-05. Frontend sở hữu selection, paste mode, link detection và hành động người dùng; Rust sở hữu clipboard/OS opener. Ba command dưới đây bổ sung cho sáu command PTY, không thay raw Channel hoặc TerminalDto.
+
+Dependency Rust thêm exact `tauri-plugin-clipboard-manager = "=2.3.2"` và khai báo trực tiếp `url = "=2.5.8"` đã có trong Cargo.lock; dùng `tauri-plugin-opener = "=2.5.5"` đã có. Clipboard plugin khởi tạo một lần tại app composition, chỉ dùng Rust API. Không cấp permission plugin clipboard/opener cho JavaScript. Metadata clipboard crate công bố MSRV `1.77.2`, nằm dưới toolchain Rust `1.98.0`; URL dùng đúng bản đã được lock trong backend hiện tại. Phải xác minh bằng Cargo build/test Windows trên lockfile thực tế. [Clipboard Rust API](https://v2.tauri.app/plugin/clipboard/) là nguồn tích hợp plugin.
+
+```rust
+/// Reads plain text for an explicit paste into an attached running terminal.
+#[tauri::command]
+pub async fn read_terminal_clipboard<R: tauri::Runtime>(
+    window: tauri::WebviewWindow<R>,
+    state: tauri::State<'_, TerminalInteractions>,
+    terminal_id: String,
+) -> Result<Option<String>, TerminalInteractionError>;
+
+/// Writes explicitly selected terminal text or a link target to the OS clipboard.
+#[tauri::command]
+pub async fn write_terminal_clipboard<R: tauri::Runtime>(
+    window: tauri::WebviewWindow<R>,
+    state: tauri::State<'_, TerminalInteractions>,
+    terminal_id: String,
+    text: String,
+) -> Result<(), TerminalInteractionError>;
+
+/// Opens a user-activated HTTP or HTTPS URL in the default browser.
+#[tauri::command]
+pub async fn open_terminal_link<R: tauri::Runtime>(
+    window: tauri::WebviewWindow<R>,
+    state: tauri::State<'_, TerminalInteractions>,
+    terminal_id: String,
+    url: String,
+) -> Result<(), TerminalInteractionError>;
+```
+
+`TerminalInteractions` giữ clone public `TerminalManager` cùng `Arc<dyn TerminalInteractionAdapter>`, không giữ output hoặc nội dung clipboard. Caller phải là main webview; authorize trước khi validate hoặc gọi adapter. Clone managed state trước await, không giữ manager lock khi gọi OS.
+
+```rust
+pub trait TerminalInteractionAdapter: Send + Sync {
+    /// Returns plain text, or None when no text representation exists.
+    fn read_text(&self) -> Result<Option<String>, TerminalInteractionError>;
+    /// Writes one complete Unicode text value without altering the PTY.
+    fn write_text(&self, text: &str) -> Result<(), TerminalInteractionError>;
+    /// Opens a previously validated absolute web URL without a shell command.
+    fn open_web_url(&self, url: &str) -> Result<(), TerminalInteractionError>;
+}
+
+pub enum TerminalInteractionError {
+    UnauthorizedWindow,
+    InvalidRuntimeId,
+    TerminalNotFound { terminal_id: String },
+    TerminalNotRunning { terminal_id: String },
+    ClipboardUnavailable,
+    UnsupportedClipboardText,
+    InvalidLink,
+    LinkOpenFailed,
+    RuntimeShuttingDown,
+}
+```
+
+Error derive Serialize/Deserialize/TS và serialize tagged `code` camelCase, `terminal_id` thành `terminalId`; sinh vào `src/bindings/terminal/terminal.ts` từ `src-tauri/src/terminal/models.rs`. Không thêm clipboard/URL vào TerminalError, TerminalDto hoặc event. Unit output serialize `null`; clipboard read là ngoại lệ có chủ đích trả văn bản theo hành động Paste, không phát broadcast.
+
+| Command | Validation và side effect | Lỗi |
+|---|---|---|
+| `read_terminal_clipboard` | Terminal ID hợp lệ, còn tồn tại, state running; đọc clipboard văn bản thuần một lần. Không có text trả `None`; không coi clipboard busy/access failure là rỗng. Kiểm tra lại target sau read; nếu đã đóng thì bỏ text. Command không tự ghi PTY. | UnauthorizedWindow, InvalidRuntimeId, TerminalNotFound, TerminalNotRunning, ClipboardUnavailable, UnsupportedClipboardText, RuntimeShuttingDown. |
+| `write_terminal_clipboard` | Terminal còn tồn tại kể cả exited/failed/retained; nhận Unicode text, từ chối NUL vì clipboard text không biểu diễn an toàn; không trim/normalize/newline-convert. Chuỗi rỗng hợp lệ. Ghi một lần; không trả lại text hoặc phát event. | UnauthorizedWindow, InvalidRuntimeId, TerminalNotFound, ClipboardUnavailable, UnsupportedClipboardText, RuntimeShuttingDown. |
+| `open_terminal_link` | Terminal còn tồn tại kể cả stopped/retained; URL UTF-8 tối đa 8192 byte, không ASCII control/whitespace, absolute parse được bằng url::Url, scheme đúng http/https, host khác rỗng, không username/password. Từ chối mọi scheme khác, relative URL, protocol-relative URL. Gọi opener với URL đã parse/serialize, không nối shell string; localhost/IP/port hợp lệ được phép. | UnauthorizedWindow, InvalidRuntimeId, TerminalNotFound, InvalidLink, LinkOpenFailed, RuntimeShuttingDown. |
+
+- Clipboard và opener blocking chạy qua worker phù hợp của plugin hoặc `spawn_blocking`; validation/recheck runtime dùng public `get_terminal`, không truy cập map nội bộ. Cho `TerminalManager::is_shutting_down` hiện có visibility `pub(crate)` để service cùng capability từ chối tương tác mới bằng shutdown gate PTY hiện tại; không tạo gate riêng hoặc phụ thuộc implementation app.
+- Adapter production map lỗi OS thành error an toàn. `Display`, tracing, error source xuất ra IPC và test snapshot không chứa text/URL/native message. Clipboard không persist trong XWork, không vào backup hoặc log; clipboard OS giữ giá trị theo hành vi hệ điều hành.
+- Runtime tồn tại là scope kiểm tra được, không phải bằng chứng URL/text thực sự nằm trong output: backend không đọc hoặc lưu thêm output để chứng minh selection. Ràng buộc user gesture do FE-008 thực thi; không nhận yêu cầu từ OSC 52/OSC 8 tự động hoặc notification parser.
+- Các command này không spawn, resize, đóng terminal, thay attention hay thay process state; replay/output không gọi chúng. Read kết thúc sau khi target đóng trả lỗi; write/open đã bắt đầu ở OS có thể hoàn tất dù terminal vừa đóng, frontend không retry tự động.
+- Test seam duy nhất `TerminalInteractionAdapter`: fake lưu call count/value riêng trong test memory, trả text/null hoặc inject ClipboardUnavailable/LinkOpenFailed. TerminalManager dùng fake PTY/dependency ports và app data temporary có sẵn, không truy cập dữ liệu người dùng. Mock app composition không khởi tạo clipboard native; production mới đăng ký plugin và native adapter.
+- `src-tauri/tests/terminal_interactions.rs` phải gọi đúng ba command qua Tauri mock và kiểm tra reject-before-adapter với caller Quick Note, ID invalid/gone, read trên stopped terminal, NUL, URL quá dài/control/userinfo và scheme `file`, `javascript`, `data`, `mailto`. Positive cases gồm Unicode/CRLF clipboard, null text, HTTP localhost, HTTPS Unicode host đã canonicalize, copy/open trên stopped terminal. Inject clipboard busy và opener failure phải trả đúng error đã làm sạch, zero PTY input và không phát terminal state event.
+- Generated-binding test và app-builder test phải thêm interaction error/registration. Chạy riêng `cargo test --manifest-path src-tauri/Cargo.toml --test terminal_interactions`, `--test export_bindings`, `--test app_builder`, sau đó toàn bộ gates Rust/frontend và Windows Tauri build. Smoke clipboard/browser thật là checklist thủ công trên Windows, không test tự động tác động clipboard người dùng.
 
 ## Contract Rust nội bộ và tích hợp capability
 
@@ -619,6 +696,7 @@ pub enum TerminalError {
 - [ ] Close tab retain một terminal stopped; reopen giữ cùng ID/output, không spawn; evict/delete/Quit discard token/ring/core state.
 - [ ] WTerm 0.3.4 dùng Ghostty core/WASM embedded, không WebSocketTransport; alternate screen, mouse, synchronized output, Unicode/emoji/IME/clipboard/find/link pass Windows WebView2 checklist.
 - [ ] Generated binding `src/bindings/terminal/` khớp Rust DTO/error và không được sửa tay; CSP production/dev vẫn chỉ nới `'wasm-unsafe-eval'` cần thiết.
+- [ ] Ba command clipboard/link chỉ chạy từ main cho terminal hợp lệ, dùng Rust adapter, từ chối NUL/URL ngoài allowlist, trả error đã làm sạch và không tác động PTY; binding cùng registration được kiểm thử.
 - [ ] Mọi function/method/callback/helper/test mới có comment; framing/attach compensation/termination escalation có inline invariant comment.
 - [ ] `cargo fmt --check`, `cargo clippy --all-targets --all-features -- -D warnings` và toàn bộ Rust test pass trên Windows.
 - [ ] Frontend formatter/lint/typecheck/unit/component test và Rust integration test terminal pass; `pnpm tauri build` Windows pass vì feature thay IPC Channel, process integration, binding và desktop runtime; smoke thủ công Windows xác nhận rendering/input của terminal thật.
@@ -636,6 +714,7 @@ pub enum TerminalError {
 | `src-tauri/tests/terminal_pty_windows.rs` | Integration Windows | ConPTY thật với fixture: Unicode/chunk, input/control, resize, exit code, burst/backpressure, four-terminal stability và child-tree kill. |
 | `src-tauri/tests/app_builder.rs` | Smoke | Terminal manager/router late bind đúng một lần, state/commands đăng ký và mock builder không tạo PTY lúc setup. |
 | `src-tauri/tests/export_bindings.rs` | Contract | Export DTO/event/error BE-007 vào `src/bindings/terminal/`, fail khi drift và không sinh type cho raw Channel frame. |
+| `src-tauri/tests/terminal_interactions.rs` | Integration/contract | Ba command clipboard/link main-only, target validation, Unicode/null text, URL allowlist, fake failure và không side effect PTY. |
 
 Test tự động không dùng project đang phát triển, credential thật hoặc command người dùng. Integration tạo temporary project root/profile fixture; mọi child/process tree có teardown force-kill và assertion không còn sống. Compatibility với Codex/Claude thật là manual smoke có điều kiện khi CLI đã cài, không làm CI thất bại trên runner thiếu CLI.
 
@@ -651,6 +730,8 @@ Test tự động không dùng project đang phát triển, credential thật ho
 - Chọn ETX + deadline + Windows Job Object/macOS process group để vừa cho CLI thoát có kiểm soát vừa bảo đảm close/Quit không treo vô hạn hoặc bỏ child process.
 - Chọn một lifecycle router late-bind bằng `Weak` ở composition root để thỏa hai chiều tích hợp Terminal↔Sessions mà không tạo dependency implementation hoặc reference cycle.
 - Wireframe `panes-max` có ba pane ẩn vẫn chạy và `sidebar-sessions` có running/unseen/attention/finished/error là observable contract; layout, badge visual và close dialog vẫn do FE-007/BE-005 sở hữu.
+- FE-008 giữ toàn bộ history đã diễn giải trong RAM tới disposal, không tự giới hạn dòng; `Clear Screen` chỉ thay view phía frontend, giữ history và không gửi lệnh PTY. Replay ring BE-007 vẫn giới hạn 8 MiB/1024 frame vì chỉ phục vụ recovery.
+- Clipboard text và HTTP/HTTPS opener đi qua ba command Rust có scope terminal, theo lựa chọn người dùng; không cấp API clipboard/opener tổng quát cho frontend.
 
 ## Câu hỏi mở
 
