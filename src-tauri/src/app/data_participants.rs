@@ -1,4 +1,53 @@
+use crate::settings::{
+    KeyboardShortcutsCommittedProjection, KeyboardShortcutsError, KeyboardShortcutsService,
+    ShortcutOverride, ShortcutOverridesImportPlan,
+};
 use rusqlite::Transaction;
+
+/// Adapts shortcuts to the coordinator without exposing owner persistence.
+pub struct KeyboardShortcutsDataParticipant {
+    service: KeyboardShortcutsService,
+}
+impl KeyboardShortcutsDataParticipant {
+    /// Wraps the managed shortcut owner.
+    pub fn new(service: KeyboardShortcutsService) -> Self {
+        Self { service }
+    }
+    /// Exports known custom assignments in the coordinator transaction.
+    pub fn export(
+        &self,
+        tx: &Transaction<'_>,
+    ) -> Result<Vec<ShortcutOverride>, KeyboardShortcutsError> {
+        KeyboardShortcutsService::export_overrides_in(tx)
+    }
+    /// Validates the full replacement before applying any writes.
+    pub fn prepare_replace(
+        &self,
+        tx: &Transaction<'_>,
+        incoming: &[ShortcutOverride],
+    ) -> Result<ShortcutOverridesImportPlan, KeyboardShortcutsError> {
+        KeyboardShortcutsService::prepare_replace_overrides_in(tx, incoming)
+    }
+    /// Applies only the prepared owner operations on the caller's transaction.
+    pub fn apply_replace(
+        &self,
+        tx: &Transaction<'_>,
+        plan: &ShortcutOverridesImportPlan,
+    ) -> Result<KeyboardShortcutsCommittedProjection, KeyboardShortcutsError> {
+        KeyboardShortcutsService::apply_replace_overrides_in(tx, plan)
+    }
+    /// Clears every persisted override in the shared reset transaction.
+    pub fn apply_reset(
+        &self,
+        tx: &Transaction<'_>,
+    ) -> Result<KeyboardShortcutsCommittedProjection, KeyboardShortcutsError> {
+        KeyboardShortcutsService::reset_overrides_in(tx)
+    }
+    /// Publishes the prepared projection only after the coordinator commits.
+    pub fn publish_after_commit(&self, projection: KeyboardShortcutsCommittedProjection) {
+        self.service.publish_data_change(projection);
+    }
+}
 
 use crate::projects::{
     ProjectBackupRecordV1, ProjectCommittedProjection, ProjectImportMap, ProjectImportPlan,

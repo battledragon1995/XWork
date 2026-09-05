@@ -411,6 +411,7 @@ pub(crate) async fn request_quit<R: Runtime>(
         QuitFlow::Dialog(request) => Ok(Some(request)),
         QuitFlow::ProceedShutdown => {
             crate::app::notify_settings_shutdown(&app);
+            crate::app::notify_keyboard_shortcuts_shutdown(&app);
             state.finish_shutdown().await?;
             app.exit(0);
             Ok(None)
@@ -440,6 +441,7 @@ pub(crate) async fn confirm_quit<R: Runtime>(
     authorize_quit_command(window.label())?;
     state.begin_confirm_quit(request_id)?;
     crate::app::notify_settings_shutdown(&app);
+    crate::app::notify_keyboard_shortcuts_shutdown(&app);
     state.finish_shutdown().await?;
     app.exit(0);
     Ok(())

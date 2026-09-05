@@ -77,7 +77,7 @@ fn settings_migration_creates_single_default_row() {
     let app_data = TempDir::new().expect("the temporary app data should be created");
     let storage = Storage::open(app_data.path()).expect("isolated storage should open");
 
-    assert_eq!(schema_version(&storage), 3);
+    assert_eq!(schema_version(&storage), 4);
     let values = storage
         .with_connection(
             // Casts scalar defaults to text so one compact assertion covers the full row.

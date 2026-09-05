@@ -155,7 +155,7 @@ fn composition_root_builds_and_manages_storage() {
     let mut app = build_isolated_app(directory.path().to_path_buf());
     run_setup(&mut app);
 
-    assert_eq!(managed_schema_version(&app), 3);
+    assert_eq!(managed_schema_version(&app), 4);
 }
 
 /// Verifies that a regular file cannot be used as the app data directory.
@@ -184,7 +184,7 @@ fn composition_root_fails_for_newer_database() {
     let database_path = directory.path().join(Storage::DATABASE_FILE_NAME);
     let connection = Connection::open(database_path).expect("the fixture database should open");
     connection
-        .pragma_update(None, "user_version", 4)
+        .pragma_update(None, "user_version", 5)
         .expect("the fixture schema version should be set");
     drop(connection);
 
@@ -244,7 +244,7 @@ fn projects_composition_manages_storage_project_and_gate() {
     let mut app = build_isolated_app(directory.path().to_path_buf());
     run_setup(&mut app);
 
-    assert_eq!(managed_schema_version(&app), 3);
+    assert_eq!(managed_schema_version(&app), 4);
     let gate = app.state::<DataMaintenanceGate>();
     let service = app.state::<ProjectService>();
     let settings = app.state::<SettingsService>();
@@ -296,9 +296,18 @@ fn projects_composition_routes_lifecycle_and_projects_commands() {
         .deserialize::<serde_json::Value>()
         .expect("the settings response should contain JSON");
     assert_eq!(settings["revision"], "0");
+    let shortcuts = tauri::test::get_ipc_response(&main, invoke_request("get_keyboard_shortcuts"))
+        .expect("shortcuts should be routed")
+        .deserialize::<serde_json::Value>()
+        .unwrap();
+    assert_eq!(shortcuts["actions"].as_array().unwrap().len(), 18);
+    tauri::test::get_ipc_response(&main, invoke_request("reset_all_keyboard_shortcuts"))
+        .expect("empty reset should be a successful no-op");
 
     for command in [
         "get_project",
+        "set_keyboard_shortcut",
+        "reset_keyboard_shortcut",
         "get_project_git_summary",
         "get_project_git_status",
         "add_project",
@@ -518,7 +527,7 @@ fn projects_composition_publishes_nothing_for_a_newer_database() {
     let database_path = directory.path().join(Storage::DATABASE_FILE_NAME);
     let connection = Connection::open(database_path).expect("the fixture database should open");
     connection
-        .pragma_update(None, "user_version", 4)
+        .pragma_update(None, "user_version", 5)
         .expect("the fixture schema version should be set");
     drop(connection);
     let mut app = build_isolated_app(directory.path().to_path_buf());
@@ -532,4 +541,51 @@ fn projects_composition_publishes_nothing_for_a_newer_database() {
     assert!(app.try_state::<ProjectService>().is_none());
     assert!(app.try_state::<DataMaintenanceGate>().is_none());
     assert!(app.try_state::<SettingsService>().is_none());
+}
+
+/// Verifies shortcuts and the participant share the migrated process-wide composition.
+#[test]
+fn keyboard_shortcuts_composition_manages_state_and_participant() {
+    use xwork_lib::{
+        app::data_participants::KeyboardShortcutsDataParticipant,
+        settings::KeyboardShortcutsService,
+    };
+    let directory = tempfile::TempDir::new().unwrap();
+    let mut app = build_isolated_app(directory.path().to_path_buf());
+    run_setup(&mut app);
+    assert_eq!(managed_schema_version(&app), 4);
+    assert!(
+        app.state::<KeyboardShortcutsService>()
+            .shares_gate_with(app.state::<DataMaintenanceGate>().inner())
+    );
+    assert!(
+        app.try_state::<KeyboardShortcutsDataParticipant>()
+            .is_some()
+    );
+}
+
+/// Proves a corrupt known shortcut prevents publication of shortcut managed state.
+#[test]
+fn keyboard_shortcuts_corruption_fails_composition() {
+    use xwork_lib::{
+        app::data_participants::KeyboardShortcutsDataParticipant,
+        settings::{KeyboardShortcutsError, KeyboardShortcutsService},
+    };
+    let directory = tempfile::TempDir::new().unwrap();
+    let storage = Storage::open(directory.path()).unwrap();
+    storage.with_connection::<_, KeyboardShortcutsError>(
+        // Seeds an invalid known override through the isolated storage seam.
+        |connection| Ok(connection.execute("INSERT INTO keyboard_shortcut_overrides VALUES ('tabs.create', 1, 0, 0, 'Nope')", [])?)).unwrap();
+    drop(storage);
+    let mut app = build_isolated_app(directory.path().to_path_buf());
+    let result = catch_unwind(AssertUnwindSafe(
+        // Drives setup far enough to encounter shortcut hydration failure.
+        || run_setup(&mut app),
+    ));
+    assert!(result.is_err());
+    assert!(app.try_state::<KeyboardShortcutsService>().is_none());
+    assert!(
+        app.try_state::<KeyboardShortcutsDataParticipant>()
+            .is_none()
+    );
 }

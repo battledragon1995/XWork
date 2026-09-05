@@ -1,6 +1,6 @@
 # BE-009 Keyboard Shortcuts Implementation Plan
 
-**Status:** Draft
+**Status:** Implemented; automated verification passed; manual Windows smoke pending
 
 **Goal:** Implement the Phase 1 `BE-009` backend contract: append migration
 version 4, provide the typed 18-action shortcut catalog with per-OS defaults,
@@ -300,7 +300,7 @@ an empty `keyboard_shortcut_overrides` table whose columns and checks match
 - Produces: the `keyboard_shortcut_overrides` table consumed by every later
   task; schema version 4.
 
-- [ ] **Step 1: Add the failing migration test**
+- [x] **Step 1: Add the failing migration test**
 
   Create `keyboard_shortcuts_contract.rs` with a `TempDir`-isolated
   `Storage::open` harness (mirroring `settings_commands.rs`) and the test
@@ -311,7 +311,7 @@ an empty `keyboard_shortcut_overrides` table whose columns and checks match
   a 65-character `action_id` (fails), and one valid row then deleting it, and
   finally asserts the fresh table holds zero rows (no default seed).
 
-- [ ] **Step 2: Verify the test fails for the expected reason**
+- [x] **Step 2: Verify the test fails for the expected reason**
 
   Run: `cargo test --manifest-path src-tauri/Cargo.toml --test
   keyboard_shortcuts_contract`
@@ -320,7 +320,7 @@ an empty `keyboard_shortcut_overrides` table whose columns and checks match
   on the schema-version assertion with `left: 3, right: 4` (or on the first
   table read with `no such table: keyboard_shortcut_overrides`).
 
-- [ ] **Step 3: Add the migration and update stale version expectations**
+- [x] **Step 3: Add the migration and update stale version expectations**
 
   Add `0004_create_keyboard_shortcuts.sql` byte-equivalent to the `BE-009`
   SQL block (`CREATE TABLE keyboard_shortcut_overrides (...)` with the four
@@ -331,7 +331,7 @@ an empty `keyboard_shortcut_overrides` table whose columns and checks match
   `user_version = 4` to `user_version = 5` so they remain newer than the
   supported ceiling.
 
-- [ ] **Step 4: Verify the task**
+- [x] **Step 4: Verify the task**
 
   Run: `cargo test --manifest-path src-tauri/Cargo.toml --test
   keyboard_shortcuts_contract --test app_builder --test
@@ -370,7 +370,7 @@ proven by unit tests before any service or SQL exists.
   allowlist, modifier rule, per-OS reserved combos, candidate merge, and O(n)
   fingerprint conflict projection.
 
-- [ ] **Step 1: Add the failing unit tests**
+- [x] **Step 1: Add the failing unit tests**
 
   In the new module's test module, add tests referencing the missing items by
   name: `catalog_lists_eighteen_actions_in_contract_order` (exact IDs, labels,
@@ -406,7 +406,7 @@ proven by unit tests before any service or SQL exists.
   catalog constants, DTO types, and helpers named by the tests (the module is
   discovered because `mod.rs` already declares it), not a zero-test run.
 
-- [ ] **Step 3: Implement the minimum typed surface**
+- [x] **Step 3: Implement the minimum typed surface**
 
   Define the DTOs and error with the specified derives, the `const` catalog
   slice in contract order, the allowlist (generated `KeyA`–`KeyZ` and
@@ -417,7 +417,7 @@ proven by unit tests before any service or SQL exists.
   `(primary, alt, shift, key_code)`. Add a short purpose comment to every
   item.
 
-- [ ] **Step 4: Verify the task**
+- [x] **Step 4: Verify the task**
 
   Run: `cargo test --manifest-path src-tauri/Cargo.toml --lib
   settings::keyboard_shortcuts`
@@ -450,7 +450,7 @@ restart, and failure semantics.
   reset_all_admitted, begin_shutdown, shares_gate_with}`; internal repository
   functions using bind parameters only; owned cache/projection state.
 
-- [ ] **Step 1: Add the failing service-level integration tests**
+- [x] **Step 1: Add the failing service-level integration tests**
 
   Extend `keyboard_shortcuts_contract.rs` with a `TempDir`-isolated `Storage`
   + `DataMaintenanceGate` harness and tests:
@@ -482,7 +482,7 @@ restart, and failure semantics.
   `#[cfg(test)]` (poison the cache and the write gate with `catch_unwind`
   exactly as the settings module does).
 
-- [ ] **Step 2: Verify the tests fail for the expected reason**
+- [x] **Step 2: Verify the tests fail for the expected reason**
 
   Run: `cargo test --manifest-path src-tauri/Cargo.toml --test
   keyboard_shortcuts_contract`
@@ -492,7 +492,7 @@ restart, and failure semantics.
   named 'new' found`), while the Task 1 migration test still compiles and
   passes.
 
-- [ ] **Step 3: Implement the service and repository**
+- [x] **Step 3: Implement the service and repository**
 
   Implement `KeyboardShortcutsServiceInner { storage, gate, write_gate:
   Mutex<()>, cache: RwLock<...>, shutting_down: AtomicBool }` mirroring
@@ -506,7 +506,7 @@ restart, and failure semantics.
   parameters; errors map through the `From` impls; poison maps to
   `Unavailable`.
 
-- [ ] **Step 4: Verify the task**
+- [x] **Step 4: Verify the task**
 
   Run: `cargo test --manifest-path src-tauri/Cargo.toml --test
   keyboard_shortcuts_contract`
@@ -542,7 +542,7 @@ mutations.
   `KeyboardShortcutsDataParticipant::{new, export, prepare_replace,
   apply_replace, apply_reset, publish_after_commit}`.
 
-- [ ] **Step 1: Add the failing maintenance-contract tests**
+- [x] **Step 1: Add the failing maintenance-contract tests**
 
   Extend `data_management_contract.rs` following the existing Settings/CLI
   Profiles patterns:
@@ -576,7 +576,7 @@ mutations.
   owner methods, and participant type named by the new tests; after the types
   exist, the filter selects the six new `shortcuts_*` tests.
 
-- [ ] **Step 3: Implement the owner seam and participant**
+- [x] **Step 3: Implement the owner seam and participant**
 
   Implement the five owner APIs exactly as specified: associated functions
   taking `&Transaction<'_>`; `prepare_replace_overrides_in` rejects unknown
@@ -589,7 +589,7 @@ mutations.
   write gate, or `Storage`. Add the thin `KeyboardShortcutsDataParticipant`
   in `app/data_participants.rs` calling only these public owner APIs.
 
-- [ ] **Step 4: Verify the task**
+- [x] **Step 4: Verify the task**
 
   Run: `cargo test --manifest-path src-tauri/Cargo.toml --test
   data_management_contract`
@@ -631,7 +631,7 @@ service and participant state without any new plugin.
   `KeyboardShortcutsService` and `KeyboardShortcutsDataParticipant`;
   `notify_keyboard_shortcuts_shutdown`.
 
-- [ ] **Step 1: Add the failing command and composition tests**
+- [x] **Step 1: Add the failing command and composition tests**
 
   In `keyboard_shortcuts_contract.rs`, add a `MockRuntime` app harness
   (mirroring the settings command tests) with a `main` window and a second
@@ -663,7 +663,7 @@ service and participant state without any new plugin.
   error for `get_keyboard_shortcuts` (command not registered) before any
   state assertion runs.
 
-- [ ] **Step 3: Implement commands and composition**
+- [x] **Step 3: Implement commands and composition**
 
   Add the four thin async commands generic over `R: Runtime`. `get` clones
   the managed service and returns `snapshot()`. Each mutation authorizes the
@@ -676,7 +676,7 @@ service and participant state without any new plugin.
   on `CorruptStoredShortcut`. Add `notify_keyboard_shortcuts_shutdown` and
   call it beside the two existing settings notifications in `lifecycle.rs`.
 
-- [ ] **Step 4: Verify the task**
+- [x] **Step 4: Verify the task**
 
   Run: `cargo test --manifest-path src-tauri/Cargo.toml --test
   keyboard_shortcuts_contract --test app_builder --test app_lifecycle`
@@ -709,14 +709,14 @@ quality gates plus the Windows Tauri build pass.
   `KeyboardShortcutsDto`, `SetKeyboardShortcutInputDto`,
   `KeyboardShortcutsError`.
 
-- [ ] **Step 1: Add the failing binding-contract test**
+- [x] **Step 1: Add the failing binding-contract test**
 
   Add `generated_keyboard_shortcuts_binding()` and
   `keyboard_shortcuts_binding_matches_rust_contract` to
   `export_bindings.rs` using the existing `assert_binding_is_current` helper,
   exporting the seven types in the order above.
 
-- [ ] **Step 2: Verify the test fails for the expected reason**
+- [x] **Step 2: Verify the test fails for the expected reason**
 
   Run: `cargo test --manifest-path src-tauri/Cargo.toml --test
   export_bindings keyboard_shortcuts`
@@ -725,14 +725,14 @@ quality gates plus the Windows Tauri build pass.
   test to verify a clean output` after writing the missing
   `src/bindings/keyboard-shortcuts.ts`.
 
-- [ ] **Step 3: Confirm the generated output**
+- [x] **Step 3: Confirm the generated output**
 
   Inspect the generated file for the exact camelCase fields, snake_case enum
   literals, the tagged `KeyboardShortcutsError` shape, and
   `SetKeyboardShortcutInputDto`; make no manual edits. Rerun the same command
   and expect a pass.
 
-- [ ] **Step 4: Run final verification**
+- [x] **Step 4: Run final verification**
 
   Execute the full table under Final Verification. Record any material
   deviation below as it happens.
@@ -797,14 +797,67 @@ end-to-end test.
 
 ## Deviations and Decisions
 
-- None.
+- Implementation adds the schema-version assertion in `app_lifecycle.rs` to the
+  migration update scope: the focused lifecycle test exposed one additional
+  stale expectation (left: 4, right: 3) not listed in the draft.
+  Projects and CLI Profiles table-name assertions also now include the new
+  override table; their older-schema expectations otherwise failed correctly.
+- Related service assertions are grouped into 15 contract tests and six owner
+  unit tests rather than one test per draft name. Migration and service-boundary
+  red checks were observed; pure-helper, participant, and command changes were
+  integrated before their independent red runs. Their Step 2 boxes remain
+  unchecked to preserve this history; final behavior is verified by the focused
+  and full suites. Binding generation produced the expected regenerate-once
+  failure before the clean verification run.
+- Duplicate import IDs use the existing `CorruptStoredShortcut { action_id }`
+  variant. No new IPC error variant is introduced.
+- The committed projection owns the override map and precomputed DTO. No unused
+  revision counter or subscription mechanism is added in Phase 1, which has no
+  observer or revision field. Post-commit cache replacement is infallible;
+  poisoned locks remain unavailable to subsequent public operations.
+- Reset-all checks table existence of rows before opening a write transaction,
+  so an empty reset performs no database write and orphan-only state is cleared.
+  Snapshot reads and identical assignments remain entirely cache-based.
+- A deferred foreign-key fixture additionally proves a real commit failure
+  rolls back durable rows and leaves the old cache unchanged.
+- The no-future-action and no-handwritten-binding scans use plain `|` regex
+  alternation in PowerShell. The draft's `\|` matches a literal pipe and would
+  not prove the intended negative requirements.
+- The initial full verification ran Vitest alongside Rust and exhausted Windows
+  virtual memory (`VirtualAlloc failed`, worker exits, and linker failures).
+  Retry full suites sequentially with Vitest `--maxWorkers=1` and Cargo `-j 1`;
+  this preserves all test targets, features, assertions, and normal timeouts.
 
 During implementation, append material deviations and decisions without
 rewriting completed history.
 
 ## Outcome
 
-Pending implementation.
+Implemented migration 0004, the 18-action typed catalog, portable chord validation
+and per-target reservation checks, cached conflict snapshots, atomic set/reset
+operations, the typed maintenance participant, four scoped commands, shutdown
+wiring, and the generated TypeScript aggregate.
 
-When complete, summarize the delivered result, verification evidence, and any
-remaining limitations.
+Verification on Windows:
+
+- `pnpm format:check`, `pnpm lint`, `pnpm typecheck`, and `pnpm build`: passed.
+- `pnpm test --maxWorkers=1`: 1,679 tests passed across 87 files; no failed or
+  skipped tests. The retry preserved all assertions and normal timeouts.
+- `cargo fmt --manifest-path src-tauri/Cargo.toml --check`: passed.
+- `cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --all-features -j 1 -- -D warnings`:
+  passed with warnings denied.
+- `cargo test --manifest-path src-tauri/Cargo.toml --all-targets --all-features -j 1`:
+  423 tests passed across 18 targets; no failed or ignored tests. This includes
+  six shortcut unit tests, 15 shortcut contract tests, six shortcut maintenance
+  tests, composition/corruption checks, and the binding drift contract.
+- `pnpm tauri build` with `CARGO_BUILD_JOBS=1`: passed; produced `src-tauri/target/release/xwork.exe`. Existing bundle-identifier and large-frontend-chunk advisories remain unchanged.
+- Source scans for future action IDs, a global-shortcut plugin, and handwritten
+  shortcut bindings: no matches. `git diff --check`: passed.
+
+Remaining verification: launch the built application from a disposable Windows
+user profile and manually confirm startup and unchanged Home/Projects/Terminal
+behavior. Native desktop control is unavailable in this session, so this check
+has not been performed or claimed. The isolated MockRuntime tests and real
+ConPTY regression tests passed but do not replace that manual smoke check.
+No desktop end-to-end automation or macOS validation was added. FE-014 UI and
+shortcut dispatch remain outside this backend plan's scope.

@@ -189,6 +189,34 @@ fn generated_sessions_binding() -> String {
     .join("\n")
 }
 
+/// Generates the shortcut contract in its stable aggregate export order.
+fn generated_keyboard_shortcuts_binding() -> String {
+    use xwork_lib::settings::{
+        KeyboardShortcutActionDto, KeyboardShortcutsDto, KeyboardShortcutsError,
+        SetKeyboardShortcutInputDto, ShortcutCategoryDto, ShortcutChordDto, ShortcutScopeDto,
+    };
+    let config = Config::default();
+    [
+        ShortcutChordDto::export_to_string(&config).unwrap(),
+        ShortcutCategoryDto::export_to_string(&config).unwrap(),
+        ShortcutScopeDto::export_to_string(&config).unwrap(),
+        KeyboardShortcutActionDto::export_to_string(&config).unwrap(),
+        KeyboardShortcutsDto::export_to_string(&config).unwrap(),
+        SetKeyboardShortcutInputDto::export_to_string(&config).unwrap(),
+        KeyboardShortcutsError::export_to_string(&config).unwrap(),
+    ]
+    .join("\n")
+}
+
+/// Regenerates shortcuts once on drift and then requires an exact Rust contract match.
+#[test]
+fn keyboard_shortcuts_binding_matches_rust_contract() {
+    assert_binding_is_current(
+        binding_path(&["keyboard-shortcuts.ts"]),
+        generated_keyboard_shortcuts_binding(),
+    );
+}
+
 /// Returns one generated binding output path under the frontend bindings root.
 fn binding_path(relative: &[&str]) -> PathBuf {
     let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))

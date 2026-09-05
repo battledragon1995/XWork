@@ -18,7 +18,7 @@ use crate::{
         ProjectsError, TauriProjectEventSink, TauriProjectPlatform,
     },
     sessions::{SessionManager, commands as session_commands},
-    settings::SettingsService,
+    settings::{KeyboardShortcutsService, SettingsService},
     shared::DataMaintenanceGate,
     storage::Storage,
     terminal::{
@@ -35,7 +35,8 @@ pub mod lifecycle;
 pub mod tray;
 
 use data_participants::{
-    CliProfilesDataParticipant, ProjectsDataParticipant, SettingsDataParticipant,
+    CliProfilesDataParticipant, KeyboardShortcutsDataParticipant, ProjectsDataParticipant,
+    SettingsDataParticipant,
 };
 use data_runtime::{
     AppTerminalDependencies, DeferredProjectRuntimeGuard, PaneContentRuntimeRouter,
@@ -313,6 +314,10 @@ fn app_invoke_handler<R: Runtime>() -> impl Fn(tauri::ipc::Invoke<R>) -> bool + 
         crate::projects::commands::get_remove_project_impact,
         crate::projects::commands::remove_project,
         crate::settings::get_settings,
+        crate::settings::get_keyboard_shortcuts,
+        crate::settings::set_keyboard_shortcut,
+        crate::settings::reset_keyboard_shortcut,
+        crate::settings::reset_all_keyboard_shortcuts,
         crate::settings::update_settings,
         crate::settings::restore_appearance_defaults,
         crate::terminal::cli_profiles::get_cli_profiles,
@@ -385,6 +390,7 @@ where
                 let storage = setup_storage(app, app_data_dir)?;
                 let project_guard = setup_projects(app, storage.clone(), project_collaborators);
                 setup_settings(app, storage.clone())?;
+                setup_keyboard_shortcuts(app, storage.clone())?;
                 setup_cli_profiles(
                     app,
                     storage,
@@ -573,6 +579,25 @@ fn setup_cli_profiles<R, P>(
             eprintln!("cli profiles startup failed: {error}");
         }
     });
+}
+
+/// Notifies the shortcut owner before application shutdown begins.
+pub fn notify_keyboard_shortcuts_shutdown<R: Runtime>(app: &AppHandle<R>) {
+    if let Some(service) = app.try_state::<KeyboardShortcutsService>() {
+        service.begin_shutdown();
+    }
+}
+
+/// Hydrates shortcuts only after all embedded migrations have committed.
+fn setup_keyboard_shortcuts<R: Runtime>(
+    app: &mut App<R>,
+    storage: Storage,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let gate = app.state::<DataMaintenanceGate>().inner().clone();
+    let service = KeyboardShortcutsService::new(storage, gate)?;
+    app.manage(KeyboardShortcutsDataParticipant::new(service.clone()));
+    app.manage(service);
+    Ok(())
 }
 
 /// Hydrates and manages Settings with the process-wide maintenance gate.

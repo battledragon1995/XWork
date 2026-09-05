@@ -7,6 +7,231 @@ use std::{
 };
 
 use tempfile::TempDir;
+use xwork_lib::app::data_participants::KeyboardShortcutsDataParticipant;
+use xwork_lib::settings::{
+    KeyboardShortcutsCommittedProjection, KeyboardShortcutsError, KeyboardShortcutsService,
+    ShortcutChordDto, ShortcutOverride, ShortcutOverridesImportPlan,
+};
+
+/// Owns isolated shortcut participant state for coordinator contract tests.
+struct ShortcutsHarness {
+    service: KeyboardShortcutsService,
+    participant: KeyboardShortcutsDataParticipant,
+    storage: Storage,
+    gate: DataMaintenanceGate,
+    _dir: TempDir,
+}
+impl ShortcutsHarness {
+    /// Creates a migrated database and a participant sharing the ordinary owner gate.
+    fn new() -> Self {
+        let dir = TempDir::new().unwrap();
+        let storage = Storage::open(dir.path()).unwrap();
+        let gate = DataMaintenanceGate::new();
+        let service = KeyboardShortcutsService::new(storage.clone(), gate.clone()).unwrap();
+        let participant = KeyboardShortcutsDataParticipant::new(service.clone());
+        Self {
+            service,
+            participant,
+            storage,
+            gate,
+            _dir: dir,
+        }
+    }
+}
+
+/// Builds one portable non-default override for maintenance tests.
+fn shortcut_override(id: &str, code: &str) -> ShortcutOverride {
+    ShortcutOverride {
+        action_id: id.into(),
+        chord: ShortcutChordDto {
+            primary: true,
+            alt: false,
+            shift: false,
+            key_code: code.into(),
+        },
+    }
+}
+
+/// Proves all owner APIs work under exclusive admission without gate or Storage re-entry.
+#[test]
+fn shortcuts_owner_apis_work_while_write_permit_is_held() {
+    assert_owned_and_sendable::<ShortcutOverride>();
+    assert_owned_and_sendable::<ShortcutOverridesImportPlan>();
+    assert_owned_and_sendable::<KeyboardShortcutsCommittedProjection>();
+    let h = ShortcutsHarness::new();
+    let _permit = tauri::async_runtime::block_on(h.gate.write_permit());
+    h.storage
+        .with_transaction::<_, KeyboardShortcutsError>(
+            // Exercises the entire participant contract inside one coordinator transaction.
+            |tx| {
+                assert!(h.participant.export(tx)?.is_empty());
+                let plan = h.participant.prepare_replace(
+                    tx,
+                    &[
+                        shortcut_override("tabs.close", "KeyY"),
+                        shortcut_override("tabs.create", "KeyU"),
+                    ],
+                )?;
+                h.participant.apply_replace(tx, &plan)?;
+                let exported = h.participant.export(tx)?;
+                assert_eq!(exported[0].action_id, "tabs.create");
+                assert_eq!(exported[1].action_id, "tabs.close");
+                h.participant.apply_reset(tx)?;
+                assert!(h.participant.export(tx)?.is_empty());
+                Ok(())
+            },
+        )
+        .unwrap();
+}
+
+/// Rejects unknown IDs, duplicate records, and invalid chords before writing the shared transaction.
+#[test]
+fn shortcuts_prepare_rejects_unknown_duplicate_and_invalid_overrides() {
+    let h = ShortcutsHarness::new();
+    h.storage
+        .with_transaction::<_, KeyboardShortcutsError>(
+            // Checks invalid plans leave even the transaction's local view unchanged.
+            |tx| {
+                assert!(matches!(
+                    h.participant
+                        .prepare_replace(tx, &[shortcut_override("unknown", "KeyY")]),
+                    Err(KeyboardShortcutsError::ActionNotFound { .. })
+                ));
+                let value = shortcut_override("tabs.create", "KeyY");
+                assert!(matches!(
+                    h.participant.prepare_replace(tx, &[value.clone(), value]),
+                    Err(KeyboardShortcutsError::CorruptStoredShortcut { .. })
+                ));
+                assert!(matches!(
+                    h.participant
+                        .prepare_replace(tx, &[shortcut_override("tabs.create", "Nope")]),
+                    Err(KeyboardShortcutsError::InvalidKeyCode { .. })
+                ));
+                assert!(h.participant.export(tx)?.is_empty());
+                Ok(())
+            },
+        )
+        .unwrap();
+}
+
+/// Rolls back applied rows and deliberately never publishes the uncommitted projection.
+#[test]
+fn shortcuts_coordinator_rollback_publishes_nothing() {
+    let h = ShortcutsHarness::new();
+    let before = h.service.snapshot().unwrap();
+    let result = h.storage.with_transaction::<(), KeyboardShortcutsError>(
+        // Simulates a later participant failing after shortcuts have applied successfully.
+        |tx| {
+            let plan = h.participant.prepare_replace(tx, &[shortcut_override("tabs.create", "KeyY")])?;
+            h.participant.apply_replace(tx, &plan)?;
+            Err(KeyboardShortcutsError::PersistenceFailed)
+        });
+    assert_eq!(result, Err(KeyboardShortcutsError::PersistenceFailed));
+    assert_eq!(h.service.snapshot().unwrap(), before);
+    h.storage
+        .with_transaction::<_, KeyboardShortcutsError>(
+            // Confirms rollback removed the tentative durable override.
+            |tx| {
+                assert!(h.participant.export(tx)?.is_empty());
+                Ok(())
+            },
+        )
+        .unwrap();
+}
+
+/// Keeps the old cache until the coordinator explicitly publishes its committed projection.
+#[test]
+fn shortcuts_commit_publishes_prepared_projection() {
+    let h = ShortcutsHarness::new();
+    let before = h.service.snapshot().unwrap();
+    let _permit = tauri::async_runtime::block_on(h.gate.write_permit());
+    let projection = h
+        .storage
+        .with_transaction::<_, KeyboardShortcutsError>(
+            // Commits a conflicting replacement without a nested owner transaction.
+            |tx| {
+                let plan = h.participant.prepare_replace(
+                    tx,
+                    &[
+                        shortcut_override("tabs.create", "KeyY"),
+                        shortcut_override("tabs.close", "KeyY"),
+                    ],
+                )?;
+                h.participant.apply_replace(tx, &plan)
+            },
+        )
+        .unwrap();
+    assert_eq!(h.service.snapshot().unwrap(), before);
+    h.participant.publish_after_commit(projection);
+    let after = h.service.snapshot().unwrap();
+    assert_eq!(after.actions[7].conflicts_with, ["tabs.close"]);
+    assert!(!after.actions[8].is_dispatchable);
+}
+
+/// Resets known and orphan rows together and publishes conflict-free defaults after commit.
+#[test]
+fn shortcuts_reset_clears_all_rows_including_orphans() {
+    let h = ShortcutsHarness::new();
+    h.service
+        .set_shortcut(
+            "tabs.create",
+            &shortcut_override("tabs.create", "KeyK").chord,
+        )
+        .unwrap();
+    let _permit = tauri::async_runtime::block_on(h.gate.write_permit());
+    let projection = h.storage.with_transaction::<_, KeyboardShortcutsError>(
+        // Includes a future binary's row in the shared reset fixture.
+        |tx| {
+            tx.execute("INSERT INTO keyboard_shortcut_overrides VALUES ('future.action', 1, 0, 0, 'KeyY')", [])?;
+            let projection = h.participant.apply_reset(tx)?;
+            let count: i64 = tx.query_row("SELECT COUNT(*) FROM keyboard_shortcut_overrides", [],
+                // Counts all rows rather than only exportable known actions.
+                |row| row.get(0))?;
+            assert_eq!(count, 0);
+            Ok(projection)
+        }).unwrap();
+    h.participant.publish_after_commit(projection);
+    assert!(h.service.snapshot().unwrap().actions.iter().all(
+        // Default state is fully dispatchable and has no custom overrides.
+        |action| action.is_dispatchable && !action.is_custom
+    ));
+}
+
+/// Proves a maintenance writer blocks an ordinary persistent shortcut assignment.
+#[test]
+fn shortcuts_mutation_is_blocked_by_write_permit() {
+    let h = ShortcutsHarness::new();
+    let permit = tauri::async_runtime::block_on(h.gate.write_permit());
+    let gate = h.gate.clone();
+    let mut admission: Pin<Box<dyn Future<Output = _> + Send + '_>> = Box::pin(gate.read_permit());
+    assert!(poll_once(&mut admission).is_pending());
+    let service = h.service.clone();
+    let (started_tx, started_rx) = mpsc::channel();
+    let (done_tx, done_rx) = mpsc::channel();
+    let worker = std::thread::spawn(
+        // Starts an ordinary synchronous mutation while exclusive maintenance is held.
+        move || {
+            started_tx.send(()).unwrap();
+            done_tx
+                .send(service.set_shortcut(
+                    "tabs.create",
+                    &shortcut_override("tabs.create", "KeyY").chord,
+                ))
+                .unwrap();
+        },
+    );
+    started_rx.recv().unwrap();
+    assert!(done_rx.recv_timeout(Duration::from_millis(50)).is_err());
+    drop(admission);
+    drop(permit);
+    assert!(
+        done_rx
+            .recv_timeout(Duration::from_secs(5))
+            .unwrap()
+            .is_ok()
+    );
+    worker.join().unwrap();
+}
 use tokio::sync::Barrier;
 use xwork_lib::app::data_participants::{
     CliProfilesDataParticipant, ProjectsDataParticipant, SettingsDataParticipant,

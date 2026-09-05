@@ -1,3 +1,12 @@
+mod keyboard_shortcuts;
+pub(crate) use keyboard_shortcuts::*;
+pub use keyboard_shortcuts::{
+    KeyboardShortcutActionDto, KeyboardShortcutsCommittedProjection, KeyboardShortcutsDto,
+    KeyboardShortcutsError, KeyboardShortcutsService, SetKeyboardShortcutInputDto,
+    ShortcutCategoryDto, ShortcutChordDto, ShortcutOverride, ShortcutOverridesImportPlan,
+    ShortcutScopeDto,
+};
+
 use std::{
     error::Error,
     fmt::{Display, Formatter},
