@@ -122,6 +122,14 @@
   animation: terminal-cursor-blink 1s step-end infinite;
 }
 
+/* Keep the character readable while ConPTY finishes restoring the input cursor. */
+.xwork-terminal-surface.wterm.terminal-output-active .term-cursor {
+  animation: none;
+  background: transparent;
+  color: inherit;
+  outline: none;
+}
+
 .xwork-terminal-measure {
   position: absolute;
   visibility: hidden;

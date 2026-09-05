@@ -10,6 +10,61 @@ import {
   measureTerminalGrid,
 } from "./wterm-adapter";
 
+/** Replays ConPTY's split cursor restoration through the production app adapter and CSS. */
+it("does not paint the intermediate cursor after a ConPTY synchronized redraw", async () => {
+  vi.useFakeTimers();
+  const wasm = readFileSync("node_modules/@wterm/ghostty/wasm/ghostty-vt.wasm");
+  const fetch = vi
+    .spyOn(globalThis, "fetch")
+    .mockResolvedValue(new Response(wasm, { headers: { "content-type": "application/wasm" } }));
+  const style = document.createElement("style");
+  style.textContent = readFileSync("src/features/terminal/terminal.css", "utf8");
+  document.head.appendChild(style);
+  const host = document.createElement("div");
+  document.body.appendChild(host);
+  const onData = vi.fn();
+  const adapter = new WTermAdapter({ onData, onResize: vi.fn() });
+  const encode = new TextEncoder();
+  try {
+    await adapter.initialize(host, { columns: 40, rows: 6 });
+    adapter.write(encode.encode("\u001b[3;1HAsk Codex\u001b[3;1H"));
+    await vi.advanceTimersByTimeAsync(60);
+    expect(adapter.element).not.toHaveClass("terminal-output-active");
+
+    // The real capture ends synchronized output before ConPTY restores the input row.
+    adapter.write(encode.encode("\u001b[?2026h\u001b[?25l\u001b[1;1H\u001b[?25h"));
+    adapter.write(encode.encode("\u001b[0 q\u001b[?2026l"));
+    await vi.advanceTimersByTimeAsync(20);
+    const intermediate = adapter.element.querySelector(".term-cursor");
+    expect(intermediate).not.toBeNull();
+    expect(getComputedStyle(intermediate as Element).animation).toBe("none");
+    expect(getComputedStyle(intermediate as Element).outlineStyle).toBe("none");
+    expect(adapter.element).toHaveClass("terminal-output-active");
+
+    adapter.write(encode.encode("\u001b[?25l \u001b[3;1H\u001b[?25h\u001b[6n"));
+    // Protocol responses must not wait for the visual settling timer.
+    expect(onData).toHaveBeenCalledWith("\u001b[3;1R");
+    await vi.advanceTimersByTimeAsync(30);
+    expect(adapter.element).toHaveClass("terminal-output-active");
+    await vi.advanceTimersByTimeAsync(30);
+    expect(adapter.element).not.toHaveClass("terminal-output-active");
+    expect(adapter.element.querySelectorAll(".term-cursor")).toHaveLength(1);
+    expect(adapter.element.querySelector(".term-cursor")?.parentElement?.textContent).toContain(
+      "Ask Codex",
+    );
+
+    adapter.write(encode.encode("\u001b[1;1H"));
+    adapter.destroy();
+    expect(vi.getTimerCount()).toBe(0);
+  } finally {
+    adapter.destroy();
+    host.remove();
+    style.remove();
+    fetch.mockRestore();
+    vi.useRealTimers();
+  }
+});
+
 /** Matches WTerm's rounded row height and excludes surface padding and the live scrollbar. */
 it("measures a grid that fits fractional font metrics inside the pane", () => {
   const host = document.createElement("div");

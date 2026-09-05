@@ -6,6 +6,9 @@ import ghosttyWasmUrl from "@wterm/ghostty/ghostty-vt.wasm?url";
 /** Largest scrollback byte budget accepted by the Ghostty WASM ABI. */
 export const RETAINED_SCROLLBACK_BYTES = 0xffffffff;
 
+/** Covers ConPTY's delayed cursor restoration after a TUI synchronized update. */
+const CURSOR_SETTLE_MS = 50;
+
 /** Measured character grid used for initial launch and later PTY resizing. */
 export interface TerminalGridSize {
   columns: number;
@@ -64,6 +67,7 @@ export class WTermAdapter {
   private surface: WTermSurface | null = null;
   private host: HTMLElement | null = null;
   private initialization: Promise<void> | null = null;
+  private cursorSettleTimer: ReturnType<typeof setTimeout> | null = null;
 
   /** Creates a parked terminal surface with explicit transport callbacks. */
   constructor(
@@ -142,7 +146,16 @@ export class WTermAdapter {
 
   /** Writes raw PTY bytes directly so split UTF-8 and ANSI sequences stay intact. */
   write(data: Uint8Array): void {
-    this.surface?.write(data);
+    if (this.surface === null || data.byteLength === 0) return;
+    // ConPTY can restore the input cursor in a later read, after synchronized output ends.
+    // Parse bytes and deliver protocol replies immediately; suppress only the cursor paint.
+    this.root.classList.add("terminal-output-active");
+    if (this.cursorSettleTimer !== null) clearTimeout(this.cursorSettleTimer);
+    this.surface.write(data);
+    this.cursorSettleTimer = setTimeout(() => {
+      this.cursorSettleTimer = null;
+      this.root.classList.remove("terminal-output-active");
+    }, CURSOR_SETTLE_MS);
   }
 
   /** Applies a nonzero measured grid and reports it to the ordered resize queue. */
@@ -194,6 +207,8 @@ export class WTermAdapter {
 
   /** Releases listeners and all reachable core memory at authoritative disposal. */
   destroy(): void {
+    if (this.cursorSettleTimer !== null) clearTimeout(this.cursorSettleTimer);
+    this.cursorSettleTimer = null;
     this.surface?.destroy();
     this.root.remove();
     this.surface = null;
