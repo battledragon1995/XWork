@@ -23,7 +23,8 @@ use crate::{
     storage::Storage,
     terminal::{
         CliProfileIdFactory, CliProfilesClock, CliProfilesEventSink, CliProfilesService,
-        SystemCliProfilesClock, TauriCliProfilesEventSink, UuidCliProfileIdFactory,
+        NativePtyFactory, SystemCliProfilesClock, TauriCliProfilesEventSink, TerminalManager,
+        UuidCliProfileIdFactory,
     },
 };
 
@@ -36,8 +37,9 @@ use data_participants::{
     CliProfilesDataParticipant, ProjectsDataParticipant, SettingsDataParticipant,
 };
 use data_runtime::{
-    DeferredProjectRuntimeGuard, PhaseOnePaneContentRuntime, SessionsAppRuntime,
-    SessionsCliProfileLookup, SessionsProjectAccess, TauriSessionEventSink,
+    AppTerminalDependencies, DeferredProjectRuntimeGuard, PaneContentRuntimeRouter,
+    SessionsAppRuntime, SessionsCliProfileLookup, SessionsProjectAccess, TauriSessionEventSink,
+    TauriTerminalEventSink,
 };
 use lifecycle::{AppLifecycleError, AppLifecycleState, AppRuntime};
 
@@ -328,7 +330,13 @@ fn app_invoke_handler<R: Runtime>() -> impl Fn(tauri::ipc::Invoke<R>) -> bool + 
         session_commands::get_close_impact,
         session_commands::close_runtime_target,
         session_commands::reopen_last_closed_tab,
-        session_commands::set_observed_session
+        session_commands::set_observed_session,
+        crate::terminal::commands::start_terminal,
+        crate::terminal::commands::get_terminal,
+        crate::terminal::commands::subscribe_terminal_output,
+        crate::terminal::commands::write_terminal,
+        crate::terminal::commands::resize_terminal,
+        crate::terminal::commands::acknowledge_terminal_attention
     ]
 }
 
@@ -371,13 +379,16 @@ where
                     cli_profile_collaborators,
                     start_background_work,
                 );
-                let sessions = setup_sessions(app, project_guard, initial_visibility)?;
+                let (sessions, content_router) =
+                    setup_sessions(app, project_guard, initial_visibility)?;
+                let terminal = setup_terminal(app, &sessions, content_router)?;
                 let runtime = runtime_override.unwrap_or_else(
                     // Normal composition uses Sessions; focused lifecycle tests may inject a fake.
                     || {
                         Arc::new(SessionsAppRuntime::new(
-                            sessions,
+                            sessions.clone(),
                             app.state::<ProjectService>().inner().clone(),
+                            terminal.clone(),
                         ))
                     },
                 );
@@ -460,7 +471,7 @@ fn setup_sessions<R: Runtime>(
     app: &mut App<R>,
     project_guard: Arc<DeferredProjectRuntimeGuard>,
     initial_visibility: Option<bool>,
-) -> Result<SessionManager, Box<dyn std::error::Error>> {
+) -> Result<(Arc<SessionManager>, Arc<PaneContentRuntimeRouter>), Box<dyn std::error::Error>> {
     let main_window_visible = match initial_visibility {
         Some(visible) => visible,
         None => app
@@ -471,15 +482,37 @@ fn setup_sessions<R: Runtime>(
     let projects = app.state::<ProjectService>().inner().clone();
     let profiles = app.state::<CliProfilesService>().inner().clone();
     let gate = app.state::<DataMaintenanceGate>().inner().clone();
-    let manager = SessionManager::new(
+    let content_router = Arc::new(PaneContentRuntimeRouter::new());
+    let manager = Arc::new(SessionManager::new(
         gate,
         Arc::new(SessionsProjectAccess::new(projects)),
         Arc::new(SessionsCliProfileLookup::new(profiles)),
-        Arc::new(PhaseOnePaneContentRuntime::new()),
+        content_router.clone(),
         Arc::new(TauriSessionEventSink::new(app.handle().clone())),
         main_window_visible,
+    ));
+    project_guard.bind(manager.as_ref().clone())?;
+    app.manage(manager.as_ref().clone());
+    Ok((manager, content_router))
+}
+
+/// Constructs, binds, and manages the process-local Terminal capability.
+fn setup_terminal<R: Runtime>(
+    app: &mut App<R>,
+    sessions: &Arc<SessionManager>,
+    content_router: Arc<PaneContentRuntimeRouter>,
+) -> Result<TerminalManager, Box<dyn std::error::Error>> {
+    let dependencies = Arc::new(AppTerminalDependencies::new(
+        app.state::<ProjectService>().inner().clone(),
+        app.state::<CliProfilesService>().inner().clone(),
+        Arc::downgrade(sessions),
+    ));
+    let manager = TerminalManager::new(
+        dependencies,
+        Arc::new(TauriTerminalEventSink::new(app.handle().clone())),
+        Arc::new(NativePtyFactory),
     );
-    project_guard.bind(manager.clone())?;
+    content_router.bind_terminal(&manager)?;
     app.manage(manager.clone());
     Ok(manager)
 }

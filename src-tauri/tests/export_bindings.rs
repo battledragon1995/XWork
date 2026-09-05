@@ -27,7 +27,9 @@ use xwork_lib::terminal::{
     CliProfileAvailabilityDto, CliProfileAvailabilityStatusDto, CliProfileDto,
     CliProfileEnvironmentDto, CliProfileEnvironmentInputDto, CliProfileInputDto, CliProfileKindDto,
     CliProfilesChangeKindDto, CliProfilesChangedDto, CliProfilesError, CliProfilesSnapshotDto,
-    CliShellDto,
+    CliShellDto, PtySizeDto, TerminalDto, TerminalError, TerminalInputAckDto,
+    TerminalProcessStateDto, TerminalProfileUnavailableReasonDto, TerminalResizeAckDto,
+    TerminalStateChangeKindDto, TerminalStateChangedDto, TerminalSubscriptionDto,
 };
 
 /// Generates the complete lifecycle binding in its stable contract order.
@@ -135,6 +137,30 @@ fn generated_cli_profiles_binding() -> String {
     .join("\n")
 }
 
+/// Generates the complete Terminal runtime binding in dependency order.
+fn generated_terminal_binding() -> String {
+    let config = Config::default();
+    [
+        PtySizeDto::export_to_string(&config).expect("PtySizeDto should export"),
+        TerminalProcessStateDto::export_to_string(&config)
+            .expect("TerminalProcessStateDto should export"),
+        TerminalProfileUnavailableReasonDto::export_to_string(&config)
+            .expect("TerminalProfileUnavailableReasonDto should export"),
+        TerminalDto::export_to_string(&config).expect("TerminalDto should export"),
+        TerminalSubscriptionDto::export_to_string(&config)
+            .expect("TerminalSubscriptionDto should export"),
+        TerminalInputAckDto::export_to_string(&config).expect("TerminalInputAckDto should export"),
+        TerminalResizeAckDto::export_to_string(&config)
+            .expect("TerminalResizeAckDto should export"),
+        TerminalStateChangeKindDto::export_to_string(&config)
+            .expect("TerminalStateChangeKindDto should export"),
+        TerminalStateChangedDto::export_to_string(&config)
+            .expect("TerminalStateChangedDto should export"),
+        TerminalError::export_to_string(&config).expect("TerminalError should export"),
+    ]
+    .join("\n")
+}
+
 /// Generates the complete Sessions binding in stable dependency order.
 fn generated_sessions_binding() -> String {
     let config = Config::default();
@@ -218,6 +244,15 @@ fn cli_profiles_binding_matches_rust_contract() {
         binding_path(&["terminal", "cli-profiles.ts"]),
         generated_cli_profiles_binding(),
     );
+}
+
+/// Regenerates the Terminal runtime binding and fails once whenever stale.
+#[test]
+fn terminal_binding_matches_rust_contract() {
+    let generated = generated_terminal_binding();
+    assert!(!generated.contains("Channel"));
+    assert!(!generated.contains("ResolvedCliProfile"));
+    assert_binding_is_current(binding_path(&["terminal", "terminal.ts"]), generated);
 }
 
 /// Regenerates the Sessions binding and fails once whenever it is stale.
