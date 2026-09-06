@@ -247,10 +247,10 @@ async function mount() {
   return view;
 }
 /** Show all actions and keep search independent of IPC. */
-it("renders 18 ordered actions and eleven unavailable handlers", async () => {
+it("renders 18 ordered actions and ten unavailable handlers", async () => {
   await mount();
   expect(screen.getAllByRole("button", { name: /^Change shortcut for/ })).toHaveLength(18);
-  expect(screen.getAllByText("Not available yet")).toHaveLength(11);
+  expect(screen.getAllByText("Not available yet")).toHaveLength(10);
   expect(
     screen.getAllByRole("heading", { level: 3 }).map(
       // Inspect displayed group order without relying on CSS.

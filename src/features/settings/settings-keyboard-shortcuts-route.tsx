@@ -16,6 +16,7 @@ import { SettingsSection } from "./settings-section";
 import { ShortcutRecorderDialog } from "./shortcut-recorder-dialog";
 
 const AVAILABLE = new Set([
+  "search.open_command_palette",
   "tabs.create",
   "tabs.close",
   "tabs.reopen_closed",

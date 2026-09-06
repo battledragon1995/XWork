@@ -24,6 +24,15 @@ Người dùng xem, tìm, đổi và khôi phục phím tắt trong Settings. Th
 - Backend là nguồn duy nhất cho catalog, mặc định, `isCustom`, `conflictsWith` và `isDispatchable`. Assignment trùng vẫn lưu; toàn nhóm xung đột tạm ngừng. Không tự chọn action thắng.
 - Wireframe là trạng thái sản phẩm cuối: Phase 1 có 18 action của BE-009, chưa có Quick Note hoặc File Explorer. Các dòng previous/next được tách theo action ID của backend. `Split down` mặc định là `Primary+Alt+Backslash`; ví dụ `Ctrl+Shift+Backslash` trong wireframe là override. Thay copy “One of them will not fire” bằng `These shortcuts are inactive until the conflict is resolved.`
 
+### Mở rộng giai đoạn 12 — Phím mở Command Palette
+
+- Theo `FE-009-command-palette.md`, thêm `search.open_command_palette` vào availability của Settings: tám action có handler thay vì bảy, mười action chưa có handler thay vì mười một. Quy định số lượng trong lát cắt ban đầu được thay thế bởi phần mở rộng này.
+- Chỉ cập nhật `src/features/settings/settings-keyboard-shortcuts-route.tsx` và `src/features/settings/settings-keyboard-shortcuts-route.test.tsx` trong owner Settings. Catalog 18 action, schema, mutation, defaults và conflict backend giữ nguyên.
+- App SearchEntry đọc public useKeyboardShortcuts; chỉ dispatch khi status ready, pending null, platform hợp lệ và action.isDispatchable. Exact chord hiện hành thay default ngay sau commit; loading/refresh/error/conflict không fallback. Tooltip/keycap không quảng bá accelerator stale.
+- Handler app-level được phép mở từ input/terminal khi không có modal khác; bỏ IME, AltGraph, repeat và event đã xử lý. Recorder giữ quyền nhận phím; không mở Palette trong recorder. Conflict vẫn ngừng cả nhóm dù action còn lại chưa có handler.
+- Bảy action tab/pane đã có handler workspace vẫn được ghi là khả dụng trong Settings, nhưng chưa có public executor trong Palette; FE-009 hiển thị rõ giới hạn riêng này. Không thêm handler previous/next hoặc focus pane trong stage 12.
+- Test Settings xác nhận nhãn availability; test app/Search xác nhận override/reset/conflict/focus/terminal. Native Windows smoke stage 8–12 vẫn pending, không cập nhật historical plan.
+
 ### Ngoài phạm vi
 
 - Không thêm action, multi-stroke shortcut, nhiều tổ hợp cho một action, thao tác bỏ gán phím hoặc nút giải quyết xung đột tự động.

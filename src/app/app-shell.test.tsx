@@ -1,10 +1,12 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
-import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { RouterProvider } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { getKeyboardShortcuts } from "@/lib/ipc/keyboard-shortcuts";
 import * as notifications from "@/lib/ipc/notifications";
+import { searchUnified } from "@/lib/ipc/search";
 import { AppProviders } from "./app-providers";
 import { createAppRouter } from "./app-router";
 import { resetQuitStore, useQuitStore } from "./quit-store";
@@ -45,6 +47,67 @@ vi.mock("@/lib/ipc/sessions", () => ({
 afterEach(() => {
   cleanup();
   resetQuitStore();
+  vi.mocked(getKeyboardShortcuts).mockResolvedValue({ actions: [] });
+});
+
+/** A modal palette takes focus above notifications and yields cleanly to Quit. */
+it("composes palette focus with notifications, route changes and Quit", async () => {
+  const chord = { primary: true, alt: false, shift: false, keyCode: "KeyK" };
+  vi.mocked(getKeyboardShortcuts).mockResolvedValue({
+    actions: [
+      {
+        actionId: "search.open_command_palette",
+        label: "Search",
+        category: "global",
+        scope: "application",
+        currentChord: chord,
+        defaultChord: chord,
+        isCustom: false,
+        conflictsWith: [],
+        isDispatchable: true,
+      },
+    ],
+  });
+  const user = userEvent.setup();
+  const router = createAppRouter(["/"]);
+  const view = render(
+    <AppProviders>
+      <RouterProvider router={router} />
+    </AppProviders>,
+  );
+  await waitFor(() =>
+    expect(screen.getByRole("button", { name: "Search or run a command" })).toHaveTextContent(
+      "Ctrl K",
+    ),
+  );
+  await user.click(screen.getByRole("button", { name: /^Notifications/ }));
+  await screen.findByRole("dialog", { name: "Notifications" });
+  fireEvent.keyDown(document.activeElement ?? document.body, {
+    key: "k",
+    code: "KeyK",
+    ctrlKey: true,
+  });
+  const input = await screen.findByRole("combobox");
+  await waitFor(() => expect(input).toHaveFocus());
+  expect(screen.getAllByRole("combobox")).toHaveLength(1);
+  // An external route change dismisses the search lifetime without restoring old focus.
+  await act(async () => router.navigate("/calendar"));
+  await waitFor(() => expect(screen.queryByRole("combobox")).toBeNull());
+  await user.click(screen.getByRole("button", { name: "Search or run a command" }));
+  await screen.findByRole("combobox");
+  act(() =>
+    useQuitStore.getState().receiveTrayRequest({
+      requestId: 9,
+      summary: { sessionCount: 1, projectCount: 1, runningProcessCount: 1, unsavedFileCount: 0 },
+    }),
+  );
+  const quit = await screen.findByRole("dialog", { name: "Quit XWork?" });
+  await waitFor(() => expect(quit.contains(document.activeElement)).toBe(true));
+  expect(screen.queryByRole("combobox")).toBeNull();
+  const calls = vi.mocked(searchUnified).mock.calls.length;
+  view.unmount();
+  fireEvent.focus(window);
+  expect(searchUnified).toHaveBeenCalledTimes(calls);
 });
 
 /** One mounted notification listener survives route changes and releases on shell unmount. */
@@ -177,6 +240,11 @@ vi.mock("@/lib/ipc/keyboard-shortcuts", () => ({
   setKeyboardShortcut: vi.fn(),
   resetKeyboardShortcut: vi.fn(),
   resetAllKeyboardShortcuts: vi.fn(),
+}));
+
+/** Isolate only palette IPC while keeping the real shell and dialog composition. */
+vi.mock("@/lib/ipc/search", () => ({
+  searchUnified: vi.fn(async () => ({ query: "", groups: [], resultCount: 0, sourceFailures: [] })),
 }));
 /** Isolate platform detection for shell-only tests. */
 vi.mock("@/lib/ipc/app-info", () => ({

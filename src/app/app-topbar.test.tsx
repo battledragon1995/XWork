@@ -194,24 +194,27 @@ describe("AppTopbar context", () => {
 });
 
 describe("AppTopbar reserved entry points", () => {
-  // Verify the search entry keeps its wireframe position but cannot be used yet.
-  it("renders the search entry disabled with its own tooltip", async () => {
+  // Verify the real palette replaces the placeholder without changing its chrome position.
+  it("renders an enabled search entry with its own tooltip", async () => {
     const user = userEvent.setup();
     renderShellAt();
 
     const search = screen.getByRole("button", { name: "Search or run a command" });
-    expect(search).toHaveAttribute("aria-disabled", "true");
+    expect(search).toBeEnabled();
+    expect(search).not.toHaveAttribute("data-tauri-drag-region");
 
     await user.hover(search);
 
     expect(
       await screen.findByRole("tooltip", {
-        name: "Search and the command palette arrive with FE-009.",
+        name: "Search or run a command",
       }),
     ).toBeInTheDocument();
+    await user.click(search);
+    expect(await screen.findByRole("combobox")).toHaveFocus();
   });
 
-  // Verify the reserved shortcut badge is not advertised while the entry does nothing.
+  // Never invent a shortcut when the committed backend catalog is empty.
   it("shows no keyboard shortcut badge on the search entry", () => {
     renderShellAt();
 
@@ -714,4 +717,9 @@ vi.mock("@/lib/ipc/notifications", () => ({
   deleteNotification: vi.fn(),
   clearReadNotifications: vi.fn(),
   openNotification: vi.fn(),
+}));
+
+/** Isolate palette reads while exercising actual topbar composition. */
+vi.mock("@/lib/ipc/search", () => ({
+  searchUnified: vi.fn(async () => ({ query: "", groups: [], resultCount: 0, sourceFailures: [] })),
 }));

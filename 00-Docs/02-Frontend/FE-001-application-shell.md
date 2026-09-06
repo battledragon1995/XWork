@@ -59,6 +59,15 @@ Người dùng mở XWork và thấy một khung ứng dụng hoàn chỉnh: sid
 - Backend liên quan của phần mở rộng là BE-011 và public BE-005; FE-001 không giữ bản sao riêng của unread count, không emit toast hoặc thay observed session thay cho SessionRoute.
 - Kiểm chứng: bell thật/badge và no-drag bằng app-topbar test; composition/lifecycle bằng app-shell test; Open/cancellation/focus bằng các test trong bảng file bổ sung. Smoke Windows giữ pending đến khi thực hiện; không sửa plan lịch sử giai đoạn 8–10.
 
+### Mở rộng giai đoạn 12 — Command Palette
+
+- Contract đầy đủ tại `FE-009-command-palette.md` thay quy định SearchEntry placeholder kể từ stage 12. Shell ghép `src/app/search-entry.tsx` trong topbar; app entry dùng public `src/features/search/index.ts`, sống dưới KeyboardShortcutsProvider sẵn có.
+- Pill vẫn giữ vị trí/kích thước và no-drag, nay mở modal thật; tooltip và accelerator dùng snapshot hiện hành BE-009, không hardcode Ctrl+K khi chưa ready hoặc conflict. Không mount provider thứ hai.
+- App entry sở hữu route context, allowlist sáu navigation command và create-session theo target BE-010; dùng public IPC owner, không import implementation feature khác. Search sở hữu input/results; không đặt business rule trong shell.
+- Shortcut mở Palette chỉ hoạt động trong main, tôn trọng IME/recorder/modal/Quit. Route đổi/hidden/Quit invalidate navigation pending, không giành focus của route hoặc Quit. Chord accepted không đi xuống terminal.
+- Bổ sung phạm vi implementation/test: `src/app/search-entry.tsx`, `src/app/search-entry.test.tsx`, `src/app/app-topbar.tsx`, `src/app/app-topbar.test.tsx`, `src/app/app-shell.test.tsx`; các dependency public/source Search nằm trong bảng File liên quan FE-009. Không sửa router hoặc notification business logic.
+- Smoke native stage 8–12 vẫn pending; không coi nội dung thiết kế này là bằng chứng pass, không sửa historical plan.
+
 ### Ngoài phạm vi
 
 - Nội dung của từng khu vực: Welcome (`FE-002`), Home (`FE-003`), Projects (`FE-004`), Project Overview (`FE-005`), Notes (`FE-019`), Calendar (`FE-021`) và các trang Settings (`FE-011`–`FE-015`, `FE-023`).

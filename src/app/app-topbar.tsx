@@ -1,14 +1,13 @@
-import { Search } from "lucide-react";
 import { useEffect } from "react";
 import { useLocation, useMatches } from "react-router";
 import { Highlight } from "@/components/animate-ui/primitives/effects/highlight";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useProjectsStore } from "@/features/projects/projects-store";
 import { useSessionsStore } from "@/features/sessions/sessions-store";
 import { cn } from "@/lib/utils/cn";
 import { AppMenu } from "./app-menu";
 import type { RouteCrumbHandle } from "./app-router";
 import { NotificationEntry } from "./notification-entry";
+import { SearchEntry } from "./search-entry";
 import { COLLAPSED_SIDEBAR_WIDTH_PX, useShellStore } from "./shell-store";
 import { usePrefersReducedMotion } from "./use-prefers-reduced-motion";
 import { toggleMaximized, WindowControls } from "./window-controls";
@@ -166,27 +165,5 @@ export function AppTopbar(props: { onQuit: () => void; isCheckingQuit: boolean }
         </div>
       </Highlight>
     </header>
-  );
-}
-
-// Reserve the search and command entry point. It stays inert, and `aria-disabled` rather than
-// `disabled` keeps it in the documented focus order and keeps its tooltip reachable.
-function SearchEntry() {
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <button
-          type="button"
-          aria-disabled="true"
-          className="flex h-7 w-[320px] cursor-default items-center gap-2 rounded-md border border-hairline bg-surface-soft pr-2 pl-2.5 text-[13px] text-muted-soft outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          <Search aria-hidden="true" className="size-3.5 shrink-0" />
-          <span>Search or run a command</span>
-        </button>
-      </TooltipTrigger>
-      <TooltipContent side="bottom">
-        Search and the command palette arrive with FE-009.
-      </TooltipContent>
-    </Tooltip>
   );
 }
