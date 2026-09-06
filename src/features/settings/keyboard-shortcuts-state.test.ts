@@ -146,3 +146,59 @@ it("ignores a completed mutation after disposal", async () => {
   expect(await pending).toBe(false);
   expect(listener).not.toHaveBeenCalled();
 });
+
+/** Old shortcut reads never re-enable the obsolete dispatch catalog after import. */
+it("retires a shortcut read across maintenance", async () => {
+  const store = createKeyboardShortcutsState();
+  const old = deferred<KeyboardShortcutsDto>();
+  vi.mocked(ipc.getKeyboardShortcuts).mockReturnValueOnce(old.promise);
+  const loading = store.getSnapshot().refresh();
+  await Promise.resolve();
+  await Promise.resolve();
+  vi.mocked(ipc.getKeyboardShortcuts).mockResolvedValue({ actions: [] });
+  await store.getSnapshot().refreshAfterDataChange();
+  old.resolve(snapshot);
+  await loading;
+  expect(store.getSnapshot().snapshot).toEqual({ actions: [] });
+  store.dispose();
+});
+/** Maintenance blocks new shortcut mutations until the exact producer releases its barrier. */
+it("keeps shortcut writes behind the data barrier", async () => {
+  const store = createKeyboardShortcutsState();
+  await store.getSnapshot().refresh();
+  await store.getSnapshot().settleBeforeDataChange();
+  expect(await store.getSnapshot().resetAll()).toBe(false);
+  expect(ipc.resetAllKeyboardShortcuts).not.toHaveBeenCalled();
+  store.getSnapshot().releaseDataChangeBarrier();
+  store.dispose();
+});
+
+/** A future tagged failure cannot be mistaken for a confirmed rejected shortcut write. */
+it("fails closed for an unknown tagged shortcut write", async () => {
+  const store = createKeyboardShortcutsState();
+  await store.getSnapshot().refresh();
+  vi.mocked(ipc.resetAllKeyboardShortcuts).mockRejectedValueOnce(
+    new IpcCallError("reset_all_keyboard_shortcuts", { code: "future_error" }),
+  );
+  await store.getSnapshot().resetAll();
+  await expect(store.getSnapshot().settleBeforeDataChange()).rejects.toThrow();
+  store.getSnapshot().releaseDataChangeBarrier();
+  store.dispose();
+});
+
+/** Starting a read does not erase write uncertainty before the read returns successfully. */
+it("keeps shortcut uncertainty through a pending reconciliation read", async () => {
+  const store = createKeyboardShortcutsState();
+  await store.getSnapshot().refresh();
+  vi.mocked(ipc.resetAllKeyboardShortcuts).mockRejectedValueOnce(new Error("transport"));
+  await store.getSnapshot().resetAll();
+  const reading = deferred<KeyboardShortcutsDto>();
+  vi.mocked(ipc.getKeyboardShortcuts).mockReturnValueOnce(reading.promise);
+  const refresh = store.getSnapshot().refresh();
+  await expect(store.getSnapshot().settleBeforeDataChange()).rejects.toThrow();
+  reading.resolve(snapshot);
+  await refresh;
+  await store.getSnapshot().settleBeforeDataChange();
+  store.getSnapshot().releaseDataChangeBarrier();
+  store.dispose();
+});

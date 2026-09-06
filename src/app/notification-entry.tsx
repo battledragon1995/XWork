@@ -1,3 +1,4 @@
+import { useOptionalDataManagement } from "@/features/settings/data-management-provider";
 import { useLocation, useNavigate } from "react-router";
 import type { NotificationTargetDto } from "@/bindings/notifications/notifications";
 import type { PaneLayoutNodeDto, SessionDetailDto } from "@/bindings/sessions/sessions";
@@ -31,25 +32,30 @@ function validatedTab(detail: SessionDetailDto, target: NotificationTargetDto) {
 
 /** Composes exact session activation with the persistent notification owner. */
 export function NotificationEntry() {
+  const data = useOptionalDataManagement();
   const location = useLocation();
   const navigate = useNavigate();
   // Quit owns dialog focus while a request or confirmation is in progress.
   const phase = useQuitStore((state) => state.phase);
-  const suspended = phase !== "idle" && phase !== "snapshot-failed";
+  const suspended = (phase !== "idle" && phase !== "snapshot-failed") || (data?.busy ?? false);
   /** Runs only the remaining non-aborted steps; committed backend effects are never rolled back. */
   async function onOpenTarget(target: NotificationTargetDto, signal: AbortSignal) {
-    if (signal.aborted) return;
+    if (signal.aborted || data?.getCurrent().busy) return;
+    const epoch = data?.getCurrent().invalidationEpoch;
+    /** Guard every awaited activation step against maintenance before React effects run. */
+    const retired = () =>
+      signal.aborted || data?.getCurrent().busy || data?.getCurrent().invalidationEpoch !== epoch;
     const detail = await setActivePane(target.sessionId, target.tabId, target.paneId);
-    if (signal.aborted) return;
+    if (retired()) return;
     const tab = validatedTab(detail, target);
     if (tab.maximizedPaneId !== null && tab.maximizedPaneId !== target.paneId) {
       const restored = await setMaximizedPane(target.sessionId, target.tabId, null);
-      if (signal.aborted) return;
+      if (retired()) return;
       const restoredTab = validatedTab(restored, target);
       if (restoredTab.maximizedPaneId !== null && restoredTab.maximizedPaneId !== target.paneId)
         throw new Error("Target remains covered.");
     }
-    if (signal.aborted) return;
+    if (retired()) return;
     await navigate(`/sessions/${encodeURIComponent(target.sessionId)}`, {
       state: {
         notificationFocus: {
@@ -62,8 +68,9 @@ export function NotificationEntry() {
   }
   return (
     <NotificationCenter
+      key={data?.resetEpoch ?? 0}
       onOpenTarget={onOpenTarget}
-      dismissKey={location.key}
+      dismissKey={`${location.key}:${data?.invalidationEpoch ?? 0}`}
       suspended={suspended}
     />
   );

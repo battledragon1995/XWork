@@ -1,3 +1,4 @@
+import { useOptionalDataManagement } from "@/features/settings/data-management-provider";
 import { Search } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router";
@@ -50,11 +51,12 @@ function availability(target: SearchTargetDto): SearchTargetAvailability {
 
 /** Compose route context, configured keyboard dispatch and the seven existing owner actions. */
 export function SearchEntry() {
+  const data = useOptionalDataManagement();
   const location = useLocation();
   const navigate = useNavigate();
   const shortcuts = useKeyboardShortcuts();
   const phase = useQuitStore((state) => state.phase);
-  const suspended = phase !== "idle" && phase !== "snapshot-failed";
+  const suspended = (phase !== "idle" && phase !== "snapshot-failed") || (data?.busy ?? false);
   const [open, setOpen] = useState(false);
   const [context, setContext] = useState<{ ready: boolean; projectId: string | null }>({
     ready: false,
@@ -97,6 +99,7 @@ export function SearchEntry() {
   function show() {
     if (
       suspended ||
+      data?.getCurrent().busy ||
       document.hidden ||
       open ||
       document.querySelector('[aria-modal="true"][role="dialog"], [role="alertdialog"]')
@@ -111,6 +114,12 @@ export function SearchEntry() {
     setError(null);
     setOpen(true);
   }
+  useEffect(
+    /** Retire old query/focus work after every maintenance invalidation. */ () => {
+      if (data?.invalidationEpoch) close(false);
+    },
+    [data?.invalidationEpoch, close],
+  );
   useEffect(() => {
     if (previousSnapshot.current !== shortcuts.snapshot) {
       previousSnapshot.current = shortcuts.snapshot;
@@ -142,6 +151,7 @@ export function SearchEntry() {
     let retired = false;
     /** Resolve route identities from the public owner before sending contextual search. */
     async function resolveContext() {
+      const epoch = data?.getCurrent().invalidationEpoch;
       let projectId: string | null = null;
       try {
         const project = /^\/projects\/([^/]+)\/?$/.exec(location.pathname);
@@ -158,13 +168,14 @@ export function SearchEntry() {
       } catch {
         /* Global search remains available when route context cannot be read. */
       }
-      if (!retired) setContext({ ready: true, projectId });
+      if (!retired && !data?.getCurrent().busy && data?.getCurrent().invalidationEpoch === epoch)
+        setContext({ ready: true, projectId });
     }
     void resolveContext();
     return () => {
       retired = true;
     };
-  }, [open, location.pathname]);
+  }, [open, location.pathname, data?.getCurrent]);
   useEffect(() => {
     if (!dispatchable || suspended || open || !action || !shortcuts.platform) return;
     const platform = shortcuts.platform;
@@ -193,8 +204,11 @@ export function SearchEntry() {
     setBusy(true);
     setError(null);
     const route = location.key;
+    const epoch = data?.getCurrent().invalidationEpoch;
     /** Check the rendered route and Quit state even before cleanup effects run. */
     const valid = () =>
+      data?.getCurrent().invalidationEpoch === epoch &&
+      !data?.getCurrent().busy &&
       live.current &&
       !signal.aborted &&
       !document.hidden &&
@@ -303,7 +317,7 @@ export function SearchEntry() {
         contextProjectId={context.projectId}
         contextReady={context.ready}
         platform={shortcuts.platform}
-        refreshKey={refreshKey}
+        refreshKey={refreshKey + (data?.invalidationEpoch ?? 0)}
         busy={busy}
         executionError={error}
         onClose={() => close(true)}

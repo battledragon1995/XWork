@@ -10,3 +10,14 @@ export function useTerminalRegistry(): TerminalRegistry {
   if (registry === null) throw new Error("TerminalProvider is missing from app composition.");
   return registry;
 }
+
+/** Expose renderer-only maintenance actions through the existing registry identity. */
+export function useTerminalDataBoundary() {
+  const registry = useTerminalRegistry();
+  return {
+    /** Drop renderers only after commit. */
+    clearAfterReset: () => registry.clearAfterReset(),
+    /** Reconcile actual runtime without optimistic deletion. */
+    reconcileAfterResetFailure: () => registry.reconcileAfterResetFailure(),
+  };
+}

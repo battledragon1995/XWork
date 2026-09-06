@@ -468,3 +468,19 @@ describe("useProjects", () => {
     expect(listProjectsMock).toHaveBeenCalledTimes(2);
   });
 });
+
+/** Reset clears old rows before a failing read and retires a response from before reset. */
+it("keeps reset projects empty after query failure and late old response", async () => {
+  const old = deferred<ProjectDto[]>();
+  listProjectsMock.mockReturnValueOnce(old.promise);
+  store().acquire();
+  useProjectsStore.setState({ projects: [PROJECT] });
+  listProjectsMock.mockRejectedValueOnce(new Error("read unavailable"));
+  await expect(store().refreshAfterDataChange(true)).rejects.toThrow();
+  old.resolve([PROJECT]);
+  await Promise.resolve();
+  await Promise.resolve();
+  expect(store().projects).toEqual([]);
+  expect(store().consumerCount).toBe(1);
+  expect(onProjectsChangedMock).toHaveBeenCalledOnce();
+});

@@ -209,7 +209,9 @@ describe("createAppRouter", () => {
     renderAt(path);
 
     expect(screen.getByRole("heading", { level: 1, name: section })).toBeInTheDocument();
-    expect(screen.getByText(`This section arrives with ${owner}.`)).toBeInTheDocument();
+    if (section === "Data")
+      expect(screen.getByRole("button", { name: "Export backup…" })).toBeInTheDocument();
+    else expect(screen.getByText(`This section arrives with ${owner}.`)).toBeInTheDocument();
     expect(readBreadcrumb()).toEqual(["Settings", section]);
     expect(screen.getByRole("link", { name: section })).toHaveAttribute("aria-current", "page");
   });

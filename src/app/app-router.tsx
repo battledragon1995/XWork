@@ -1,3 +1,4 @@
+import { SettingsDataRoute } from "@/features/settings/settings-data-route";
 import { createMemoryRouter, Navigate, type Params } from "react-router";
 import { HomeRoute } from "@/features/home/home-route";
 import { ProjectOverviewRoute } from "@/features/projects/project-overview-route";
@@ -30,6 +31,7 @@ function crumbs(build: RouteCrumbHandle["crumbs"]): RouteCrumbHandle {
 
 // Select the real pages and keep every deferred owner explicit in its placeholder.
 function settingsSectionElement(section: (typeof SETTINGS_SECTIONS)[number]) {
+  if (section.slug === "data") return <SettingsDataRoute />;
   if (section.slug === "keyboard-shortcuts") return <SettingsKeyboardShortcutsRoute />;
   if (section.slug === "general") {
     return <SettingsGeneralRoute />;

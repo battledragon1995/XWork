@@ -20,6 +20,7 @@ export interface SessionsState {
   acquire(): void;
   release(): void;
   refresh(): void;
+  refreshAfterDataChange(clearSnapshot: boolean): Promise<void>;
   applyEvent(event: SessionRuntimeEventDto): void;
 }
 
@@ -35,6 +36,8 @@ let requestToken = 0;
  * snapshot the backend had already assembled, so the event has to win.
  */
 let appliedEventCount = 0;
+/** Aggregate reset has no runtime revision, so subsequent events are read invalidations. */
+let afterDataReset = false;
 
 /**
  * Generation of the current subscription set. Registering a Tauri listener is asynchronous, so
@@ -187,6 +190,29 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
     }
   },
 
+  /** Retire obsolete reads, optionally clear reset projections, and report read failures. */
+  async refreshAfterDataChange(clearSnapshot) {
+    if (clearSnapshot) afterDataReset = true;
+    const token = ++requestToken;
+    set({
+      status: "loading",
+      failure: null,
+      ...(clearSnapshot ? { sessionsByProject: {}, appliedRevision: null } : {}),
+    });
+    try {
+      const snapshot = await listSessions();
+      if (token === requestToken)
+        set({
+          status: "ready",
+          sessionsByProject: groupByProject(snapshot),
+          appliedRevision: null,
+          failure: null,
+        });
+    } catch (error) {
+      if (token === requestToken) set({ status: "error", failure: classifySessionsFailure(error) });
+      throw error;
+    }
+  },
   // Start one unfiltered read. The visible groups stay until it answers.
   refresh() {
     requestToken += 1;
@@ -230,6 +256,10 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
 
   // Apply one committed runtime event, or reload when it proves an event was missed.
   applyEvent(event) {
+    if (afterDataReset) {
+      get().refresh();
+      return;
+    }
     const applied = get().appliedRevision;
 
     if (applied !== null) {
@@ -310,6 +340,7 @@ export function readSessionProjectId(sessionId: string | undefined): string | nu
 export function resetSessionsStore(): void {
   unsubscribe();
   appliedEventCount = 0;
+  afterDataReset = false;
   useSessionsStore.setState({
     status: "idle",
     sessionsByProject: {},

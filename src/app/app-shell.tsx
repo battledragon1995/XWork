@@ -1,3 +1,4 @@
+import { DataManagementHost, DataManagementBridge } from "./data-management-bridge";
 import type { CSSProperties } from "react";
 import { Outlet } from "react-router";
 import { SidebarInset, SidebarProvider } from "@/components/animate-ui/components/radix/sidebar";
@@ -28,49 +29,59 @@ function useIntegrationFailure(): boolean {
 // width lives in the two custom properties the copied sidebar reads, so the topbar brand
 // column and the sidebar always line up on the same two numbers from the shell state.
 export function AppShell() {
+  return (
+    <KeyboardShortcutsProvider>
+      <DataManagementHost>
+        <ShellContent />
+      </DataManagementHost>
+    </KeyboardShortcutsProvider>
+  );
+}
+
+/** Render the persistent shell under the Data maintenance owner. */
+function ShellContent() {
   const isCollapsed = useShellStore((state) => state.isSidebarCollapsed);
   const sidebarWidthPx = useShellStore((state) => state.sidebarWidthPx);
   const toggleSidebarCollapsed = useShellStore((state) => state.toggleSidebarCollapsed);
-  const startQuit = useQuitStore((state) => state.startQuit);
+
   const isCheckingQuit = useQuitStore((state) => state.phase === "requesting");
   const hasIntegrationFailure = useIntegrationFailure();
 
   // Mounted here because this is the innermost persistent component that has router context.
-  useLifecycleEvents();
+  const startQuit = useLifecycleEvents();
 
   return (
-    <KeyboardShortcutsProvider>
-      <div className="grid h-full grid-cols-[minmax(0,1fr)] grid-rows-[40px_minmax(0,1fr)] bg-canvas">
-        <AppTopbar onQuit={() => void startQuit()} isCheckingQuit={isCheckingQuit} />
-        <SidebarProvider
-          data-testid="shell-body"
-          open={!isCollapsed}
-          onOpenChange={() => toggleSidebarCollapsed()}
-          style={
-            {
-              "--sidebar-width": `${sidebarWidthPx}px`,
-              "--sidebar-width-icon": `${COLLAPSED_SIDEBAR_WIDTH_PX}px`,
-            } as CSSProperties
-          }
-          className="relative h-full min-h-0 min-w-0"
-        >
-          <AppSidebar />
-          {!isCollapsed && <SidebarResizeHandle />}
-          <SidebarInset className="flex min-h-0 min-w-0 flex-col overflow-hidden bg-canvas">
-            {hasIntegrationFailure && (
-              <p
-                role="alert"
-                className="shrink-0 border-b border-hairline bg-surface-card px-8 py-2.5 text-[13px] text-error"
-              >
-                {INTEGRATION_MESSAGE}
-              </p>
-            )}
-            <div className="min-h-0 flex-1 overflow-hidden">
-              <Outlet />
-            </div>
-          </SidebarInset>
-        </SidebarProvider>
-      </div>
-    </KeyboardShortcutsProvider>
+    <div className="grid h-full grid-cols-[minmax(0,1fr)] grid-rows-[40px_minmax(0,1fr)] bg-canvas">
+      <AppTopbar onQuit={() => void startQuit()} isCheckingQuit={isCheckingQuit} />
+      <SidebarProvider
+        data-testid="shell-body"
+        open={!isCollapsed}
+        onOpenChange={() => toggleSidebarCollapsed()}
+        style={
+          {
+            "--sidebar-width": `${sidebarWidthPx}px`,
+            "--sidebar-width-icon": `${COLLAPSED_SIDEBAR_WIDTH_PX}px`,
+          } as CSSProperties
+        }
+        className="relative h-full min-h-0 min-w-0"
+      >
+        <AppSidebar />
+        {!isCollapsed && <SidebarResizeHandle />}
+        <SidebarInset className="flex min-h-0 min-w-0 flex-col overflow-hidden bg-canvas">
+          <DataManagementBridge />
+          {hasIntegrationFailure && (
+            <p
+              role="alert"
+              className="shrink-0 border-b border-hairline bg-surface-card px-8 py-2.5 text-[13px] text-error"
+            >
+              {INTEGRATION_MESSAGE}
+            </p>
+          )}
+          <div className="min-h-0 flex-1 overflow-hidden">
+            <Outlet />
+          </div>
+        </SidebarInset>
+      </SidebarProvider>
+    </div>
   );
 }

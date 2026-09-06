@@ -22,6 +22,9 @@ export interface KeyboardShortcutsState {
   error: IpcCallError<KeyboardShortcutsError> | null;
   /** Reconcile with the backend before accepting writes. */
   refresh(): Promise<void>;
+  settleBeforeDataChange(): Promise<void>;
+  releaseDataChangeBarrier(): void;
+  refreshAfterDataChange(): Promise<void>;
   /** Commit an assignment. */
   assign(input: SetKeyboardShortcutInputDto): Promise<boolean>;
   /** Restore an action. */
@@ -71,6 +74,9 @@ export function createKeyboardShortcutsState() {
   let reading: Promise<void> | null = null;
   let writing: Promise<boolean> | null = null;
   let focusQueued = false;
+  let generation = 0;
+  let dataBarrier = false;
+  let uncertainWrite = false;
   let state: KeyboardShortcutsState = {
     snapshot: null,
     platform: null,
@@ -78,6 +84,25 @@ export function createKeyboardShortcutsState() {
     pending: null,
     error: null,
     refresh,
+    /** Claim before yielding and fail closed on an unknown write result. */
+    async settleBeforeDataChange() {
+      dataBarrier = true;
+      focusQueued = false;
+      await writing;
+      if (uncertainWrite) throw new Error("Uncertain shortcut write");
+    },
+    /** Release the maintenance write gate. */
+    releaseDataChangeBarrier() {
+      dataBarrier = false;
+    },
+    /** Retire old reads and disable dispatch until fresh shortcuts arrive. */
+    async refreshAfterDataChange() {
+      generation += 1;
+      reading = null;
+      publish({ snapshot: null, status: "loading", error: null });
+      await refresh();
+      if (state.status === "error") throw state.error;
+    },
     assign,
     resetOne,
     resetAll,
@@ -99,21 +124,25 @@ export function createKeyboardShortcutsState() {
       });
     }
     if (reading !== null) return reading;
+    const token = generation;
     publish({ status: state.snapshot === null ? "loading" : "refreshing", error: null });
     // Schedule IPC after the promise slot is installed, including synchronous test failures.
     reading = Promise.resolve().then(async () => {
       try {
-        if (disposed) return;
+        if (disposed || token !== generation) return;
         const platform = state.platform ?? (await readAppInfo()).osPlatform;
         if (platform !== "windows" && platform !== "macos") throw new Error("Unsupported platform");
-        if (disposed) return;
+        if (disposed || token !== generation) return;
         publish({ platform });
         const snapshot = await getKeyboardShortcuts();
-        publish({ platform, snapshot, status: "ready", error: null });
+        if (token === generation) {
+          uncertainWrite = false;
+          publish({ platform, snapshot, status: "ready", error: null });
+        }
       } catch (error) {
-        publish({ status: "error", error: failure(error) });
+        if (token === generation) publish({ status: "error", error: failure(error) });
       } finally {
-        reading = null;
+        if (token === generation) reading = null;
       }
     });
     return reading;
@@ -124,6 +153,7 @@ export function createKeyboardShortcutsState() {
     operation: () => Promise<KeyboardShortcutsDto>,
   ): Promise<boolean> {
     if (
+      dataBarrier ||
       disposed ||
       reading !== null ||
       writing !== null ||
@@ -149,6 +179,7 @@ export function createKeyboardShortcutsState() {
           "persistence_failed",
           "unauthorized_window",
         ].includes(parsed.payload?.code ?? "");
+        if (!known) uncertainWrite = true;
         publish({ error: parsed, status: known ? "ready" : "error" });
         return false;
       } finally {

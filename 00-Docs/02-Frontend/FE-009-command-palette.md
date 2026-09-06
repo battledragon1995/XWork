@@ -280,6 +280,13 @@ Unit/component dùng IPC mocks có kiểm soát, không runtime mock trong app. 
 - Không cần sửa provider Settings: app tăng refreshKey khi nhận snapshot commit mới, không tăng vì render thông thường; callback/onClose/availability giữ identity ổn định hoặc hook đọc ref để không tự tạo request loop.
 - Smoke/p95 native chỉ chạy trong Windows Sandbox, VM hoặc tài khoản Windows kiểm thử riêng đã có sẵn, dùng app-data/profile và folder disposable của môi trường đó. Production không có override app-data công khai cho binary; không giả định biến XWORK_APP_DATA hoặc đổi APPDATA process-global là seam hợp lệ. Nếu chưa có môi trường cô lập hoặc công cụ đo invoke trong WebView dev, ghi pending và điều kiện unblock; không thêm backend harness/permission/debug command vào phạm vi FE009.
 
+## Mở rộng giai đoạn 13 — Data/reset boundary
+
+- `FE-015-settings-data.md` bổ sung maintenance suspension tại app SearchEntry: khi bắt đầu Data modal/apply hoặc nhận aggregate change, đóng Palette, retire AbortController/context generation và không restore focus cũ. Guard activation kiểm tra generation đồng bộ cả trước và sau mỗi await để createSession/getSession/getProject response cũ không điều hướng sau reset.
+- Sau import, lần mở kế resolve lại context thật và search bằng snapshot shortcut đã refresh. Sau reset, không giữ selected target/session context cũ; không tự mở Palette hoặc navigate từ response trước commit.
+- Public CommandPalette giữ nguyên contract; app có thể dùng refreshKey/close hiện hữu. Không thêm Data/reset/export action vào catalog hoặc mở rộng executor stage 12. Không đăng ký event BE-010 giả; data aggregate do app bridge FE-015 sở hữu.
+- Phạm vi FE-009 chỉ `src/app/search-entry.tsx` và `src/app/search-entry.test.tsx` trong inventory hiện hữu; bridge/owner refresh thuộc inventory FE-015. Native smoke/p95 vẫn pending.
+
 ## Câu hỏi mở
 
 Không có.

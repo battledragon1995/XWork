@@ -256,7 +256,7 @@ export class TerminalRegistryEntry {
   }
 
   /** Reconciles one retained process snapshot without reading output content. */
-  async reconcile(): Promise<void> {
+  async reconcile(reportFailure = false): Promise<void> {
     const terminal = this.state.terminal;
     if (terminal === null || this.disposed) return;
     try {
@@ -264,7 +264,7 @@ export class TerminalRegistryEntry {
     } catch (error) {
       if (error instanceof IpcCallError && error.payload?.code === "terminalNotFound") {
         this.dispose();
-      }
+      } else if (reportFailure) throw error;
     }
   }
 
@@ -602,6 +602,26 @@ export class TerminalRegistry {
     this.unlisten = null;
     if (this.pollTimer !== null) clearInterval(this.pollTimer);
     this.pollTimer = null;
+  }
+
+  /** Dispose renderer state after a confirmed reset without issuing process commands. */
+  clearAfterReset(): void {
+    for (const entry of [...this.entries.values()]) entry.dispose();
+  }
+
+  /** Preserve unconfirmed entries and attempt every read after partial reset failure. */
+  async reconcileAfterResetFailure(): Promise<void> {
+    const results = await Promise.allSettled(
+      [...this.entries.values()].map(
+        /** Query each live entry. */ (entry) => entry.reconcile(true),
+      ),
+    );
+    if (
+      results.some(
+        /** Surface any failed read to app aggregation. */ (result) => result.status === "rejected",
+      )
+    )
+      throw new Error("Terminal refresh failed");
   }
 
   /** Returns one persistent entry per Sessions pane target. */

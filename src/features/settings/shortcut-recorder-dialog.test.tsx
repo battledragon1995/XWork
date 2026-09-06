@@ -33,6 +33,9 @@ beforeEach(() => {
     assign: vi.fn(/** Resolve an isolated backend response. */ async () => true),
     resetOne: vi.fn(),
     resetAll: vi.fn(),
+    settleBeforeDataChange: vi.fn(async () => {}),
+    releaseDataChangeBarrier: vi.fn(),
+    refreshAfterDataChange: vi.fn(async () => {}),
     refresh: vi.fn(),
   };
 });

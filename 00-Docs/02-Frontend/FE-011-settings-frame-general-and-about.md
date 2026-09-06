@@ -267,6 +267,14 @@ export function resetSettingsStore(): void
 | `src/app/app-router.test.tsx` | Component | `/settings` chuyển hướng thay thế sang `/settings/general`; bảy đường dẫn con render đúng trang; breadcrumb hai cấp cho từng mục; route con vẫn gắn error element của shell. |
 | `src-tauri/tests/app_builder.rs` | Integration | Composition root vẫn dựng được sau khi đăng ký plugin `os`. |
 
+## Mở rộng giai đoạn 13 — Data và refresh settings
+
+- `FE-015-settings-data.md` sở hữu nội dung `/settings/data`; route này thay placeholder bằng SettingsDataRoute, giữ slug/nhãn/breadcrumb và khung bảy mục hiện hữu. Các giới hạn “feature chỉ đọc” ở trên áp dụng General/About, không giới hạn Data đã có owner.
+- Snapshot Settings không còn được dùng vô hạn sau import/reset: public `refreshAfterDataChange(): Promise<void>` trong settings-store retire request/mutation generation và draft/queued patch cũ rồi đọc get_settings. Bảo toàn startup retain/bootstrap và subscription; không gọi resetSettingsStore dành cho test. Mutation đã gửi phải settle trước Data confirm, không replay patch cũ sau maintenance.
+- AppearanceThemeSync nhận snapshot mới; app bridge FE-015 áp snapshot.sidebar vào chrome state hiện hữu vì code chưa có subscriber tự đồng bộ sidebar; không thêm writer theme hoặc ghi ngược snapshot nhập về backend. Refresh lỗi sau commit không được đổi kết quả import/reset thành thất bại; app hiển thị retry đọc theo FE-015.
+- Inventory stage 13 cho toàn bộ Data được quy định tại `FE-015-settings-data.md`; phần thuộc FE-011 dùng `src/features/settings/settings-store.ts`, `src/features/settings/settings-store.test.ts`, `src/app/app-router.tsx`, `src/app/app-router.test.tsx` đã liệt kê ở trên. Không thay General/About hoặc placeholder Notifications.
+- Native smoke/metrics còn pending; đây là contract, không evidence pass.
+
 ## Câu hỏi mở
 
 Không có.

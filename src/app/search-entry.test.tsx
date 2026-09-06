@@ -1,3 +1,12 @@
+const maintenance = vi.hoisted(() => ({ value: null as DataManagementState | null }));
+/** Inject the public Data snapshot to exercise epochs before React rerenders. */
+vi.mock("@/features/settings/data-management-provider", () => ({
+  useOptionalDataManagement: () => maintenance.value,
+}));
+import {
+  createDataManagementState,
+  type DataManagementState,
+} from "@/features/settings/data-management-state";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { MemoryRouter, useLocation, useNavigate } from "react-router";
@@ -103,6 +112,7 @@ async function activate() {
 }
 /** Reset isolated IPC and committed shortcuts before every scenario. */
 beforeEach(() => {
+  maintenance.value = null;
   vi.resetAllMocks();
   resetQuitStore();
   const chord = { primary: true, alt: false, shift: false, keyCode: "KeyK" };
@@ -126,6 +136,9 @@ beforeEach(() => {
     status: "ready",
     pending: null,
     error: null,
+    settleBeforeDataChange: vi.fn(async () => {}),
+    releaseDataChangeBarrier: vi.fn(),
+    refreshAfterDataChange: vi.fn(async () => {}),
     refresh: vi.fn(),
     assign: vi.fn(),
     resetOne: vi.fn(),
@@ -460,3 +473,55 @@ it.each(["route", "quit", "hidden", "unmount"])(
     if (mode === "hidden") Reflect.deleteProperty(document, "hidden");
   },
 );
+
+/** Build a local maintenance owner with no native initialization. */
+function dataOwner() {
+  const owner = createDataManagementState({
+    beforeConfirm: async () => () => {},
+    onCommitted: async () => {},
+    onResetUncertain: async () => {},
+    refreshViews: async () => {},
+  });
+  maintenance.value = owner.getSnapshot();
+  return owner;
+}
+
+/** A creation that commits after reset cannot route or restore stale palette focus. */
+it("retires in-flight session creation on Data reset epoch before render", async () => {
+  const owner = dataOwner();
+  let resolve!: (value: SessionDetailDto) => void;
+  vi.mocked(createSession).mockReturnValueOnce(
+    new Promise((yes) => {
+      resolve = yes;
+    }),
+  );
+  vi.mocked(searchUnified).mockResolvedValue(
+    response({ kind: "command", actionId: "sessions.create_current_project", projectId: "p" }),
+  );
+  mount("/projects/p");
+  await open();
+  await activate();
+  await owner.getSnapshot().acceptCommitted("app_reset");
+  await act(async () => resolve(detail("late")));
+  expect(screen.getByTestId("route")).toHaveTextContent("/projects/p");
+  expect(createSession).toHaveBeenCalledOnce();
+});
+/** Owner lookups captured before maintenance cannot navigate once their epoch is obsolete. */
+it("retires getSession activation on Data import", async () => {
+  const owner = dataOwner();
+  let resolve!: (value: SessionDetailDto) => void;
+  vi.mocked(getSession).mockReturnValueOnce(
+    new Promise((yes) => {
+      resolve = yes;
+    }),
+  );
+  vi.mocked(searchUnified).mockResolvedValue(
+    response({ kind: "session", sessionId: "s", projectId: "p" }),
+  );
+  mount();
+  await open();
+  await activate();
+  await owner.getSnapshot().acceptCommitted("backup_imported");
+  await act(async () => resolve(detail()));
+  expect(screen.getByTestId("route").textContent).toBe("/");
+});

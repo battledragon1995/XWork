@@ -27,6 +27,9 @@ export interface SettingsState {
   saveErrorCode: SettingsErrorCode | null;
   saveError: SettingsError | null;
   lastFailedPatch: AppearanceSettingsPatchDto | null;
+  settleBeforeDataChange(): Promise<void>;
+  releaseDataChangeBarrier(): void;
+  refreshAfterDataChange(): Promise<void>;
   load(): Promise<void>;
   previewAppearance(next: AppearanceSettingsDto): void;
   commitAppearance(patch: AppearanceSettingsPatchDto): Promise<void>;
@@ -75,6 +78,10 @@ let mutationGeneration = 0;
 
 /** True while exactly one durable Appearance write is crossing the command boundary. */
 let mutationRunning = false;
+let dataBarrier = false;
+let activeWrite: Promise<void> | null = null;
+let uncertainAppearanceWrite = false;
+let drainToken = 0;
 
 /** The single coalesced operation waiting for the write slot. */
 let pendingMutation: QueuedMutation | null = null;
@@ -133,6 +140,7 @@ function coalesceAppearancePatch(
 
 /** Queue one operation, replacing whatever compatible work was still waiting. */
 function enqueueMutation(operation: QueuedMutation): Promise<void> {
+  if (dataBarrier) return Promise.resolve();
   pendingMutation = operation;
   const settled = new Promise<void>((resolve) => {
     pendingResolvers.push(resolve);
@@ -148,6 +156,7 @@ async function drainMutationQueue(): Promise<void> {
   }
 
   const generation = mutationGeneration;
+  const token = ++drainToken;
   mutationRunning = true;
   try {
     while (pendingMutation !== null && generation === mutationGeneration) {
@@ -156,14 +165,16 @@ async function drainMutationQueue(): Promise<void> {
       pendingMutation = null;
       pendingResolvers = [];
 
-      await runMutation(operation);
+      activeWrite = runMutation(operation);
+      await activeWrite;
+      activeWrite = null;
       for (const resolve of resolvers) {
         resolve();
       }
     }
   } finally {
     // A reset already handed the write slot to a fresh queue, so this drain owns nothing.
-    if (generation === mutationGeneration) {
+    if (token === drainToken) {
       mutationRunning = false;
     }
   }
@@ -208,6 +219,7 @@ async function runMutation(operation: QueuedMutation): Promise<void> {
 
     const error = readSettingsError(rejection);
     const code = error?.code ?? "unknown";
+    if (code === "unknown") uncertainAppearanceWrite = true;
     const retainDraft = RETAIN_DRAFT_CODES.has(code);
     useSettingsStore.setState((state) => ({
       saveStatus: "error",
@@ -229,6 +241,48 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   saveError: null,
   lastFailedPatch: null,
 
+  /** Claim synchronously, discard unsent edits, then await the actual write promise. */
+  async settleBeforeDataChange() {
+    dataBarrier = true;
+    pendingMutation = null;
+    for (const resolve of pendingResolvers) resolve();
+    pendingResolvers = [];
+    set({ appearanceDraft: null });
+    await activeWrite;
+    if (uncertainAppearanceWrite) throw new Error("Uncertain settings write");
+  },
+  /** Release only the maintenance write gate. */
+  releaseDataChangeBarrier() {
+    dataBarrier = false;
+  },
+  /** Retire stale reads/drafts without discarding the application's permanent retain. */
+  async refreshAfterDataChange() {
+    const generation = ++requestGeneration;
+    mutationGeneration += 1;
+    pendingMutation = null;
+    for (const resolve of pendingResolvers) resolve();
+    pendingResolvers = [];
+    inFlight = null;
+    set({
+      appearanceDraft: null,
+      lastFailedPatch: null,
+      saveStatus: "idle",
+      saveError: null,
+      saveErrorCode: null,
+      status: "loading",
+    });
+    try {
+      const snapshot = await getSettings();
+      if (generation === requestGeneration) {
+        uncertainAppearanceWrite = false;
+        set({ snapshot, status: "ready", errorCode: null });
+      }
+    } catch (error) {
+      if (generation === requestGeneration)
+        set({ status: "error", snapshot: null, errorCode: readErrorCode(error) });
+      throw error;
+    }
+  },
   // Read one complete snapshot. Every caller receives the same promise while it is pending.
   async load() {
     if (inFlight !== null) {
@@ -269,6 +323,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
 
   // Show one drafted Appearance value immediately, without touching the backend.
   previewAppearance(next) {
+    if (dataBarrier) return;
     // A new edit replaces the previous failure, so a stale alert cannot outlive its value.
     const clearFailure = get().saveStatus === "error";
     set({
@@ -347,6 +402,10 @@ export function resetSettingsStore(): void {
   pendingMutation = null;
   pendingResolvers = [];
   bootstrapped = false;
+  dataBarrier = false;
+  activeWrite = null;
+  uncertainAppearanceWrite = false;
+  drainToken += 1;
   useSettingsStore.setState({
     status: "idle",
     snapshot: null,

@@ -384,3 +384,32 @@ describe("imperative crumb reads", () => {
     expect(readSessionProjectId(sessionId)).toBeNull();
   });
 });
+
+/** Reset cannot resurrect old session rows from an in-flight query after a failed refresh. */
+it("retires old session reads while preserving the runtime subscription", async () => {
+  const old = deferred<SessionSummaryDto[]>();
+  listSessionsMock.mockReturnValueOnce(old.promise);
+  useSessionsStore.getState().acquire();
+  useSessionsStore.setState({ sessionsByProject: { [FIXTURE_PROJECT_ID]: [ALPHA_ONE] } });
+  listSessionsMock.mockRejectedValueOnce(new Error("read unavailable"));
+  await expect(useSessionsStore.getState().refreshAfterDataChange(true)).rejects.toThrow();
+  old.resolve([ALPHA_ONE]);
+  await Promise.resolve();
+  await Promise.resolve();
+  expect(useSessionsStore.getState().sessionsByProject).toEqual({});
+  expect(useSessionsStore.getState().consumerCount).toBe(1);
+  expect(onRuntimeChangedMock).toHaveBeenCalledOnce();
+});
+
+/** A delayed pre-reset event must query current runtime instead of resurrecting its payload. */
+it("treats post-reset runtime events as invalidations", async () => {
+  useSessionsStore.getState().acquire();
+  await Promise.resolve();
+  listSessionsMock.mockResolvedValue([]);
+  await useSessionsStore.getState().refreshAfterDataChange(true);
+  useSessionsStore
+    .getState()
+    .applyEvent(createRuntimeEvent({ summary: ALPHA_ONE, sessionId: ALPHA_ONE.id }));
+  expect(useSessionsStore.getState().sessionsByProject).toEqual({});
+  await Promise.resolve();
+});

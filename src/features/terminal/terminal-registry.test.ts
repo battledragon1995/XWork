@@ -352,3 +352,55 @@ it("tombstones disposed entries and releases retained resources", async () => {
   expect(writes).toEqual([]);
   expect(registry.findTerminal("terminal-1")).toBeNull();
 });
+
+/** Confirmed reset destroys renderer state idempotently without launching a replacement. */
+it("clears reset renderers without process commands", async () => {
+  const { ipc } = ipcFixture();
+  const { adapter } = adapterFixture();
+  const registry = new TerminalRegistry(ipc, () => adapter);
+  const entry = registry.entry(target());
+  const detach = entry.attach(document.createElement("div"));
+  await flush();
+  vi.mocked(ipc.startTerminal).mockClear();
+  registry.clearAfterReset();
+  registry.clearAfterReset();
+  detach();
+  expect(adapter.destroy).toHaveBeenCalledOnce();
+  expect(registry.findTerminal("terminal-1")).toBeNull();
+  expect(ipc.startTerminal).not.toHaveBeenCalled();
+});
+/** Failed runtime reads preserve unconfirmed renderer state and report incomplete reconciliation. */
+it("preserves terminal identity on uncertain reset reconciliation", async () => {
+  const { ipc } = ipcFixture();
+  const { adapter } = adapterFixture();
+  const registry = new TerminalRegistry(ipc, () => adapter);
+  const entry = registry.entry(target());
+  entry.attach(document.createElement("div"));
+  await flush();
+  vi.mocked(ipc.getTerminal).mockRejectedValueOnce(new Error("lost response"));
+  await expect(registry.reconcileAfterResetFailure()).rejects.toThrow();
+  expect(adapter.destroy).not.toHaveBeenCalled();
+  expect(registry.findTerminal("terminal-1")).toBe(entry);
+  registry.clearAfterReset();
+});
+
+/** A runtime response already in flight cannot re-index a disposed reset renderer. */
+it("does not resurrect a renderer from late reconciliation", async () => {
+  const { ipc } = ipcFixture();
+  const { adapter } = adapterFixture();
+  const registry = new TerminalRegistry(ipc, () => adapter);
+  const entry = registry.entry(target());
+  entry.attach(document.createElement("div"));
+  await flush();
+  let resolve!: (value: TerminalDto) => void;
+  vi.mocked(ipc.getTerminal).mockReturnValueOnce(
+    new Promise((yes) => {
+      resolve = yes;
+    }),
+  );
+  const pending = registry.reconcileAfterResetFailure();
+  registry.clearAfterReset();
+  resolve(terminal());
+  await pending;
+  expect(registry.findTerminal("terminal-1")).toBeNull();
+});

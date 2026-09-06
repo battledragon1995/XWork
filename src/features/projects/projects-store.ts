@@ -23,6 +23,7 @@ export interface ProjectsState {
   acquire(): void;
   release(): void;
   refresh(): void;
+  refreshAfterDataChange(clearSnapshot: boolean): Promise<void>;
   beginAdd(): boolean;
   endAdd(failure: AddProjectFailure | null): void;
 }
@@ -147,6 +148,18 @@ export const useProjectsStore = create<ProjectsState>((set, get) => ({
     }
   },
 
+  /** Retire obsolete reads, optionally clear reset projections, and report read failures. */
+  async refreshAfterDataChange(clearSnapshot) {
+    const token = ++requestToken;
+    set({ status: "loading", failure: null, ...(clearSnapshot ? { projects: [] } : {}) });
+    try {
+      const snapshot = await listProjects();
+      if (token === requestToken) set({ status: "ready", projects: snapshot, failure: null });
+    } catch (error) {
+      if (token === requestToken) set({ status: "failed", failure: classifyListFailure(error) });
+      throw error;
+    }
+  },
   // Start one unfiltered query. The visible list stays until this query answers.
   refresh() {
     requestToken += 1;

@@ -642,3 +642,60 @@ describe("failure clearing and reset", () => {
     expect(typeof shell.isAvailable).toBe("boolean");
   });
 });
+
+/** Inactive CLI refresh invalidates without adding a hidden listener or consumer. */
+it("invalidates inactive CLI state without retaining a consumer", async () => {
+  useCliProfilesStore.setState({ snapshot: createCliProfilesSnapshot(), status: "ready" });
+  await state().refreshAfterDataChange();
+  expect(state().snapshot).toBeNull();
+  expect(state().consumerCount).toBe(0);
+  expect(onCliProfilesChangedMock).not.toHaveBeenCalled();
+  expect(getCliProfilesMock).not.toHaveBeenCalled();
+});
+/** A released route must not hide a still-running write from Data's barrier. */
+it("awaits CLI writes across consumer release", async () => {
+  state().acquire();
+  await flush();
+  const write = deferred<ReturnType<typeof createCliProfilesSnapshot>>();
+  createCliProfileMock.mockReturnValue(write.promise);
+  const pending = state().create(INPUT);
+  state().release();
+  let settled = false;
+  const barrier = state()
+    .settleBeforeDataChange()
+    .then(() => {
+      settled = true;
+    });
+  await flush();
+  expect(settled).toBe(false);
+  expect(await state().create(INPUT)).toBe(false);
+  write.resolve(createCliProfilesSnapshot());
+  await pending;
+  await barrier;
+  expect(settled).toBe(true);
+  state().releaseDataChangeBarrier();
+});
+/** Old CLI snapshots cannot overwrite a maintenance generation while listeners stay retained. */
+it("retires old CLI reads and retains subscribers", async () => {
+  const old = deferred<ReturnType<typeof createCliProfilesSnapshot>>();
+  getCliProfilesMock.mockReturnValueOnce(old.promise);
+  state().acquire();
+  const fresh = createCliProfilesSnapshot({ revision: "50" });
+  getCliProfilesMock.mockResolvedValue(fresh);
+  await state().refreshAfterDataChange();
+  old.resolve(createCliProfilesSnapshot());
+  await flush();
+  expect(state().snapshot).toBe(fresh);
+  expect(state().consumerCount).toBe(1);
+  expect(onCliProfilesChangedMock).toHaveBeenCalledOnce();
+});
+
+/** An unrecognized tagged write failure remains uncertain for the Data barrier. */
+it("fails closed for an unknown tagged CLI write", async () => {
+  createCliProfileMock.mockRejectedValueOnce(
+    new IpcCallError("create_cli_profile", { code: "future_error" }),
+  );
+  await state().create(INPUT);
+  await expect(state().settleBeforeDataChange()).rejects.toThrow();
+  state().releaseDataChangeBarrier();
+});

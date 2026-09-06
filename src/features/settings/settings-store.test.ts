@@ -676,3 +676,71 @@ describe("bootstrapAppSettings", () => {
     expect(getSettingsMock).toHaveBeenCalledTimes(2);
   });
 });
+
+/** Maintenance drops queued edits, awaits the sent write and preserves startup retention. */
+it("settles sent Appearance work and discards the queued patch", async () => {
+  resetSettingsStore();
+  vi.clearAllMocks();
+  const old = createSettingsSnapshot();
+  const fresh = { ...createSettingsSnapshot(), revision: "25" };
+  getSettingsMock.mockResolvedValue(old);
+  bootstrapAppSettings();
+  await useSettingsStore.getState().load();
+  const write = deferred<AppSettingsDto>();
+  updateSettingsMock.mockReturnValueOnce(write.promise);
+  const first = useSettingsStore.getState().commitAppearance({ themePreset: "ink" });
+  const queued = useSettingsStore.getState().commitAppearance({ themePreset: "paper" });
+  let settled = false;
+  const barrier = useSettingsStore
+    .getState()
+    .settleBeforeDataChange()
+    .then(() => {
+      settled = true;
+    });
+  await queued;
+  expect(settled).toBe(false);
+  write.resolve(old);
+  await first;
+  await barrier;
+  expect(updateSettingsMock).toHaveBeenCalledOnce();
+  getSettingsMock.mockResolvedValue(fresh);
+  await useSettingsStore.getState().refreshAfterDataChange();
+  expect(useSettingsStore.getState().snapshot).toBe(fresh);
+  expect(useSettingsStore.getState().appearanceDraft).toBeNull();
+  useSettingsStore.getState().releaseDataChangeBarrier();
+  resetSettingsStore();
+});
+/** An old read cannot republish after maintenance, even if a retain remains active. */
+it("retires pre-maintenance settings reads", async () => {
+  resetSettingsStore();
+  const release = retainSettingsArea();
+  const old = deferred<AppSettingsDto>();
+  getSettingsMock.mockReturnValueOnce(old.promise);
+  const loading = useSettingsStore.getState().load();
+  const fresh = { ...createSettingsSnapshot(), revision: "50" };
+  getSettingsMock.mockResolvedValue(fresh);
+  await useSettingsStore.getState().refreshAfterDataChange();
+  old.resolve(createSettingsSnapshot());
+  await loading;
+  expect(useSettingsStore.getState().snapshot).toBe(fresh);
+  release();
+  resetSettingsStore();
+});
+
+/** An unsuccessful refresh cannot resolve uncertainty about a prior Appearance write. */
+it("keeps uncertain settings writes blocked until a successful read", async () => {
+  resetSettingsStore();
+  updateSettingsMock.mockRejectedValueOnce(new Error("transport"));
+  await useSettingsStore.getState().commitAppearance({ themePreset: "paper" });
+  await expect(useSettingsStore.getState().settleBeforeDataChange()).rejects.toThrow();
+  useSettingsStore.getState().releaseDataChangeBarrier();
+  getSettingsMock.mockRejectedValueOnce(new Error("read"));
+  await expect(useSettingsStore.getState().refreshAfterDataChange()).rejects.toThrow();
+  await expect(useSettingsStore.getState().settleBeforeDataChange()).rejects.toThrow();
+  useSettingsStore.getState().releaseDataChangeBarrier();
+  getSettingsMock.mockResolvedValueOnce(createSettingsSnapshot());
+  await useSettingsStore.getState().refreshAfterDataChange();
+  await useSettingsStore.getState().settleBeforeDataChange();
+  useSettingsStore.getState().releaseDataChangeBarrier();
+  resetSettingsStore();
+});

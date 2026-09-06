@@ -1,3 +1,12 @@
+const maintenance = vi.hoisted(() => ({ value: null as DataManagementState | null }));
+/** Inject the public Data snapshot to exercise epochs before React rerenders. */
+vi.mock("@/features/settings/data-management-provider", () => ({
+  useOptionalDataManagement: () => maintenance.value,
+}));
+import {
+  createDataManagementState,
+  type DataManagementState,
+} from "@/features/settings/data-management-state";
 import { act, cleanup, render, screen } from "@testing-library/react";
 import { MemoryRouter, useLocation } from "react-router";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -81,6 +90,7 @@ function deferred<T>() {
 }
 // Each scenario owns independent session responses and quit state.
 beforeEach(() => {
+  maintenance.value = null;
   vi.resetAllMocks();
   resetQuitStore();
   vi.mocked(sessions.setActivePane).mockResolvedValue(detail());
@@ -202,4 +212,32 @@ it("suspends on all active Quit phases and permits idle/snapshot-failed", () => 
     act(() => useQuitStore.setState({ phase }));
     expect(bridge.props?.suspended).toBe(phase !== "idle" && phase !== "snapshot-failed");
   }
+});
+
+/** Build a local maintenance owner with no native initialization. */
+function dataOwner() {
+  const owner = createDataManagementState({
+    beforeConfirm: async () => () => {},
+    onCommitted: async () => {},
+    onResetUncertain: async () => {},
+    refreshViews: async () => {},
+  });
+  maintenance.value = owner.getSnapshot();
+  return owner;
+}
+
+/** Maintenance retires an activation already waiting on setActivePane before another IPC step. */
+it("retires pending notification activation after Data reset", async () => {
+  const owner = dataOwner();
+  const pending = deferred<SessionDetailDto>();
+  vi.mocked(sessions.setActivePane).mockReturnValueOnce(pending.promise);
+  mount();
+  const activation = bridge.props?.onOpenTarget(target, new AbortController().signal);
+  await owner.getSnapshot().acceptCommitted("app_reset");
+  await act(async () => {
+    pending.resolve(detail("covered"));
+    await activation;
+  });
+  expect(sessions.setMaximizedPane).not.toHaveBeenCalled();
+  expect(screen.getByTestId("destination")).toHaveTextContent('"pathname":"/projects"');
 });

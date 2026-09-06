@@ -1,3 +1,8 @@
+import * as dataIpc from "@/lib/ipc/data-management";
+import { onQuitRequested, requestQuit, cancelQuit } from "@/lib/ipc/app-lifecycle";
+import { getSettings } from "@/lib/ipc/settings";
+import { createSettingsSnapshot } from "@/features/settings/settings-test-fixture";
+import { resetSettingsStore } from "@/features/settings/settings-store";
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
@@ -268,3 +273,94 @@ vi.mock("@/lib/ipc/notifications", () => ({
   clearReadNotifications: vi.fn(),
   openNotification: vi.fn(),
 }));
+
+/** Supply Data and lifecycle commands explicitly; these shell tests cannot reach native resources. */
+vi.mock("@/lib/ipc/data-management", async (original) => ({
+  ...(await original<typeof dataIpc>()),
+  getDataLocation: vi.fn(async () => ({
+    directory: "isolated-test",
+    databaseFileName: "test.db",
+    logsDirectoryName: "logs",
+  })),
+  onDataChanged: vi.fn(async () => () => {}),
+  prepareResetXwork: vi.fn(),
+  confirmResetXwork: vi.fn(),
+  cancelDataOperation: vi.fn(async () => {}),
+}));
+vi.mock("@/lib/ipc/settings", () => ({
+  getSettings: vi.fn(),
+  updateSettings: vi.fn(),
+  restoreAppearanceDefaults: vi.fn(),
+}));
+vi.mock("@/lib/ipc/app-lifecycle", () => ({
+  onQuitRequested: vi.fn(async () => () => {}),
+  onNavigateSession: vi.fn(async () => () => {}),
+  requestQuit: vi.fn(),
+  cancelQuit: vi.fn(),
+  confirmQuit: vi.fn(),
+}));
+/** A real shell keeps reset apply alive after route departure and defers the tray Quit dialog. */
+it("keeps Data apply alive across route changes and obtains fresh Quit impact", async () => {
+  resetSettingsStore();
+  vi.mocked(getSettings).mockResolvedValue(createSettingsSnapshot());
+  vi.mocked(dataIpc.prepareResetXwork).mockResolvedValue({
+    requestId: 3,
+    projects: 0,
+    customCliProfiles: 0,
+    keyboardShortcutOverrides: 0,
+    settingsDifferFromDefault: false,
+    notes: 0,
+    events: 0,
+    sessions: 0,
+    runningProcesses: 0,
+    unsavedDocuments: 0,
+  });
+  let resolve!: (value: Awaited<ReturnType<typeof dataIpc.confirmResetXwork>>) => void;
+  vi.mocked(dataIpc.confirmResetXwork).mockReturnValueOnce(
+    new Promise((yes) => {
+      resolve = yes;
+    }),
+  );
+  const quit = {
+    requestId: 10,
+    summary: { sessionCount: 1, projectCount: 1, runningProcessCount: 1, unsavedFileCount: 0 },
+  };
+  vi.mocked(cancelQuit).mockResolvedValueOnce(undefined);
+  vi.mocked(requestQuit).mockResolvedValueOnce(quit);
+  const router = createAppRouter(["/settings/data"]);
+  render(
+    <AppProviders>
+      <RouterProvider router={router} />
+    </AppProviders>,
+  );
+  await waitFor(() => expect(screen.getByRole("button", { name: "Reset XWork…" })).toBeEnabled());
+  fireEvent.click(screen.getByRole("button", { name: "Reset XWork…" }));
+  await screen.findByRole("dialog", { name: "Reset XWork?" });
+  fireEvent.change(screen.getByLabelText("Type RESET to confirm"), { target: { value: "RESET" } });
+  fireEvent.click(screen.getByRole("button", { name: "Reset XWork" }));
+  await waitFor(() => expect(dataIpc.confirmResetXwork).toHaveBeenCalledOnce());
+  const callback = vi.mocked(onQuitRequested).mock.calls.at(-1)?.[0];
+  act(() => callback?.({ ...quit, requestId: 9 }));
+  expect(screen.queryByRole("dialog", { name: "Quit XWork?" })).toBeNull();
+  await act(async () => router.navigate("/calendar"));
+  expect(screen.getByRole("dialog", { name: "Reset XWork?" })).toBeVisible();
+  await act(async () =>
+    resolve({
+      projectsRemoved: 0,
+      customCliProfilesRemoved: 0,
+      keyboardShortcutOverridesRemoved: 0,
+      settingsReset: true,
+      notesRemoved: 0,
+      eventsRemoved: 0,
+      sessionsStopped: 0,
+      credentialCleanupPending: 0,
+    }),
+  );
+  await screen.findByRole("dialog", { name: "Quit XWork?" });
+  expect(router.state.location.pathname).toBe("/");
+  expect(cancelQuit).toHaveBeenCalledWith(9);
+  expect(requestQuit).toHaveBeenCalledOnce();
+  expect(screen.getByText("XWork has been reset.")).toBeInTheDocument();
+  expect(screen.queryByRole("dialog", { name: "Reset XWork?" })).toBeNull();
+  resetSettingsStore();
+});

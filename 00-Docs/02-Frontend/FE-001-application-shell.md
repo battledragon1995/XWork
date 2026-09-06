@@ -86,7 +86,27 @@ Người dùng mở XWork và thấy một khung ứng dụng hoàn chỉnh: sid
 - `BE-001` không có query trạng thái maximized. Icon nút Maximize chỉ phản ánh giá trị trả về gần nhất của `toggle_main_window_maximized`; xem `Edge case`.
 - `File liên quan` của `BE-001` giữ `src-tauri/tauri.conf.json` và `src-tauri/capabilities/main.json` nhưng chưa nêu `decorations: false` và ba quyền frontend cần cho event và kéo cửa sổ. Lát cắt FE-001 thay đổi hai file này; tài liệu `BE-001` cần được cập nhật trong một thay đổi riêng.
 
+### Mở rộng giai đoạn 13 — Data maintenance boundary
+
+- Theo `FE-015-settings-data.md`, shell ghép một DataManagementProvider/bridge sống xuyên route dưới router và KeyboardShortcutsProvider. Settings giữ operation UI, app bridge refresh public owners và điều hướng; không đưa orchestration Rust lên frontend.
+- Import/reset confirm suspend Search/Notifications và mọi navigation có thể giữ target cũ. Reset commit retire generation, đóng overlay, clear UI terminal qua public owner, refresh Projects/Sessions/Settings/Shortcuts/CLI/Notifications rồi về `/` bằng replace; hiển thị Welcome/Home hiện hữu. Không remount toàn app, không true-Quit/restart, không dừng terminal khi import.
+- `data://changed` chỉ mang kind và best effort; command success là fallback. Refresh idempotent, không replay mutation; partial refresh failure hiển thị trạng thái dữ liệu đã lưu và nút retry reads. Các response trước reset không được khôi phục route, focus hoặc row đã mất.
+- Quit ở preview cancel/retire preview rồi nhường dialog; khi apply giữ pending Quit để trình bày sau Data settle, dùng impact mới theo lifecycle hiện có. Tray session navigation trong busy bị bỏ qua; sau reset validate getSession trước navigate. Native hide vẫn hoạt động, không ép show/focus main khi hidden.
+- File scope implementation stage 13 đầy đủ tại FE-015; chỉ mở rộng các boundary trên, không sửa layout hay thiết kế feature lân cận. Native smoke và metrics vẫn pending.
+
 ## File liên quan
+
+### Bổ sung inventory stage 13
+
+| Đường dẫn | Vai trò |
+|---|---|
+| `src/app/data-management-bridge.tsx` | Aggregate event/command reconciliation, owner refresh và routing |
+| `src/app/data-management-bridge.test.tsx` | Commit/event race, partial refresh và reset lifecycle |
+| `src/features/settings/data-management-provider.tsx` | Public Data provider/hook được shell ghép |
+| `src/lib/ipc/data-management.ts` | Chín command và listener data aggregate |
+| `src/features/terminal/index.ts` | Public reset/reconcile boundary của renderer |
+
+Các file shell/route/search/notification/lifecycle và test tương ứng đã có trong inventory hoặc FE-015 là phạm vi tích hợp; không thêm backend command.
 
 | Đường dẫn | Vai trò trong feature |
 |---|---|

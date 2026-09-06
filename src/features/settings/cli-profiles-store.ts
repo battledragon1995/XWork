@@ -12,6 +12,7 @@ import {
 } from "@/lib/ipc/cli-profiles";
 import {
   classifyCliProfilesFailure,
+  readCliProfilesErrorCode,
   type CliProfilesFailure,
   type CliProfilesMutationKind,
   compareCliProfileRevisions,
@@ -37,6 +38,9 @@ export interface CliProfilesState {
   consumerCount: number;
   mutation: CliProfilesMutation | null;
   checkingProfileIds: ReadonlySet<string>;
+  settleBeforeDataChange(): Promise<void>;
+  releaseDataChangeBarrier(): void;
+  refreshAfterDataChange(): Promise<void>;
   acquire(): void;
   release(): void;
   refresh(): void;
@@ -73,6 +77,23 @@ let refreshRunning = false;
 
 /** True when at least one invalidation arrived during the running read. */
 let refreshQueued = false;
+let dataBarrier = false;
+const activeWrites = new Set<Promise<unknown>>();
+let uncertainWrite = false;
+
+/** Track real commands even after the route releases its consumer. */
+async function trackedWrite<T>(call: () => Promise<T>): Promise<T> {
+  const work = call();
+  activeWrites.add(work);
+  try {
+    return await work;
+  } catch (error) {
+    if (readCliProfilesErrorCode(error) === "unknown") uncertainWrite = true;
+    throw error;
+  } finally {
+    activeWrites.delete(work);
+  }
+}
 
 /** Register the one invalidation listener the feature needs. */
 function subscribe(): void {
@@ -194,7 +215,7 @@ async function runMutation(
   call: () => Promise<CliProfilesSnapshotDto>,
 ): Promise<boolean> {
   const store = useCliProfilesStore;
-  if (store.getState().mutation !== null) {
+  if (dataBarrier || store.getState().mutation !== null) {
     return false;
   }
 
@@ -202,7 +223,7 @@ async function runMutation(
   store.setState({ mutation, failure: null });
 
   try {
-    const snapshot = await call();
+    const snapshot = await trackedWrite(call);
     if (generation !== sessionGeneration) {
       return false;
     }
@@ -239,6 +260,41 @@ export const useCliProfilesStore = create<CliProfilesState>((set, get) => ({
   mutation: null,
   checkingProfileIds: new Set<string>(),
 
+  /** Stop new writes while awaiting every command already sent. */
+  async settleBeforeDataChange() {
+    dataBarrier = true;
+    await Promise.allSettled([...activeWrites]);
+    if (uncertainWrite) throw new Error("Uncertain CLI write");
+  },
+  /** Release the maintenance gate without changing subscriptions. */
+  releaseDataChangeBarrier() {
+    dataBarrier = false;
+  },
+  /** Invalidate old reads and checks while retaining real consumers only. */
+  async refreshAfterDataChange() {
+    const generation = ++sessionGeneration;
+    refreshRunning = false;
+    refreshQueued = false;
+    set({
+      snapshot: null,
+      mutation: null,
+      checkingProfileIds: new Set(),
+      failure: null,
+      status: "idle",
+    });
+    if (get().consumerCount === 0 && !uncertainWrite) return;
+    try {
+      const snapshot = await getCliProfiles();
+      if (generation === sessionGeneration) {
+        uncertainWrite = false;
+        acceptSnapshot(snapshot);
+      }
+    } catch (error) {
+      if (generation === sessionGeneration)
+        set({ status: "error", failure: classifyCliProfilesFailure(error, "refresh", null) });
+      throw error;
+    }
+  },
   // Register one mounted consumer. Only the transition from zero subscribes and reads, which
   // is what keeps the page and its modals on one listener and one snapshot.
   acquire() {
@@ -306,7 +362,7 @@ export const useCliProfilesStore = create<CliProfilesState>((set, get) => ({
   // Re-check one saved profile. A second press on the same row is dropped; other rows queue
   // behind the backend's own limit instead of behind this store.
   async check(profileId) {
-    if (get().checkingProfileIds.has(profileId)) {
+    if (dataBarrier || get().checkingProfileIds.has(profileId)) {
       return false;
     }
 
@@ -314,7 +370,9 @@ export const useCliProfilesStore = create<CliProfilesState>((set, get) => ({
     set((current) => ({ checkingProfileIds: new Set(current.checkingProfileIds).add(profileId) }));
 
     try {
-      await checkCliProfile(profileId);
+      await trackedWrite(
+        /** Track the admitted availability check. */ () => checkCliProfile(profileId),
+      );
       if (generation !== sessionGeneration) {
         return false;
       }
@@ -353,6 +411,9 @@ export const useCliProfilesStore = create<CliProfilesState>((set, get) => ({
 
 /** Restore every documented default and drop the listener so tests cannot inherit state. */
 export function resetCliProfilesStore(): void {
+  dataBarrier = false;
+  activeWrites.clear();
+  uncertainWrite = false;
   unsubscribe();
   useCliProfilesStore.setState({
     status: "idle",

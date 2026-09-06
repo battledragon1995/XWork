@@ -1,8 +1,24 @@
+import { IpcCallError } from "@/lib/ipc/ipc-error";
+const maintenance = vi.hoisted(() => ({ value: null as DataManagementState | null }));
+/** Inject the public Data snapshot to exercise epochs before React rerenders. */
+vi.mock("@/features/settings/data-management-provider", () => ({
+  useOptionalDataManagement: () => maintenance.value,
+}));
+import {
+  createDataManagementState,
+  type DataManagementState,
+} from "@/features/settings/data-management-state";
+import { getSession } from "@/lib/ipc/sessions";
 // @vitest-environment jsdom
-import { cleanup, renderHook, waitFor } from "@testing-library/react";
+import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { QuitRequestDto, SessionNavigationDto } from "@/bindings/app-lifecycle";
-import { onNavigateSession, onQuitRequested } from "@/lib/ipc/app-lifecycle";
+import {
+  cancelQuit,
+  requestQuit,
+  onNavigateSession,
+  onQuitRequested,
+} from "@/lib/ipc/app-lifecycle";
 import { resetQuitStore, useQuitStore } from "./quit-store";
 import { useLifecycleEvents } from "./use-lifecycle-events";
 
@@ -15,6 +31,7 @@ vi.mock("@/lib/ipc/app-lifecycle", () => ({
   confirmQuit: vi.fn(),
 }));
 
+vi.mock("@/lib/ipc/sessions", () => ({ getSession: vi.fn() }));
 const navigateMock = vi.fn();
 vi.mock("react-router", () => ({ useNavigate: () => navigateMock }));
 
@@ -29,6 +46,7 @@ let emitQuitRequested: (request: QuitRequestDto) => void;
 let emitNavigateSession: (target: SessionNavigationDto) => void;
 
 beforeEach(() => {
+  maintenance.value = null;
   vi.clearAllMocks();
   resetQuitStore();
 
@@ -106,9 +124,14 @@ describe("useLifecycleEvents", () => {
       expect(onNavigateSessionMock).toHaveBeenCalledOnce();
     });
 
+    vi.mocked(getSession).mockResolvedValue({ summary: { id: "9f3a-B7 c" } } as Awaited<
+      ReturnType<typeof getSession>
+    >);
     emitNavigateSession({ sessionId: "9f3a-B7 c" });
 
-    expect(navigateMock).toHaveBeenCalledExactlyOnceWith("/sessions/9f3a-B7 c");
+    await waitFor(() =>
+      expect(navigateMock).toHaveBeenCalledExactlyOnceWith("/sessions/9f3a-B7%20c"),
+    );
   });
 
   // Verify both subscriptions are removed so a hot reload cannot leave duplicate handlers.
@@ -127,4 +150,112 @@ describe("useLifecycleEvents", () => {
     });
     expect(unlistenNavigate).toHaveBeenCalledOnce();
   });
+});
+
+/** Build a local maintenance owner with no native initialization. */
+function dataOwner() {
+  const owner = createDataManagementState({
+    beforeConfirm: async () => () => {},
+    onCommitted: async () => {},
+    onResetUncertain: async () => {},
+    refreshViews: async () => {},
+  });
+  maintenance.value = owner.getSnapshot();
+  return owner;
+}
+
+/** A missing tray target after reset never navigates to a deleted session. */
+it("ignores missing tray targets", async () => {
+  dataOwner();
+  vi.mocked(getSession).mockRejectedValueOnce(new Error("not found"));
+  renderHook(useLifecycleEvents);
+  emitNavigateSession({ sessionId: "deleted" });
+  await Promise.resolve();
+  expect(navigateMock).not.toHaveBeenCalled();
+});
+/** An epoch checked after getSession prevents stale tray navigation even without a rerender. */
+it("retires tray lookups on reset", async () => {
+  const owner = dataOwner();
+  let resolve!: (value: Awaited<ReturnType<typeof getSession>>) => void;
+  vi.mocked(getSession).mockReturnValueOnce(
+    new Promise((yes) => {
+      resolve = yes;
+    }),
+  );
+  renderHook(useLifecycleEvents);
+  emitNavigateSession({ sessionId: "old" });
+  await owner.getSnapshot().acceptCommitted("app_reset");
+  resolve({ summary: { id: "old" } } as Awaited<ReturnType<typeof getSession>>);
+  await Promise.resolve();
+  expect(navigateMock).not.toHaveBeenCalled();
+});
+/** A queued tray request must be cancelled and its impact freshly requested after maintenance. */
+it.each(["success", "stale", "unknown"])(
+  "refreshes deferred tray Quit with %s cancellation",
+  async (outcome) => {
+    let finish!: () => void;
+    const owner = createDataManagementState({
+      beforeConfirm: async () => () => {},
+      onCommitted: () =>
+        new Promise<void>((yes) => {
+          finish = yes;
+        }),
+      onResetUncertain: async () => {},
+      refreshViews: async () => {},
+    });
+    const changing = owner.getSnapshot().acceptCommitted("app_reset");
+    maintenance.value = owner.getSnapshot();
+    const view = renderHook(useLifecycleEvents);
+    const request = {
+      requestId: 88,
+      summary: { sessionCount: 3, projectCount: 1, runningProcessCount: 3, unsavedFileCount: 0 },
+    };
+    if (outcome === "stale")
+      vi.mocked(cancelQuit).mockRejectedValueOnce(
+        new IpcCallError("cancel_quit", { code: "stale_quit_request" }),
+      );
+    else if (outcome === "unknown") vi.mocked(cancelQuit).mockRejectedValueOnce(new Error("lost"));
+    else vi.mocked(cancelQuit).mockResolvedValueOnce(undefined);
+    vi.mocked(requestQuit).mockResolvedValueOnce(null);
+    emitQuitRequested(request);
+    expect(useQuitStore.getState().phase).toBe("idle");
+    expect(cancelQuit).not.toHaveBeenCalled();
+    await Promise.resolve();
+    await act(async () => {
+      finish();
+      await changing;
+    });
+    maintenance.value = owner.getSnapshot();
+    view.rerender();
+    await waitFor(() => expect(cancelQuit).toHaveBeenCalledWith(88));
+    if (outcome === "unknown") {
+      expect(requestQuit).not.toHaveBeenCalled();
+      expect(useQuitStore.getState().phase).toBe("integration-failed");
+    } else {
+      await waitFor(() => expect(requestQuit).toHaveBeenCalledOnce());
+      expect(useQuitStore.getState().request).toBeNull();
+    }
+  },
+);
+
+/** Preview cancellation completes before the new Quit snapshot can open its dialog. */
+it("retires a Data preview before requesting Quit", async () => {
+  const owner = dataOwner();
+  const preview: DataManagementState = {
+    ...owner.getSnapshot(),
+    phase: "preview",
+    retirePreview: vi.fn(async () => {
+      preview.phase = "idle";
+    }),
+    getCurrent: () => preview,
+  };
+  maintenance.value = preview;
+  vi.mocked(requestQuit).mockClear().mockResolvedValueOnce(null);
+  const view = renderHook(useLifecycleEvents);
+  await act(() => view.result.current());
+  expect(preview.retirePreview).toHaveBeenCalledOnce();
+  expect(requestQuit).toHaveBeenCalledOnce();
+  expect(vi.mocked(preview.retirePreview).mock.invocationCallOrder[0]).toBeLessThan(
+    vi.mocked(requestQuit).mock.invocationCallOrder[0] ?? 0,
+  );
 });
