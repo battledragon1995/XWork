@@ -1,4 +1,5 @@
 pub mod app;
+pub mod notifications;
 pub mod platform;
 pub mod projects;
 pub mod sessions;

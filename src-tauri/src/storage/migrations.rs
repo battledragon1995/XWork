@@ -31,6 +31,11 @@ pub(crate) const MIGRATIONS: &[Migration] = &[
         name: "create_keyboard_shortcuts",
         sql: include_str!("../../migrations/0004_create_keyboard_shortcuts.sql"),
     },
+    Migration {
+        version: 5,
+        name: "create_notifications",
+        sql: include_str!("../../migrations/0005_create_notifications.sql"),
+    },
 ];
 
 /// Applies every missing migration after validating the complete registry.

@@ -155,7 +155,36 @@ fn composition_root_builds_and_manages_storage() {
     let mut app = build_isolated_app(directory.path().to_path_buf());
     run_setup(&mut app);
 
-    assert_eq!(managed_schema_version(&app), 4);
+    assert_eq!(managed_schema_version(&app), 5);
+    assert!(
+        app.try_state::<xwork_lib::notifications::NotificationService>()
+            .is_some()
+    );
+}
+
+/// Verifies notification startup failure prevents publication of ready service and lifecycle state.
+#[test]
+fn notification_purge_failure_blocks_application_readiness() {
+    let directory = tempfile::TempDir::new().unwrap();
+    let storage = Storage::open(directory.path()).unwrap();
+    storage.with_connection::<_,xwork_lib::notifications::NotificationError>(
+        // Seeds an obsolete runtime item and forces its mandatory purge to fail.
+        |db| Ok(db.execute_batch("INSERT INTO notifications(id,source_kind,source_id,source_key,kind,title,context,target_kind,project_id,target_id,tab_id,pane_id,created_at_ms) VALUES('notification-00000000-0000-4000-8000-000000000001','terminal_activity','terminal-1','terminal:terminal-1:attention:1','terminal_needs_input','Terminal needs input','Session','session','00000000-0000-4000-8000-000000000001','session-1','tab-1','pane-1',0); CREATE TRIGGER fail_delete BEFORE DELETE ON notifications BEGIN SELECT RAISE(ABORT,'fixture'); END;")?),
+    ).unwrap();
+    drop(storage);
+    let mut app = xwork_lib::app::configure_with_app_data_dir(
+        tauri::test::mock_builder(),
+        directory.path().to_path_buf(),
+    )
+    .build(tauri::test::mock_context(tauri::test::noop_assets()))
+    .unwrap();
+    // Setup failure must not publish the notification service or a ready lifecycle.
+    assert!(catch_unwind(AssertUnwindSafe(|| run_setup(&mut app))).is_err());
+    assert!(
+        app.try_state::<xwork_lib::notifications::NotificationService>()
+            .is_none()
+    );
+    assert!(app.try_state::<AppLifecycleState>().is_none());
 }
 
 /// Verifies that a regular file cannot be used as the app data directory.
@@ -184,7 +213,7 @@ fn composition_root_fails_for_newer_database() {
     let database_path = directory.path().join(Storage::DATABASE_FILE_NAME);
     let connection = Connection::open(database_path).expect("the fixture database should open");
     connection
-        .pragma_update(None, "user_version", 5)
+        .pragma_update(None, "user_version", 6)
         .expect("the fixture schema version should be set");
     drop(connection);
 
@@ -244,7 +273,7 @@ fn projects_composition_manages_storage_project_and_gate() {
     let mut app = build_isolated_app(directory.path().to_path_buf());
     run_setup(&mut app);
 
-    assert_eq!(managed_schema_version(&app), 4);
+    assert_eq!(managed_schema_version(&app), 5);
     let gate = app.state::<DataMaintenanceGate>();
     let service = app.state::<ProjectService>();
     let settings = app.state::<SettingsService>();
@@ -527,7 +556,7 @@ fn projects_composition_publishes_nothing_for_a_newer_database() {
     let database_path = directory.path().join(Storage::DATABASE_FILE_NAME);
     let connection = Connection::open(database_path).expect("the fixture database should open");
     connection
-        .pragma_update(None, "user_version", 5)
+        .pragma_update(None, "user_version", 6)
         .expect("the fixture schema version should be set");
     drop(connection);
     let mut app = build_isolated_app(directory.path().to_path_buf());
@@ -553,7 +582,7 @@ fn keyboard_shortcuts_composition_manages_state_and_participant() {
     let directory = tempfile::TempDir::new().unwrap();
     let mut app = build_isolated_app(directory.path().to_path_buf());
     run_setup(&mut app);
-    assert_eq!(managed_schema_version(&app), 4);
+    assert_eq!(managed_schema_version(&app), 5);
     assert!(
         app.state::<KeyboardShortcutsService>()
             .shares_gate_with(app.state::<DataMaintenanceGate>().inner())

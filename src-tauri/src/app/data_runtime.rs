@@ -7,7 +7,8 @@ use std::{
     sync::{Arc, Mutex, OnceLock, Weak},
 };
 
-use tauri::{AppHandle, Emitter, Runtime};
+use crate::notifications::NotificationService;
+use tauri::{AppHandle, Emitter, Manager, Runtime};
 
 use super::{
     lifecycle::{
@@ -453,23 +454,44 @@ impl TerminalDependencies for AppTerminalDependencies {
 }
 
 /// Emits low-frequency Terminal state through the application handle.
-pub(crate) struct TauriTerminalEventSink<R: Runtime> {
+#[doc(hidden)]
+pub struct TauriTerminalEventSink<R: Runtime> {
     app: AppHandle<R>,
 }
 
 impl<R: Runtime> TauriTerminalEventSink<R> {
     /// Creates a state event sink around the application handle.
-    pub(crate) fn new(app: AppHandle<R>) -> Self {
+    pub fn new(app: AppHandle<R>) -> Self {
         Self { app }
+    }
+
+    /// Fans out committed state before an injectable frontend emission boundary.
+    #[doc(hidden)]
+    pub fn publish_with_emitter(
+        &self,
+        event: TerminalStateChangedDto,
+        emit: impl FnOnce(TerminalStateChangedDto) -> Result<(), TerminalError>,
+    ) -> Result<(), TerminalError> {
+        // A missing listener or failed frontend emit never prevents durable intake.
+        if let Some(service) = self.app.try_state::<NotificationService>() {
+            service.observe_terminal_state(event.clone());
+        }
+        emit(event)
     }
 }
 
 impl<R: Runtime> TerminalEventSink for TauriTerminalEventSink<R> {
     /// Emits a state snapshot without ever carrying terminal bytes.
     fn publish(&self, event: TerminalStateChangedDto) -> Result<(), TerminalError> {
-        self.app
-            .emit(TERMINAL_STATE_CHANGED_EVENT, event)
-            .map_err(|_| TerminalError::StreamAttachFailed)
+        self.publish_with_emitter(
+            event,
+            // Preserves the existing Terminal event for frontend state subscribers.
+            |event| {
+                self.app
+                    .emit(TERMINAL_STATE_CHANGED_EVENT, event)
+                    .map_err(|_| TerminalError::StreamAttachFailed)
+            },
+        )
     }
 }
 
@@ -591,13 +613,14 @@ impl ProjectRuntimeGuard for DeferredProjectRuntimeGuard {
 }
 
 /// Emits committed Sessions changes and schedules a ticketed tray refresh.
-pub(crate) struct TauriSessionEventSink<R: Runtime> {
+#[doc(hidden)]
+pub struct TauriSessionEventSink<R: Runtime> {
     app: AppHandle<R>,
 }
 
 impl<R: Runtime> TauriSessionEventSink<R> {
     /// Creates an event sink around the application handle.
-    pub(crate) fn new(app: AppHandle<R>) -> Self {
+    pub fn new(app: AppHandle<R>) -> Self {
         Self { app }
     }
 }
@@ -605,6 +628,10 @@ impl<R: Runtime> TauriSessionEventSink<R> {
 impl<R: Runtime> SessionEventSink for TauriSessionEventSink<R> {
     /// Emits best-effort while always scheduling tray recovery from owner state.
     fn publish(&self, event: SessionRuntimeEventDto) -> Result<(), SessionsError> {
+        // Cleanup is enqueued even when the later frontend emission fails.
+        if let Some(service) = self.app.try_state::<NotificationService>() {
+            service.observe_session_runtime(event.clone());
+        }
         let emit_result = self.app.emit(SESSION_RUNTIME_CHANGED_EVENT, event);
         let app = self.app.clone();
         // Refresh from owner state even when best-effort event delivery fails.
@@ -624,6 +651,7 @@ pub(crate) struct SessionsAppRuntime {
     sessions: Arc<SessionManager>,
     projects: ProjectService,
     terminal: TerminalManager,
+    notifications: NotificationService,
 }
 
 impl SessionsAppRuntime {
@@ -632,11 +660,13 @@ impl SessionsAppRuntime {
         sessions: Arc<SessionManager>,
         projects: ProjectService,
         terminal: TerminalManager,
+        notifications: NotificationService,
     ) -> Self {
         Self {
             sessions,
             projects,
             terminal,
+            notifications,
         }
     }
 }
@@ -714,10 +744,12 @@ impl AppRuntime for SessionsAppRuntime {
     /// Delegates true-Quit cleanup to the Sessions owner.
     fn shutdown_for_quit<'a>(&'a self) -> AppRuntimeFuture<'a, Result<(), AppLifecycleError>> {
         Box::pin(async move {
+            self.notifications.begin_shutdown();
             self.terminal.begin_shutdown();
             let sessions = self.sessions.shutdown_all().await;
             let terminal = self.terminal.shutdown_remaining().await;
-            if sessions.is_err() || terminal.is_err() {
+            let notifications = self.notifications.shutdown_runtime_sources().await;
+            if sessions.is_err() || terminal.is_err() || notifications.is_err() {
                 Err(AppLifecycleError::RuntimeShutdownFailed)
             } else {
                 Ok(())

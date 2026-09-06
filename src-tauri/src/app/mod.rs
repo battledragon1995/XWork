@@ -3,7 +3,12 @@ use std::{
     sync::Arc,
 };
 
-use tauri::{App, AppHandle, Builder, Manager, Runtime, WebviewWindow, WindowEvent};
+use crate::notifications::{
+    NOTIFICATIONS_CHANGED_EVENT, NotificationCollaborators, NotificationService,
+};
+use crate::platform::notification::{NativeNotification, UnavailableNotification};
+use notification_dependencies::{AppNotificationDependencies, NotificationVisibility};
+use tauri::{App, AppHandle, Builder, Emitter, Manager, Runtime, WebviewWindow, WindowEvent};
 
 use crate::{
     platform::{
@@ -32,6 +37,7 @@ use crate::{
 pub mod data_participants;
 pub mod data_runtime;
 pub mod lifecycle;
+mod notification_dependencies;
 pub mod tray;
 
 use data_participants::{
@@ -70,21 +76,22 @@ pub type CliProfileCollaborators = (
 
 /// Applies the desktop application's composition to a Tauri builder.
 pub fn configure<R: Runtime>(builder: Builder<R>) -> Builder<R> {
+    let builder = builder.plugin(tauri_plugin_single_instance::init(
+        // Ignores argv and cwd while restoring the existing main window in place.
+        |app, _argv, _cwd| {
+            if let Some(window) = app.get_webview_window("main") {
+                if bring_to_front(&window).is_err() {
+                    eprintln!("single-instance main-window activation failed");
+                } else {
+                    notify_sessions_visibility(app, true);
+                }
+            }
+        },
+    ));
+
     let builder = builder
         .plugin(tauri_plugin_clipboard_manager::init())
-        .plugin(tauri_plugin_single_instance::init(
-            // Ignores argv and cwd while restoring the existing main window in place.
-            |app, _argv, _cwd| {
-                if let Some(window) = app.get_webview_window("main") {
-                    if bring_to_front(&window).is_err() {
-                        eprintln!("single-instance main-window activation failed");
-                    } else {
-                        notify_sessions_visibility(app, true);
-                    }
-                }
-            },
-        ));
-
+        .plugin(tauri_plugin_notification::init());
     configure_app(
         builder,
         None,
@@ -240,6 +247,10 @@ pub fn apply_close_requested<R: Runtime>(
 
 /// Reports a successful native show or hide to the Sessions visibility owner.
 pub(crate) fn notify_sessions_visibility<R: Runtime>(app: &AppHandle<R>, visible: bool) {
+    if let Some(ordering) = app.try_state::<NotificationVisibility>() {
+        ordering.set(visible);
+        return;
+    }
     let Some(manager) = app.try_state::<SessionManager>() else {
         return;
     };
@@ -352,7 +363,13 @@ fn app_invoke_handler<R: Runtime>() -> impl Fn(tauri::ipc::Invoke<R>) -> bool + 
         crate::terminal::commands::acknowledge_terminal_attention,
         crate::terminal::commands::read_terminal_clipboard,
         crate::terminal::commands::write_terminal_clipboard,
-        crate::terminal::commands::open_terminal_link
+        crate::terminal::commands::open_terminal_link,
+        crate::notifications::commands::get_notifications,
+        crate::notifications::commands::mark_notification_read,
+        crate::notifications::commands::mark_all_notifications_read,
+        crate::notifications::commands::delete_notification,
+        crate::notifications::commands::clear_read_notifications,
+        crate::notifications::commands::open_notification
     ]
 }
 
@@ -401,6 +418,34 @@ where
                     setup_sessions(app, project_guard, initial_visibility)?;
                 let terminal =
                     setup_terminal(app, &sessions, content_router, native_terminal_interactions)?;
+                let visibility = NotificationVisibility::new(Arc::downgrade(&sessions));
+                app.manage(visibility.clone());
+                let notification_app = app.handle().clone();
+                let os: Arc<dyn crate::platform::notification::OsNotification> =
+                    if native_terminal_interactions {
+                        Arc::new(NativeNotification(app.handle().clone()))
+                    } else {
+                        Arc::new(UnavailableNotification)
+                    };
+                // Setup waits for blocking startup cleanup before managed commands become ready.
+                let notifications = tauri::async_runtime::block_on(NotificationService::new(
+                    app.state::<Storage>().inner().clone(),
+                    app.state::<DataMaintenanceGate>().inner().clone(),
+                    Arc::new(AppNotificationDependencies {
+                        sessions: sessions.clone(),
+                        visibility,
+                    }),
+                    NotificationCollaborators::system(
+                        // Delivers badge invalidations only to the authorized main window.
+                        Arc::new(move |event| {
+                            notification_app
+                                .emit_to("main", NOTIFICATIONS_CHANGED_EVENT, event)
+                                .map_err(|_| crate::notifications::NotificationError::Unavailable)
+                        }),
+                        os,
+                    ),
+                ))?;
+                app.manage(notifications.clone());
                 let runtime = runtime_override.unwrap_or_else(
                     // Normal composition uses Sessions; focused lifecycle tests may inject a fake.
                     || {
@@ -408,6 +453,7 @@ where
                             sessions.clone(),
                             app.state::<ProjectService>().inner().clone(),
                             terminal.clone(),
+                            notifications.clone(),
                         ))
                     },
                 );

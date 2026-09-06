@@ -41,6 +41,19 @@ Backend lưu notification terminal có target typed, trả danh sách/unread cou
 - Không lưu notification OS vào lịch sử hệ điều hành, không đảm bảo người dùng nhìn thấy toast và không retry OS delivery sau lỗi để tránh gửi trùng.
 - Không đưa notification vào backup; BE-012 chỉ được xóa inbox qua reset-only participant trong app reset, không serialize/restore notification row.
 
+### Quyết định tích hợp giai đoạn 11 — 2026-09-06
+
+- Giai đoạn 11 chỉ triển khai core Phase 1. Dùng `DataMaintenanceGate` hiện có cho write; các method pause/resume/reset, reset plan/projection và adapter BE-012 trong tài liệu này là contract extension giai đoạn 13, chưa scaffold ở giai đoạn 11. `event_target` và `NotificationEventTarget` vẫn giữ đúng consumer port Rust đã chốt, adapter trả `Ok(None)`; không sinh binding reminder/event hoặc tạo Calendar.
+- Tái sử dụng `SessionManager::notification_context` và `get_session` đã có. App-owned sink trong `app/data_runtime.rs` enqueue bản clone của committed DTO trước khi thử emit frontend; source terminal thật vẫn do BE-007 sở hữu. Notifications không parse BEL/OSC/output hoặc khởi chạy CLI thay BE-007.
+- `NotificationTargetDto::Session` serialize field thành `projectId`, `sessionId`, `tabId`, `paneId`; dùng `rename_all_fields = "camelCase"` cho enum Serde và kiểm tra output ts-rs để tránh chỉ đổi tên variant mà bỏ sót field.
+- App runtime gọi `NotificationService::begin_shutdown()` đồng bộ trước `TerminalManager::begin_shutdown()` và Sessions cleanup; method chỉ đóng admission và chặn side effect mới. `shutdown_runtime_sources()` vẫn được gọi sau cleanup và có thể retry sau lỗi SQL, không mở lại intake hoặc gửi toast.
+- Show/hide vẫn commit visibility qua BE-005. Adapter app phải await việc cập nhật visibility đã được lên lịch trước candidate notification rồi mới đọc context; không block native callback. Query BE-005 vẫn là linearization point đối với thay đổi route đồng thời. Test dùng barrier xác định, không dựa vào sleep.
+- Source dedupe không chỉ dựa vào row tồn tại: worker giữ occurrence đã xử lý trong bộ nhớ theo terminal runtime để duplicate sau Delete/Clear read không tái tạo item hoặc gửi toast. Chỉ ghi nhận occurrence sau transaction thành công hoặc quyết định policy/observed bỏ qua; lỗi dependency/SQL cho phép retry khi transition được gửi lại. Cleanup giải phóng state khi terminal bị dispose/session bị xóa; candidate luôn validate exact live target trước insert để late event không tái tạo target đã đóng. Không thêm bảng tombstone hoặc retention.
+- Giai đoạn 8–10 đã có implementation nhưng native smoke chưa được thực hiện; giai đoạn 11 không đổi trạng thái hoặc plan lịch sử. Thiếu công cụ native được ghi là verification pending, không chặn code/automated test độc lập và không được báo là smoke pass.
+- Service dùng collaborator Rust-only cho clock, UUID, event sink và `OsNotification`; test thay bằng clock/ID xác định, recording adapter, temporary SQLite và queue barrier `flush()`. App sink có seam `publish_with_emitter` để inject lỗi emit sau intake; các seam này không phải command và không sinh binding. Native visibility đi qua một FIFO app-owned và acknowledgement trước query Sessions, không thay đổi authority visibility của BE-005.
+- Binding dùng aggregate `src/bindings/notifications/notifications.ts`; mọi type ts-rs cùng khai báo `export_to` này để không sinh import đến file type riêng không tồn tại. Metadata ACL/schema do Tauri tự sinh khi thêm Rust plugin được giữ trong repository; capability frontend không đổi.
+- Kiểm tra giai đoạn 11 giữ cấu hình `bundle.active = false` hiện có: `pnpm tauri build` xác nhận executable release Windows, không tạo installer. Smoke toast trên installed identifier vẫn là mục chưa thực hiện; không suy kết quả native từ automated build hoặc recording adapter.
+
 ## File liên quan
 
 | Đường dẫn | Vai trò trong chức năng |
@@ -52,7 +65,7 @@ Backend lưu notification terminal có target typed, trả danh sách/unread cou
 | `src-tauri/src/shared/maintenance.rs` | Shared read/write permit và lock order theo BE-012. |
 | `src-tauri/src/app/mod.rs` | Giữ single-instance plugin BE-001 ở vị trí đầu, inject maintenance gate/dependencies, khởi tạo notification plugin/service sau migration, đăng ký managed state/sáu command, fan-out transition và nối Quit/reset. |
 | `src-tauri/src/app/notification_dependencies.rs` | Adapter consumer port BE-011 sang public BE-005/008 và, ở Phase 4, BE-018 event-target query. |
-| `src-tauri/src/app/data_runtime.rs` | Gọi public pause/resume Notifications trong async reset lifecycle BE-012, không dùng true-Quit path. |
+| `src-tauri/src/app/data_runtime.rs` | Fan-out Sessions/Terminal tới Notifications, nối true-Quit; giai đoạn 13 gọi public pause/resume trong reset lifecycle BE-012. |
 | `src-tauri/src/app/data_reset_participants.rs` | Adapter typed notification reset-only sang `DataResetOnlyParticipant` BE-012. |
 | `src-tauri/src/notifications/` | Capability owner của persistence, ingestion, query/mutation và public contract notification. |
 | `src-tauri/src/notifications/mod.rs` | Re-export DTO, error, service, command và consumer port công khai của capability. |
@@ -72,9 +85,18 @@ Backend lưu notification terminal có target typed, trả danh sách/unread cou
 | `src-tauri/migrations/0005_create_notifications.sql` | Tạo bảng notification cùng index source, unread và keyset order. |
 | `src-tauri/capabilities/main.json` | Giữ nguyên; xác nhận không cấp command/plugin notification trực tiếp cho frontend. |
 | `src-tauri/tests/app_builder.rs` | Smoke test plugin, service, source fan-out, managed state và command registration đúng một lần. |
+| `src-tauri/tests/app_lifecycle.rs` | Cập nhật assertion schema hiện hành sang version 5 và inventory table/index có Notifications khi chạy regression sau migration. |
+| `src-tauri/tests/cli_profiles_contract.rs` | Cập nhật assertion schema hiện hành sang version 5 và inventory table/index có Notifications khi chạy regression sau migration. |
+| `src-tauri/tests/projects_commands.rs` | Cập nhật assertion schema hiện hành sang version 5 và inventory table/index có Notifications khi chạy regression sau migration. |
+| `src-tauri/tests/settings_commands.rs` | Cập nhật assertion schema hiện hành sang version 5 và inventory table/index có Notifications khi chạy regression sau migration. |
+| `src-tauri/tests/keyboard_shortcuts_contract.rs` | Cập nhật assertion schema hiện hành sang version 5 và inventory table/index có Notifications khi chạy regression sau migration. |
 | `src-tauri/tests/export_bindings.rs` | Sinh/kiểm tra binding DTO/event/error BE-011. |
 | `src-tauri/tests/notifications_commands.rs` | Integration test migration, intake, query/mutation/navigation và event qua public backend boundary. |
 | `src-tauri/tests/notifications_os_windows.rs` | Integration Windows với fake/recording OS adapter và eligibility matrix; không hiển thị toast thật trong CI. |
+| `src-tauri/tests/support/notifications.rs` | Fixture dùng chung cho hai integration target Notifications: isolated Storage, clock/ID, owner/OS/event fakes và PTY dependency fixture. |
+| `src-tauri/gen/schemas/acl-manifests.json` | Metadata plugin do Tauri tự sinh; không sửa tay hoặc cấp permission frontend. |
+| `src-tauri/gen/schemas/desktop-schema.json` | Schema capability desktop được tooling cập nhật theo plugin Rust. |
+| `src-tauri/gen/schemas/windows-schema.json` | Schema capability Windows được tooling cập nhật theo plugin Rust. |
 | `src-tauri/tests/calendar_consumers.rs` | Contract test Phase 4 adapter map public Calendar context sang event target Notifications. |
 | `src-tauri/tests/data_management_contract.rs` | Reset transaction/pause/resume/projection/event của Notifications qua BE-012. |
 | `src/bindings/notifications/` | TypeScript binding do ts-rs sinh; không sửa tay. |
@@ -160,6 +182,7 @@ pub enum NotificationKindDto {
 
 #[derive(Clone, Debug, Serialize, Deserialize, TS)]
 #[serde(tag = "kind", rename_all = "camelCase")]
+#[serde(rename_all_fields = "camelCase")]
 pub enum NotificationTargetDto {
     Session {
         project_id: String,
@@ -309,6 +332,9 @@ App composition cấu hình một observer nội bộ không phụ thuộc vòng
 
 ```rust
 impl NotificationService {
+    /// Stops new intake and delivery before terminal cleanup begins during Quit.
+    pub fn begin_shutdown(&self);
+
     /// Enqueues one committed terminal state transition for notification processing.
     pub fn observe_terminal_state(&self, event: TerminalStateChangedDto);
 

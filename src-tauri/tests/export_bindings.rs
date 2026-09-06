@@ -294,3 +294,40 @@ fn sessions_binding_matches_rust_contract() {
     assert!(!generated.contains("SessionAttentionSnapshot"));
     assert_binding_is_current(binding_path(&["sessions", "sessions.ts"]), generated);
 }
+
+/// Generates and checks the exact Phase 1 notification contract without internal source fields.
+#[test]
+fn notifications_binding_matches_rust_contract() {
+    use xwork_lib::notifications::*;
+    let config = Config::default();
+    let generated = [
+        NotificationKindDto::export_to_string(&config).unwrap(),
+        NotificationTargetDto::export_to_string(&config).unwrap(),
+        NotificationDto::export_to_string(&config).unwrap(),
+        NotificationCursorDto::export_to_string(&config).unwrap(),
+        NotificationPageDto::export_to_string(&config).unwrap(),
+        NotificationCenterStateDto::export_to_string(&config).unwrap(),
+        OpenNotificationDto::export_to_string(&config).unwrap(),
+        NotificationCenterChangedDto::export_to_string(&config).unwrap(),
+        NotificationError::export_to_string(&config).unwrap(),
+    ]
+    .join("\n");
+    for internal in [
+        "source_id",
+        "sourceId",
+        "source_key",
+        "sourceKey",
+        "Reminder",
+        "NotificationDependencies",
+        "NotificationEventTarget",
+        "NotificationReset",
+    ] {
+        assert!(!generated.contains(internal));
+    }
+    assert!(generated.contains("projectId"));
+    assert!(generated.contains("sessionId"));
+    assert_binding_is_current(
+        binding_path(&["notifications", "notifications.ts"]),
+        generated,
+    );
+}
