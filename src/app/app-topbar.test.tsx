@@ -220,26 +220,32 @@ describe("AppTopbar reserved entry points", () => {
     );
   });
 
-  // Verify the notification bell keeps its position but cannot be used yet.
-  it("renders the notification bell disabled with its own tooltip", async () => {
+  // Verify the notification bell retains its tooltip and now opens a real panel.
+  it("renders an interactive notification bell with its own tooltip", async () => {
     const user = userEvent.setup();
     renderShellAt();
 
-    const bell = screen.getByRole("button", { name: "Notifications" });
-    expect(bell).toHaveAttribute("aria-disabled", "true");
+    const bell = screen.getByRole("button", { name: /^Notifications/ });
+    expect(bell).toBeEnabled();
 
     await user.hover(bell);
 
-    expect(
-      await screen.findByRole("tooltip", { name: "Notifications arrive with FE-010." }),
-    ).toBeInTheDocument();
+    expect(await screen.findByRole("tooltip", { name: "Notifications" })).toBeInTheDocument();
+    await user.click(bell);
+    const panel = await screen.findByRole("dialog", { name: "Notifications" });
+    const heading = within(panel).getByRole("heading", { name: "Notifications" });
+    expect(heading).toHaveFocus();
+    fireEvent.pointerDown(heading, { button: 0 });
+    expect(heading).toHaveFocus();
+    fireEvent.doubleClick(heading);
+    expect(toggleMock).not.toHaveBeenCalled();
   });
 
   // Verify no unread count is invented while there is no notification source.
   it("shows no unread badge on the notification bell", () => {
     renderShellAt();
 
-    expect(screen.getByRole("button", { name: "Notifications" })).toHaveTextContent("");
+    expect(screen.getByRole("button", { name: /^Notifications/ })).toHaveTextContent("");
   });
 });
 
@@ -304,7 +310,7 @@ describe("WindowControls", () => {
   it("moves one hover highlight across all four topbar actions", async () => {
     renderShellAt();
 
-    const bell = screen.getByRole("button", { name: "Notifications" });
+    const bell = screen.getByRole("button", { name: /^Notifications/ });
     const close = screen.getByRole("button", { name: "Close (hides to tray)" });
     const actions = [
       bell,
@@ -338,7 +344,7 @@ describe("WindowControls", () => {
     stubReducedMotion(true);
     renderShellAt();
 
-    const bell = screen.getByRole("button", { name: "Notifications" });
+    const bell = screen.getByRole("button", { name: /^Notifications/ });
     const close = screen.getByRole("button", { name: "Close (hides to tray)" });
 
     expect(queryTopbarHighlight()).toBeNull();
@@ -690,4 +696,22 @@ vi.mock("@/lib/ipc/keyboard-shortcuts", () => ({
   setKeyboardShortcut: vi.fn(),
   resetKeyboardShortcut: vi.fn(),
   resetAllKeyboardShortcuts: vi.fn(),
+}));
+
+// Isolate the persistent notification owner from native IPC in shell regressions.
+vi.mock("@/lib/ipc/notifications", () => ({
+  // Provide an authoritative empty snapshot without any real app data.
+  getNotifications: vi.fn(async () => ({
+    revision: "1",
+    unreadCount: 0,
+    items: [],
+    nextCursor: null,
+  })),
+  // Return an observable cleanup for the shell lifetime.
+  onNotificationsChanged: vi.fn(async () => vi.fn()),
+  markNotificationRead: vi.fn(),
+  markAllNotificationsRead: vi.fn(),
+  deleteNotification: vi.fn(),
+  clearReadNotifications: vi.fn(),
+  openNotification: vi.fn(),
 }));

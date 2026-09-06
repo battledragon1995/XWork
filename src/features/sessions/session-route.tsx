@@ -2,7 +2,7 @@ import { Pen } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router";
 import type { KeyboardShortcutsDto } from "@/bindings/keyboard-shortcuts";
-import type { PaneContentDto } from "@/bindings/sessions/sessions";
+import type { PaneContentDto, SessionDetailDto } from "@/bindings/sessions/sessions";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import type { ShortcutPlatform } from "@/lib/utils/keyboard-shortcuts";
@@ -120,6 +120,7 @@ function SessionHeader(props: {
  * strip and drop the header from the branch it owns.
  */
 export function SessionRoute(props: {
+  focusRequest?: { tabId: string; paneId: string; requestId: string };
   shortcutSnapshot?: KeyboardShortcutsDto | null;
   shortcutPlatform?: ShortcutPlatform | null;
   renderTerminal?: SessionTerminalRenderer;
@@ -135,6 +136,58 @@ export function SessionRoute(props: {
   const renameButtonRef = useRef<HTMLButtonElement>(null);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
   const focusTarget = useRef<FocusTarget | null>(null);
+  const workspaceRef = useRef<HTMLDivElement>(null);
+  const requestedFocus = useRef<{
+    sessionId: string;
+    requestId: string;
+    previous: SessionDetailDto | null;
+    consumed: boolean;
+  } | null>(null);
+
+  // Refresh once per request and wait for a replacement snapshot, including equal revisions.
+  useEffect(() => {
+    const request = props.focusRequest;
+    if (!request) {
+      requestedFocus.current = null;
+      return;
+    }
+    if (
+      requestedFocus.current?.sessionId !== sessionId ||
+      requestedFocus.current.requestId !== request.requestId
+    ) {
+      requestedFocus.current = {
+        sessionId,
+        requestId: request.requestId,
+        previous: detail.detail,
+        consumed: false,
+      };
+      detail.refresh();
+      return;
+    }
+    const pending = requestedFocus.current;
+    if (
+      pending.consumed ||
+      detail.status !== "ready" ||
+      !detail.detail ||
+      detail.detail === pending.previous
+    )
+      return;
+    if (detail.detail.summary.id !== sessionId || detail.detail.activeTabId !== request.tabId)
+      return;
+    // Focus only the requested visible pane, without querying any other route's DOM.
+    const tab = detail.detail.tabs.find((entry) => entry.id === request.tabId);
+    if (
+      !tab ||
+      tab.activePaneId !== request.paneId ||
+      (tab.maximizedPaneId !== null && tab.maximizedPaneId !== request.paneId)
+    )
+      return;
+    const panes = workspaceRef.current?.querySelectorAll<HTMLElement>("section[data-pane-id]");
+    // Opaque pane IDs are compared directly rather than inserted into CSS selectors.
+    const pane = [...(panes ?? [])].find((entry) => entry.dataset.paneId === request.paneId);
+    pending.consumed = true;
+    pane?.focus();
+  }, [props.focusRequest, sessionId, detail.detail, detail.status, detail.refresh]);
 
   /**
    * Project this session belongs to, mirrored in a ref so the navigation that follows a
@@ -271,7 +324,7 @@ export function SessionRoute(props: {
 
   if (detail.detail.tabs.length > 0) {
     return (
-      <div className="h-full min-h-0 overflow-hidden">
+      <div ref={workspaceRef} className="h-full min-h-0 overflow-hidden">
         <SessionWorkspace
           shortcutSnapshot={props.shortcutSnapshot}
           shortcutPlatform={props.shortcutPlatform}

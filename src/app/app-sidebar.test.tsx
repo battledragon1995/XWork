@@ -689,3 +689,21 @@ vi.mock("@/lib/ipc/keyboard-shortcuts", () => ({
   resetKeyboardShortcut: vi.fn(),
   resetAllKeyboardShortcuts: vi.fn(),
 }));
+
+// Isolate the persistent notification owner from native IPC in shell regressions.
+vi.mock("@/lib/ipc/notifications", () => ({
+  // Provide an authoritative empty snapshot without any real app data.
+  getNotifications: vi.fn(async () => ({
+    revision: "1",
+    unreadCount: 0,
+    items: [],
+    nextCursor: null,
+  })),
+  // Return an observable cleanup for the shell lifetime.
+  onNotificationsChanged: vi.fn(async () => vi.fn()),
+  markNotificationRead: vi.fn(),
+  markAllNotificationsRead: vi.fn(),
+  deleteNotification: vi.fn(),
+  clearReadNotifications: vi.fn(),
+  openNotification: vi.fn(),
+}));

@@ -96,3 +96,26 @@ it("passes refreshed props and suppresses unconfirmed configuration", () => {
   );
   bridge.pending = null;
 });
+
+/** Accepts only the documented neutral focus request shape from navigation state. */
+it.each([
+  { notificationFocus: { tabId: "t", paneId: "p", requestId: "r" } },
+  { notificationFocus: { tabId: 1, paneId: "p", requestId: "r" } },
+  { notificationFocus: { tabId: "t", paneId: "p", requestId: "" } },
+  null,
+])("validates notification focus state %j without changing the terminal slot", (state) => {
+  render(
+    <MemoryRouter initialEntries={[{ pathname: "/sessions/s", state }]}>
+      <SessionTerminalRoute />
+    </MemoryRouter>,
+  );
+  expect(bridge.received).toHaveBeenLastCalledWith(
+    expect.objectContaining({
+      focusRequest:
+        state?.notificationFocus?.requestId === "r" && state.notificationFocus.tabId === "t"
+          ? state.notificationFocus
+          : undefined,
+      renderTerminal: expect.any(Function),
+    }),
+  );
+});

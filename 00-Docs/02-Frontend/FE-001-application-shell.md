@@ -49,10 +49,20 @@ Người dùng mở XWork và thấy một khung ứng dụng hoàn chỉnh: sid
 - `NotificationBell`, Minimize, Maximize/Restore và Close chia sẻ đúng một vệt sáng trong topbar. Ba control đầu dùng nền `surface-card`; Close chuyển vệt sáng sang `error` và icon sang `on-primary`. Khi giảm chuyển động được bật, mỗi control dùng hover tĩnh tương ứng và không render phần tử chuyển động.
 - Vùng breadcrumb và từng crumb được đánh dấu là vùng kéo cửa sổ để phần chữ không tạo lỗ hổng trong bề mặt kéo. Khi nhấn chuột trái lên nền kéo không tương tác, shell xóa focus hiện tại trước khi native drag bắt đầu để tooltip của control trước đó không bị treo; nhấn lên button hoặc phần tử tương tác không bị xóa focus và không bắt đầu hành vi này.
 
+### Mở rộng giai đoạn 11 — Notifications
+
+- `FE-010-notification-center.md` là contract panel, cache, command/event, copy và focus. Các quy định bell placeholder của lát cắt ban đầu được thay thế trong giai đoạn 11; Search không thuộc lần mở rộng này.
+- `src/app/app-topbar.tsx` ghép `NotificationEntry` từ `src/app/notification-entry.tsx`, entry dùng public `NotificationCenter` tại `src/features/notifications/index.ts`. Chỉ mount một entry trong main, giữ listener xuyên route và cleanup khi unmount.
+- Giữ bell đúng vị trí trước window controls, kích thước 44 × 40px, một vệt hover chung và no-drag. Nút bell không còn aria-disabled; badge 0/chưa biết không hiển thị, 1–99 hiển thị số, lớn hơn hiển thị `99+`; accessible label đọc tổng thật từ backend.
+- Popover neo chuông, portal ngoài topbar drag region; Escape/nút đóng trả focus bell. Route đổi hoặc Quit bắt đầu đóng panel, hủy navigation pending và nhường focus cho route/Quit dialog; không đưa focus trở lại bell sau khi route đã đổi.
+- App sở hữu callback Open: dùng target của open_notification, gọi public setActivePane, restore maximize nếu pane khác che đích, rồi điều hướng route thật `/sessions/:sessionId`. SessionTerminalRoute chuyển navigation focus request cho public SessionRoute; không mở route project/session giả và không truy cập Terminal implementation.
+- Backend liên quan của phần mở rộng là BE-011 và public BE-005; FE-001 không giữ bản sao riêng của unread count, không emit toast hoặc thay observed session thay cho SessionRoute.
+- Kiểm chứng: bell thật/badge và no-drag bằng app-topbar test; composition/lifecycle bằng app-shell test; Open/cancellation/focus bằng các test trong bảng file bổ sung. Smoke Windows giữ pending đến khi thực hiện; không sửa plan lịch sử giai đoạn 8–10.
+
 ### Ngoài phạm vi
 
 - Nội dung của từng khu vực: Welcome (`FE-002`), Home (`FE-003`), Projects (`FE-004`), Project Overview (`FE-005`), Notes (`FE-019`), Calendar (`FE-021`) và các trang Settings (`FE-011`–`FE-015`, `FE-023`).
-- Command Palette (`FE-009`) và notification panel (`FE-010`). Shell chỉ dựng hai điểm vào ở trạng thái chưa khả dụng.
+- Command Palette (`FE-009`) do feature Search sở hữu. Notification panel do `FE-010` sở hữu; từ giai đoạn 11 shell ghép public entry có bell/badge thật theo phần mở rộng giai đoạn 11.
 - Danh sách project và phiên thật trong sidebar, gồm ghim, mở rộng/thu gọn project và chỉ báo trạng thái phiên. Dữ liệu đến từ `BE-003` ở giai đoạn 4 và `BE-005` ở giai đoạn 8.
 - Thanh tab, bố cục pane, terminal (`FE-006`–`FE-008`) và File Explorer phụ của vùng nội dung.
 - Menu native của system tray, single instance, dọn runtime khi Quit và mọi thao tác cửa sổ ở tầng hệ điều hành: thuộc `BE-001`.
@@ -74,6 +84,13 @@ Người dùng mở XWork và thấy một khung ứng dụng hoàn chỉnh: sid
 | `src/app/app-router.tsx` | Bảng route memory router, nhãn khu vực cho breadcrumb, `errorElement` cấp ứng dụng và điểm để lát cắt sau thay `element` của route thuộc feature mình. |
 | `src/app/app-providers.tsx` | Ghép provider cấp ứng dụng: tooltip provider, đăng ký event lifecycle và host của hộp thoại Quit. |
 | `src/app/app-shell.tsx` | Layout ba vùng topbar / sidebar / content: hàng dưới là `SidebarProvider`, độ rộng công bố qua `--sidebar-width` và `--sidebar-width-icon`, vùng nội dung là `SidebarInset`. |
+| `src/app/notification-entry.tsx` | Ghép public FE-010 với navigation, IPC Sessions và Quit/route dismissal giai đoạn 11. |
+| `src/app/notification-entry.test.tsx` | Open exact target, lỗi giữa command và cancellation. |
+| `src/app/session-terminal-route.tsx` | Chuyển navigation focus request trung tính cho SessionRoute. |
+| `src/app/session-terminal-route.test.tsx` | Focus request và regression terminal composition. |
+| `src/features/notifications/index.ts` | Public entry FE-010 mà app được import; implementation thuộc file inventory FE-010. |
+| `src/features/sessions/session-route.tsx` | Public prop focusRequest, focus đúng pane sau khi detail render. |
+| `src/features/sessions/session-route.test.tsx` | Focus một lần, cùng route và missing target. |
 | `src/app/app-topbar.tsx` | Vùng kéo cửa sổ gồm breadcrumb, brand button, ngữ cảnh, điểm vào tìm kiếm, biểu tượng chuông và cụm điều khiển cửa sổ; xóa focus cũ khi native drag bắt đầu; cột brand chạy cùng transition độ rộng với sidebar; cụm hành động dùng một vệt sáng chung. |
 | `src/app/app-menu.tsx` | Menu mở từ wordmark, chứa mục `Quit XWork` ở cuối sau separator. |
 | `src/app/window-controls.tsx` | Ba nút Minimize / Maximize / Close, biến thể hover cảnh báo của Close và vùng thông báo lỗi thao tác cửa sổ. |
@@ -127,7 +144,7 @@ Dependency mới được khóa exact version: `@tauri-apps/api` cùng dòng `2.
 | `AppTopbar` | Cột brand rộng bằng sidebar, giữa là breadcrumb và điểm vào tìm kiếm, phải là chuông và điều khiển cửa sổ. Toàn bộ nền, gồm chữ breadcrumb nhưng không gồm control tương tác, là vùng kéo cửa sổ; cụm hành động bên phải dùng một vệt sáng hover chung. | `02-AppShell.html#shell` |
 | `AppMenu` | Menu mở từ wordmark `XWork`, chỉ có mục `Quit XWork` ở cuối sau separator tại lát cắt này. | `04-Projects.html#dlg-quit` là điểm vào tương ứng của tray `02-AppShell.html#tray` |
 | `SearchEntry` | Pill `Search or run a command`, ở trạng thái chưa khả dụng. | `02-AppShell.html#shell` |
-| `NotificationBell` | Nút chuông, ở trạng thái chưa khả dụng và không có badge. | `02-AppShell.html#shell`, `#welcome` |
+| `NotificationCenter` qua app `NotificationEntry` | Nút chuông khả dụng từ giai đoạn 11; badge từ unreadCount BE-011, mở panel do FE-010 sở hữu. | `02-AppShell.html#shell`, `#welcome` |
 | `WindowControls` | Ba nút Minimize, Maximize, Close với nhãn `Close (hides to tray)`; Close dùng màu cảnh báo khi hover/active. | `02-AppShell.html#shell` |
 | `AppSidebar` | `Home`, `Projects`, `Notes`, `Calendar`; khối `Projects`; footer `Settings` và nút thu gọn. Là landmark `navigation` duy nhất của shell. | `02-AppShell.html#shell`, `#shell-collapsed` |
 | `Sidebar` cùng `SidebarContent`, `SidebarGroup`, `SidebarMenu`, `SidebarMenuButton`, `SidebarFooter` | Bộ khung sidebar của Animate UI mà `AppSidebar` ghép lại; giữ vệt sáng hover, transition độ rộng và ẩn nhãn khi thu gọn. | `02-AppShell.html#shell`, `#shell-collapsed` |
@@ -151,7 +168,7 @@ Kích thước lấy từ wireframe: topbar cao `40px`; sidebar mặc định `2
 | `Đang kéo đổi độ rộng` | `isSidebarResizing === true`. | Sidebar mang `data-resizing="true"`, transition độ rộng bị tắt nên cạnh sidebar đi đúng theo con trỏ. |
 | `Rỗng — chưa có project` | Luôn đúng ở lát cắt này. | Khối `Projects` hiển thị `No projects yet. Add a folder to start a session.`; không hiển thị nút `+` vì `Add Project` thuộc `FE-004`, giống `#welcome`. |
 | `Khu vực chưa khả dụng` | Route trỏ tới khu vực mà feature sở hữu chưa được triển khai. | `AreaPlaceholder` với `h1` là tên khu vực và một câu nêu khu vực sẽ xuất hiện cùng feature nào; không có nút không hoạt động. |
-| `Điểm vào chưa khả dụng` | Luôn đúng cho `SearchEntry` và `NotificationBell` ở lát cắt này. | Nút `disabled` giữ đúng vị trí và nhãn wireframe, tooltip nói rõ chức năng đến ở lát cắt sau. Không hiển thị badge `Ctrl K` và không hiển thị số chưa đọc. |
+| `Điểm vào chưa khả dụng` | `SearchEntry` trước FE-009. | Giữ điểm vào tìm kiếm và tooltip theo lát cắt Search; từ giai đoạn 11 chuông khả dụng, hiển thị badge thật theo FE-010. |
 | `Đang tải — kiểm tra trước khi thoát` | `phase === "requesting"`. | Mục `Quit XWork` chuyển sang `disabled` với nhãn `Checking running work…`; không mở hộp thoại nào khác. |
 | `Chờ xác nhận thoát` | `phase === "awaiting-confirmation"`. | `QuitDialog` mở, focus vào `Cancel`, hiển thị đủ các dòng số liệu. |
 | `Đang thoát` | `phase === "confirming"`. | Cả hai nút hộp thoại `disabled`, nút chính đổi nhãn `Quitting…`; hộp thoại không đóng được. |
@@ -398,7 +415,7 @@ Các thành phần sidebar trong `src/components/animate-ui/` là component dùn
 |---|---|---|
 | `src/app/app-router.test.tsx` | Component | Năm route khu vực cùng hai route dành trước render `AreaPlaceholder` đúng tên khu vực; route không khớp render placeholder `Not found`; `errorElement` nhận lỗi render. |
 | `src/app/app-shell.test.tsx` | Component | Landmark `banner`, `navigation` và `main` tồn tại đúng một lần; `--sidebar-width` theo `sidebarWidthPx` và `--sidebar-width-icon` bằng `56px`; trạng thái thu gọn ẩn đúng các phần; thứ tự focus theo `Tab`. |
-| `src/app/app-topbar.test.tsx` | Component | Breadcrumb dựng từ route đã match và toàn bộ crumb thuộc vùng kéo; `SearchEntry` và `NotificationBell` là nút `disabled` có tooltip và không có badge; một vệt sáng chung chạy giữa chuông và ba window control, Close dùng màu cảnh báo, `prefers-reduced-motion` trả về hover tĩnh; pointer down trên nền kéo xóa focus cùng tooltip cũ; ba nút cửa sổ gọi đúng command; double-click vùng kéo gọi `toggle_main_window_maximized`; `window_operation_failed` hiện dòng lỗi `aria-live`; menu wordmark mở và đóng bằng bàn phím và có `Quit XWork` ở cuối. |
+| `src/app/app-topbar.test.tsx` | Component | Breadcrumb dựng từ route đã match và toàn bộ crumb thuộc vùng kéo; `SearchEntry` giữ contract trước FE-009; từ giai đoạn 11 bell là public entry FE-010 có tooltip, mở panel và badge backend; một vệt sáng chung chạy giữa chuông và ba window control, Close dùng màu cảnh báo, `prefers-reduced-motion` trả về hover tĩnh; pointer down trên nền kéo xóa focus cùng tooltip cũ; ba nút cửa sổ gọi đúng command; double-click vùng kéo gọi `toggle_main_window_maximized`; `window_operation_failed` hiện dòng lỗi `aria-live`; menu wordmark mở và đóng bằng bàn phím và có `Quit XWork` ở cuối. |
 | `src/app/app-sidebar.test.tsx` | Component | Bốn nav item và `Settings` điều hướng đúng route và đặt `aria-current`; khối `Projects` hiện đúng câu trạng thái rỗng và không có nút `+`; nút thu gọn đổi nhãn và đổi `data-state` của sidebar; tooltip mang nhãn khi thu gọn, cả khi hover và khi focus; vạch kéo phản hồi `←`, `→`, `Home`, `End` và cập nhật `aria-valuenow`; kéo bằng con trỏ đặt rồi xóa `data-resizing`; thu gọn dưới con trỏ giữ đúng một vệt sáng; `prefers-reduced-motion` tắt vệt sáng; `Ctrl+B` không đổi trạng thái; `document.cookie` không bị ghi sau một vòng thu gọn và mở rộng. |
 | `src/app/quit-dialog.test.tsx` | Component | Nội dung và số liệu theo `#dlg-quit`; số ít và số nhiều; ẩn dòng file chưa lưu khi bằng `0`; focus bị giữ trong hộp thoại; `Cancel`, `Esc`, click ngoài, `Quit`, trạng thái `Quitting…` và từng nhánh lỗi. |
 | `src/app/shell-store.test.ts` | Unit | Clamp độ rộng ở hai cận, giữ độ rộng gần nhất qua một vòng thu gọn và mở rộng, bật và tắt `isSidebarResizing`, cập nhật `isMaximized`, xóa `windowControlFailure` khi thao tác sau thành công. |

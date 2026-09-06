@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
-import { act, cleanup, render, screen, within } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -100,6 +100,105 @@ function renderRoute(sessionId = FIXTURE_SESSION_ID) {
     </TooltipProvider>,
   );
 }
+
+/** Keeps the real detail hook and pane DOM mounted while changing neutral focus requests. */
+function focusRouteTree(focusRequest?: { tabId: string; paneId: string; requestId: string }) {
+  return (
+    <TooltipProvider>
+      <MemoryRouter initialEntries={[`/sessions/${FIXTURE_SESSION_ID}`]}>
+        <button type="button">Outside focus</button>
+        <Routes>
+          <Route
+            path="/sessions/:sessionId"
+            element={<SessionRoute focusRequest={focusRequest} />}
+          />
+          <Route path="/projects" element={<p>Projects destination</p>} />
+          <Route path="/projects/:projectId" element={<p>Overview destination</p>} />
+        </Routes>
+      </MemoryRouter>
+    </TooltipProvider>
+  );
+}
+
+/** A new request requires a new snapshot object even when the backend revision is unchanged. */
+it("refreshes once and focuses the exact pane once per request with equal revisions", async () => {
+  const initial = createNonEmptySessionDetail();
+  getSessionMock.mockResolvedValue(initial);
+  const view = render(focusRouteTree());
+  await screen.findByRole("tab", { name: /Codex/ });
+  const tab = initial.tabs[0];
+  if (!tab) throw new Error("Expected the fixture tab.");
+  const request = { tabId: tab.id, paneId: tab.activePaneId, requestId: "focus-1" };
+  const pane = view.container.querySelector<HTMLElement>("section[data-pane-id]");
+  const outside = screen.getByRole("button", { name: "Outside focus" });
+  outside.focus();
+  const response = deferred<SessionDetailDto>();
+  getSessionMock.mockReturnValue(response.promise);
+  const before = getSessionMock.mock.calls.length;
+  view.rerender(focusRouteTree(request));
+  expect(getSessionMock).toHaveBeenCalledTimes(before + 1);
+  expect(outside).toHaveFocus();
+  view.rerender(focusRouteTree({ ...request }));
+  expect(getSessionMock).toHaveBeenCalledTimes(before + 1);
+  expect(outside).toHaveFocus();
+  await act(async () => response.resolve({ ...initial }));
+  await waitFor(() => expect(pane).toHaveFocus());
+  outside.focus();
+  emit(createRuntimeEvent({ revision: "12", change: "activityChanged", summary: initial.summary }));
+  expect(outside).toHaveFocus();
+  const next = deferred<SessionDetailDto>();
+  getSessionMock.mockReturnValue(next.promise);
+  view.rerender(focusRouteTree({ ...request, requestId: "focus-2" }));
+  expect(outside).toHaveFocus();
+  await act(async () => next.resolve({ ...initial, revision: "12" }));
+  await waitFor(() => expect(pane).toHaveFocus());
+});
+
+/** Lost/covered targets never focus a nearby pane, and clearing the request cancels it. */
+it.each(["missing-pane", "covered", "cancelled"])(
+  "does not steal focus for %s",
+  async (scenario) => {
+    const initial = createNonEmptySessionDetail();
+    getSessionMock.mockResolvedValue(initial);
+    const view = render(focusRouteTree());
+    await screen.findByRole("tab", { name: /Codex/ });
+    const tab = initial.tabs[0];
+    if (!tab) throw new Error("Expected the fixture tab.");
+    const request = {
+      tabId: tab.id,
+      paneId: scenario === "missing-pane" ? "missing" : tab.activePaneId,
+      requestId: "focus",
+    };
+    const response = deferred<SessionDetailDto>();
+    getSessionMock.mockReturnValue(response.promise);
+    const outside = screen.getByRole("button", { name: "Outside focus" });
+    outside.focus();
+    view.rerender(focusRouteTree(request));
+    if (scenario === "cancelled") view.rerender(focusRouteTree());
+    await act(async () =>
+      response.resolve({
+        ...initial,
+        tabs: scenario === "covered" ? [{ ...tab, maximizedPaneId: "other" }] : initial.tabs,
+      }),
+    );
+    expect(outside).toHaveFocus();
+  },
+);
+
+/** Post-navigation missing-session behavior remains the existing FE-006 project redirect. */
+it("retains missing-session redirect after a notification focus refresh", async () => {
+  const initial = createNonEmptySessionDetail();
+  getSessionMock.mockResolvedValue(initial);
+  const view = render(focusRouteTree());
+  await screen.findByRole("tab", { name: /Codex/ });
+  getSessionMock.mockRejectedValue(
+    new IpcCallError("get_session", { code: "sessionNotFound", sessionId: FIXTURE_SESSION_ID }),
+  );
+  const tab = initial.tabs[0];
+  if (!tab) throw new Error("Expected the fixture tab.");
+  view.rerender(focusRouteTree({ tabId: tab.id, paneId: tab.activePaneId, requestId: "missing" }));
+  expect(await screen.findByText("Overview destination")).toBeInTheDocument();
+});
 
 /** Open the session header's actions menu. */
 async function openMenu(user: ReturnType<typeof userEvent.setup>) {

@@ -1,13 +1,14 @@
-import { Bell, Search } from "lucide-react";
+import { Search } from "lucide-react";
 import { useEffect } from "react";
 import { useLocation, useMatches } from "react-router";
-import { Highlight, HighlightItem } from "@/components/animate-ui/primitives/effects/highlight";
+import { Highlight } from "@/components/animate-ui/primitives/effects/highlight";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useProjectsStore } from "@/features/projects/projects-store";
 import { useSessionsStore } from "@/features/sessions/sessions-store";
 import { cn } from "@/lib/utils/cn";
 import { AppMenu } from "./app-menu";
 import type { RouteCrumbHandle } from "./app-router";
+import { NotificationEntry } from "./notification-entry";
 import { COLLAPSED_SIDEBAR_WIDTH_PX, useShellStore } from "./shell-store";
 import { usePrefersReducedMotion } from "./use-prefers-reduced-motion";
 import { toggleMaximized, WindowControls } from "./window-controls";
@@ -99,6 +100,7 @@ export function AppTopbar(props: { onQuit: () => void; isCheckingQuit: boolean }
   // Clear the previously clicked control first so its focus tooltip cannot reopen mid-drag.
   function handleDragRegionPointerDown(event: React.PointerEvent<HTMLElement>) {
     if (
+      !event.currentTarget.contains(event.target as Node) ||
       event.button !== 0 ||
       (event.target as HTMLElement).closest(INTERACTIVE_SELECTOR) !== null
     ) {
@@ -159,7 +161,7 @@ export function AppTopbar(props: { onQuit: () => void; isCheckingQuit: boolean }
         className="pointer-events-none bg-surface-card"
       >
         <div className="flex h-10 items-center gap-1">
-          <NotificationBell />
+          <NotificationEntry />
           <WindowControls />
         </div>
       </Highlight>
@@ -185,27 +187,6 @@ function SearchEntry() {
       <TooltipContent side="bottom">
         Search and the command palette arrive with FE-009.
       </TooltipContent>
-    </Tooltip>
-  );
-}
-
-// Reserve the notification entry point. No unread indicator is rendered while no source exists.
-function NotificationBell() {
-  return (
-    <Tooltip>
-      <HighlightItem asChild activeClassName="bg-surface-card">
-        <TooltipTrigger asChild>
-          <button
-            type="button"
-            aria-disabled="true"
-            aria-label="Notifications"
-            className="relative z-[1] flex h-10 w-11 cursor-default items-center justify-center text-body outline-none [&:not([data-highlight])]:hover:bg-surface-card active:bg-cream-strong focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            <Bell aria-hidden="true" className="size-4" />
-          </button>
-        </TooltipTrigger>
-      </HighlightItem>
-      <TooltipContent side="bottom">Notifications arrive with FE-010.</TooltipContent>
     </Tooltip>
   );
 }

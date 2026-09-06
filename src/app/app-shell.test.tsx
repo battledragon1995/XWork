@@ -1,11 +1,13 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { RouterProvider } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import * as notifications from "@/lib/ipc/notifications";
 import { AppProviders } from "./app-providers";
 import { createAppRouter } from "./app-router";
+import { resetQuitStore, useQuitStore } from "./quit-store";
 
 // Replace the Projects boundary the index route depends on. One project keeps `/` on its Home
 // branch, so these cases stay about the shell rather than about project data.
@@ -42,6 +44,46 @@ vi.mock("@/lib/ipc/sessions", () => ({
 // Remove rendered output between tests so each router instance stays isolated.
 afterEach(() => {
   cleanup();
+  resetQuitStore();
+});
+
+/** One mounted notification listener survives route changes and releases on shell unmount. */
+it("keeps one notification owner across routes and dismisses for Quit", async () => {
+  vi.mocked(notifications.onNotificationsChanged).mockClear();
+  const stop = vi.fn();
+  vi.mocked(notifications.onNotificationsChanged).mockResolvedValueOnce(stop);
+  const user = userEvent.setup();
+  const view = renderShellAt("/");
+  await screen.findByRole("button", { name: "Notifications, 0 unread" });
+  await user.click(screen.getByRole("button", { name: /^Notifications/ }));
+  expect(await screen.findByRole("dialog", { name: "Notifications" })).toBeInTheDocument();
+  await user.click(screen.getByRole("link", { name: "Calendar" }));
+  await waitFor(() =>
+    expect(screen.queryByRole("dialog", { name: "Notifications" })).not.toBeInTheDocument(),
+  );
+  expect(notifications.onNotificationsChanged).toHaveBeenCalledTimes(1);
+  expect(stop).not.toHaveBeenCalled();
+  await user.click(screen.getByRole("button", { name: /^Notifications/ }));
+  act(() => useQuitStore.setState({ phase: "requesting" }));
+  await waitFor(() =>
+    expect(screen.queryByRole("dialog", { name: "Notifications" })).not.toBeInTheDocument(),
+  );
+  expect(screen.getByRole("button", { name: /^Notifications/ })).toBeDisabled();
+  expect(screen.getByRole("button", { name: /^Notifications/ })).not.toHaveFocus();
+  // The real Quit dialog must keep its autofocus after the notification portal unmounts.
+  act(() =>
+    useQuitStore.getState().receiveTrayRequest({
+      requestId: 7,
+      summary: { sessionCount: 1, projectCount: 1, runningProcessCount: 1, unsavedFileCount: 0 },
+    }),
+  );
+  const quit = await screen.findByRole("dialog", { name: "Quit XWork?" });
+  await waitFor(() => expect(quit.contains(document.activeElement)).toBe(true));
+  act(() => useQuitStore.setState({ phase: "idle", request: null }));
+  await user.click(screen.getByRole("button", { name: /^Notifications/ }));
+  expect(await screen.findByRole("dialog", { name: "Notifications" })).toBeInTheDocument();
+  view.unmount();
+  expect(stop).toHaveBeenCalledTimes(1);
 });
 
 // Render the production shell at one entry so every case shares the same setup.
@@ -103,7 +145,7 @@ describe("AppShell", () => {
     const expected = [
       screen.getByRole("button", { name: "XWork menu" }),
       screen.getByRole("button", { name: "Search or run a command" }),
-      screen.getByRole("button", { name: "Notifications" }),
+      screen.getByRole("button", { name: /^Notifications/ }),
       screen.getByRole("button", { name: "Minimize" }),
       screen.getByRole("button", { name: "Maximize" }),
       screen.getByRole("button", { name: "Close (hides to tray)" }),
@@ -139,4 +181,22 @@ vi.mock("@/lib/ipc/keyboard-shortcuts", () => ({
 /** Isolate platform detection for shell-only tests. */
 vi.mock("@/lib/ipc/app-info", () => ({
   readAppInfo: vi.fn(async () => ({ osPlatform: "windows" })),
+}));
+
+// Isolate the persistent notification owner from native IPC in shell regressions.
+vi.mock("@/lib/ipc/notifications", () => ({
+  // Provide an authoritative empty snapshot without any real app data.
+  getNotifications: vi.fn(async () => ({
+    revision: "1",
+    unreadCount: 0,
+    items: [],
+    nextCursor: null,
+  })),
+  // Return an observable cleanup for the shell lifetime.
+  onNotificationsChanged: vi.fn(async () => vi.fn()),
+  markNotificationRead: vi.fn(),
+  markAllNotificationsRead: vi.fn(),
+  deleteNotification: vi.fn(),
+  clearReadNotifications: vi.fn(),
+  openNotification: vi.fn(),
 }));
