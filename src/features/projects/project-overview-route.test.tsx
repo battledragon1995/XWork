@@ -69,6 +69,21 @@ const GIT_STATUS: ProjectGitStatusDto = {
   changes: [],
 };
 
+/** Stage15 keeps Git paths as read-only text and does not add a recent-file view. */
+it("does not turn Git changes into file-opening controls", async () => {
+  getProjectGitStatusMock.mockResolvedValue({
+    ...GIT_STATUS,
+    summary: { ...GIT_STATUS.summary, changedCount: 1 },
+    changes: [
+      { path: "src/fixture.ts", previousPath: null, change: "modified", isDirectory: false },
+    ],
+  });
+  renderRoute();
+  const path = await screen.findByText("src/fixture.ts");
+  expect(path.closest("button, a, [role=button]")).toBeNull();
+  expect(screen.queryByText(/Recent files/i)).not.toBeInTheDocument();
+});
+
 /** Event callback registered by the overview hook. */
 let projectEvent: ((event: ProjectChangedEventDto) => void) | null;
 
@@ -192,6 +207,9 @@ describe("ProjectOverviewRoute states", () => {
     }
     expect(screen.getByRole("heading", { name: "Sessions in this run" })).toBeInTheDocument();
     expect(listSessionsMock).toHaveBeenCalledExactlyOnceWith("3f2a");
+    // Stage15 keeps file browsing in Sessions and defers recent-file projection.
+    expect(screen.queryByText(/Recent files/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole("tree", { name: "Project files" })).not.toBeInTheDocument();
   });
 
   // Verify unavailable metadata replaces the Git area with its recovery banner.

@@ -1,5 +1,5 @@
-import { Pen } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { FolderTree, Pen } from "lucide-react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router";
 import type { KeyboardShortcutsDto } from "@/bindings/keyboard-shortcuts";
 import type { PaneContentDto, SessionDetailDto } from "@/bindings/sessions/sessions";
@@ -35,6 +35,18 @@ export interface SessionTerminalSlotProps {
 
 /** Optional app composition surface for terminal content. */
 export type SessionTerminalRenderer = (props: SessionTerminalSlotProps) => React.ReactNode;
+
+/** Supply the minimal session-owned Explorer placement context. */
+export interface SessionFileExplorerSlotProps {
+  sessionId: string;
+  projectId: string;
+  isVisible: boolean;
+  regionId: string;
+  /** Close through the same toggle owner used by the tab strip. */
+  onClose(): void;
+}
+/** Compose Files at the application boundary without a feature dependency. */
+export type SessionFileExplorerRenderer = (props: SessionFileExplorerSlotProps) => React.ReactNode;
 
 /** Render the non-interactive route shape while the first read is pending. */
 function SessionRouteSkeleton() {
@@ -124,12 +136,23 @@ export function SessionRoute(props: {
   shortcutSnapshot?: KeyboardShortcutsDto | null;
   shortcutPlatform?: ShortcutPlatform | null;
   renderTerminal?: SessionTerminalRenderer;
+  renderFileExplorer?: SessionFileExplorerRenderer;
 }) {
   const { sessionId = "" } = useParams();
   const navigate = useNavigate();
   const detail = useSessionDetail(sessionId);
   const lifecycle = useSessionLifecycle();
   const { reset: resetLifecycle, inspect } = lifecycle;
+
+  const [explorerSession, setExplorerSession] = useState<string | null>(null);
+  const explorerToggle = useRef<HTMLButtonElement>(null);
+  const explorerRegionId = useId();
+  const explorerVisible = explorerSession === sessionId;
+  // A reused route starts closed and cannot revive intent from an earlier visit.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: Route identity explicitly retires visibility intent.
+  useEffect(() => {
+    setExplorerSession(null);
+  }, [sessionId]);
 
   const [isRenameOpen, setRenameOpen] = useState(false);
   const [isDeleteOpen, setDeleteOpen] = useState(false);
@@ -281,6 +304,28 @@ export function SessionRoute(props: {
 
   const summary = detail.detail.summary;
   const isBusy = lifecycle.pending !== null;
+  const explorerControl = props.renderFileExplorer && (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          ref={explorerToggle}
+          variant="ghost"
+          size="icon-sm"
+          aria-label={explorerVisible ? "Hide File Explorer" : "Show File Explorer"}
+          aria-expanded={explorerVisible}
+          aria-controls={explorerRegionId}
+          disabled={isBusy || isRenameOpen || isDeleteOpen}
+          // Visibility belongs to this route and never mutates tab or terminal state.
+          onClick={() => setExplorerSession(explorerVisible ? null : sessionId)}
+        >
+          <FolderTree aria-hidden="true" />
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent>
+        {explorerVisible ? "Hide File Explorer" : "Show File Explorer"}
+      </TooltipContent>
+    </Tooltip>
+  );
 
   const dialogs = (
     <>
@@ -322,44 +367,65 @@ export function SessionRoute(props: {
     </>
   );
 
-  if (detail.detail.tabs.length > 0) {
-    return (
-      <div ref={workspaceRef} className="h-full min-h-0 overflow-hidden">
-        <SessionWorkspace
-          shortcutSnapshot={props.shortcutSnapshot}
-          shortcutPlatform={props.shortcutPlatform}
-          detail={detail.detail}
-          rootPath={detail.project?.rootPath ?? null}
-          onApplyDetail={detail.applyDetail}
-          onRefresh={detail.refresh}
-          onRenameSession={() => openRename("menu")}
-          onDeleteSession={() => void openDelete()}
-          renderTerminal={props.renderTerminal}
-        />
-        {dialogs}
-      </div>
-    );
-  }
-
   return (
-    <div className="@container h-full overflow-y-auto overflow-x-hidden px-8 py-7">
-      <div className="grid min-w-0 gap-6">
-        <SessionHeader
-          name={summary.name}
-          rootPath={detail.project?.rootPath ?? null}
-          isBusy={isBusy}
-          renameRef={renameButtonRef}
-          menuRef={menuButtonRef}
-          onRenameFromButton={() => openRename("rename")}
-          onRenameFromMenu={() => openRename("menu")}
-          onDelete={() => void openDelete()}
-        />
+    <div ref={workspaceRef} className="@container/session h-full min-h-0 overflow-hidden">
+      <div className="flex h-full min-h-0 flex-col @min-[600px]/session:flex-row">
+        <div
+          hidden={!explorerVisible}
+          className="max-h-[40%] min-h-0 shrink-0 overflow-auto border-b border-hairline @min-[600px]/session:max-h-full @min-[600px]/session:w-[240px] @min-[600px]/session:border-r @min-[600px]/session:border-b-0"
+        >
+          {summary.id === sessionId &&
+            props.renderFileExplorer?.({
+              sessionId,
+              projectId: summary.projectId,
+              isVisible: explorerVisible,
+              regionId: explorerRegionId,
+              // Restore only the still-mounted, enabled toggle after an explicit panel close.
+              onClose: () => {
+                setExplorerSession(null);
+                if (explorerToggle.current?.isConnected && !explorerToggle.current.disabled)
+                  explorerToggle.current.focus();
+              },
+            })}
+        </div>
+        <div className="min-h-0 min-w-0 flex-1 overflow-hidden">
+          {detail.detail.tabs.length > 0 ? (
+            <SessionWorkspace
+              shortcutSnapshot={props.shortcutSnapshot}
+              shortcutPlatform={props.shortcutPlatform}
+              detail={detail.detail}
+              rootPath={detail.project?.rootPath ?? null}
+              onApplyDetail={detail.applyDetail}
+              onRefresh={detail.refresh}
+              onRenameSession={() => openRename("menu")}
+              onDeleteSession={() => void openDelete()}
+              renderTerminal={props.renderTerminal}
+              fileExplorerToggle={explorerControl}
+            />
+          ) : (
+            <div className="@container h-full overflow-y-auto overflow-x-hidden px-8 py-7">
+              <div className="grid min-w-0 gap-6">
+                {explorerControl}
+                <SessionHeader
+                  name={summary.name}
+                  rootPath={detail.project?.rootPath ?? null}
+                  isBusy={isBusy}
+                  renameRef={renameButtonRef}
+                  menuRef={menuButtonRef}
+                  onRenameFromButton={() => openRename("rename")}
+                  onRenameFromMenu={() => openRename("menu")}
+                  onDelete={() => void openDelete()}
+                />
 
-        <SessionToolPicker
-          sessionId={summary.id}
-          onSelected={detail.applyDetail}
-          onRefresh={detail.refresh}
-        />
+                <SessionToolPicker
+                  sessionId={summary.id}
+                  onSelected={detail.applyDetail}
+                  onRefresh={detail.refresh}
+                />
+              </div>
+            </div>
+          )}
+        </div>
       </div>
       {dialogs}
     </div>

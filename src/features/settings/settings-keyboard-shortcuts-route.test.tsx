@@ -250,6 +250,8 @@ async function mount() {
 it("renders 18 ordered actions and ten unavailable handlers", async () => {
   await mount();
   expect(screen.getAllByRole("button", { name: /^Change shortcut for/ })).toHaveLength(18);
+  // Stage15 does not register an Explorer action or advertise the wireframe accelerator.
+  expect(screen.queryByText(/File Explorer|Ctrl\s*\+?\s*B/i)).not.toBeInTheDocument();
   expect(screen.getAllByText("Not available yet")).toHaveLength(10);
   expect(
     screen.getAllByRole("heading", { level: 3 }).map(

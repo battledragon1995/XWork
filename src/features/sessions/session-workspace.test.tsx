@@ -34,6 +34,43 @@ vi.mock("./use-workspace-mutations", () => ({ useWorkspaceMutations: () => mutat
 
 afterEach(cleanup);
 
+/** Workspace-local pending state disables the supplied control without replacing terminal DOM. */
+it("preserves terminal DOM and disables Explorer at the workspace boundary", async () => {
+  const clicked = vi.fn();
+  const user = userEvent.setup();
+  const detail = createNonEmptySessionDetail();
+  /** Re-render exactly the same terminal position while changing local closing state. */
+  const workspace = () => (
+    <TooltipProvider>
+      <MemoryRouter>
+        <SessionWorkspace
+          detail={detail}
+          rootPath={null}
+          onApplyDetail={vi.fn()}
+          onRefresh={vi.fn()}
+          onRenameSession={vi.fn()}
+          onDeleteSession={vi.fn()}
+          renderTerminal={() => <div data-testid="durable-terminal" />}
+          fileExplorerToggle={
+            <button type="button" onClick={clicked}>
+              Show File Explorer
+            </button>
+          }
+        />
+      </MemoryRouter>
+    </TooltipProvider>
+  );
+  const view = render(workspace());
+  const terminal = screen.getByTestId("durable-terminal");
+  await user.click(screen.getByRole("button", { name: "Show File Explorer" }));
+  expect(clicked).toHaveBeenCalledOnce();
+  mutations.isSessionClosing = true;
+  view.rerender(workspace());
+  expect(screen.getByRole("button", { name: "Show File Explorer" })).toBeDisabled();
+  expect(screen.getByTestId("durable-terminal")).toBe(terminal);
+  mutations.isSessionClosing = false;
+});
+
 describe("SessionWorkspace", () => {
   // Verify the active tab stays width-constrained and session menu intents remain route-owned.
   it("composes constrained tabs, panes, and session intents", async () => {

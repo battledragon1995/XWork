@@ -1,19 +1,24 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { DataChangedEventDto } from "@/bindings/data-management";
-import * as ipc from "@/lib/ipc/data-management";
-import { getSettings } from "@/lib/ipc/settings";
-import { listProjects } from "@/lib/ipc/projects";
-import { listSessions } from "@/lib/ipc/sessions";
-import { resetSettingsStore } from "@/features/settings/settings-store";
+import { TooltipProvider } from "@/components/ui/tooltip";
+import { FileExplorer } from "@/features/files";
+import { deferred, entry, explorerProps, page, project } from "@/features/files/files-test-fixture";
 import { resetProjectsStore, useProjectsStore } from "@/features/projects/projects-store";
 import { resetSessionsStore, useSessionsStore } from "@/features/sessions/sessions-store";
 import { resetCliProfilesStore } from "@/features/settings/cli-profiles-store";
-import { createSettingsSnapshot } from "@/features/settings/settings-test-fixture";
 import { useDataManagement } from "@/features/settings/data-management-provider";
 import type { DataManagementState } from "@/features/settings/data-management-state";
+import { resetSettingsStore } from "@/features/settings/settings-store";
+import { createSettingsSnapshot } from "@/features/settings/settings-test-fixture";
+import * as ipc from "@/lib/ipc/data-management";
+import * as files from "@/lib/ipc/files";
+import { getProject, listProjects } from "@/lib/ipc/projects";
+import { listSessions } from "@/lib/ipc/sessions";
+import { getSettings } from "@/lib/ipc/settings";
 import { DataManagementBridge, DataManagementHost } from "./data-management-bridge";
-import { useShellStore, resetShellStore } from "./shell-store";
+import { resetShellStore, useShellStore } from "./shell-store";
+
 /** Replace navigation and the renderer boundary with explicit isolated collaborators. */
 const fake = vi.hoisted(() => ({
   navigate: vi.fn(),
@@ -39,9 +44,12 @@ vi.mock("@/features/settings/keyboard-shortcuts-provider", () => ({
 }));
 /** Use real owner stores backed only by mocked queries. */
 vi.mock("@/lib/ipc/projects", () => ({
+  getProject: vi.fn(),
   listProjects: vi.fn(),
   onProjectsChanged: vi.fn(async () => () => {}),
 }));
+/** Files actions use only isolated promise seams, never native clipboard or reveal. */
+vi.mock("@/lib/ipc/files");
 vi.mock("@/lib/ipc/sessions", () => ({
   listSessions: vi.fn(),
   onSessionsRuntimeChanged: vi.fn(async () => () => {}),
@@ -123,6 +131,69 @@ async function mount() {
   await waitFor(() => expect(data.listenerStatus).toBe("ready"));
   return view;
 }
+
+/** Compose the public Files boundary with the real Data owner used by the host. */
+function FilesProbe() {
+  const owner = useDataManagement();
+  return (
+    <TooltipProvider>
+      <FileExplorer
+        {...explorerProps()}
+        boundary={{ epoch: owner.invalidationEpoch, suspended: owner.busy }}
+        readBoundary={() => {
+          const live = owner.getCurrent();
+          return { epoch: live.invalidationEpoch, suspended: live.busy };
+        }}
+      />
+    </TooltipProvider>
+  );
+}
+/** The real coordinator invalidates pending Files work before owner refresh completes. */
+it("retires Files path responses during reset even when a project refresh fails", async () => {
+  const paths = deferred<{ absolutePath: string; relativePath: string }>();
+  const refreshedRoot = deferred<ReturnType<typeof page>>();
+  const clipboard = vi.fn();
+  const descriptor = Object.getOwnPropertyDescriptor(navigator, "clipboard");
+  Object.defineProperty(navigator, "clipboard", {
+    configurable: true,
+    value: { writeText: clipboard },
+  });
+  vi.mocked(getProject).mockResolvedValue(project);
+  vi.mocked(files.listFileChildren)
+    .mockResolvedValueOnce(page("", [entry("old.ts")]))
+    .mockReturnValue(refreshedRoot.promise);
+  vi.mocked(files.getFileEntryPaths).mockReturnValue(paths.promise);
+  try {
+    render(
+      <DataManagementHost>
+        <Probe />
+        <FilesProbe />
+        <div data-testid="durable-shell" />
+      </DataManagementHost>,
+    );
+    const row = await screen.findByRole("treeitem", { name: "old.ts" });
+    const shell = screen.getByTestId("durable-shell");
+    fireEvent.contextMenu(row);
+    fireEvent.click(screen.getByRole("menuitem", { name: "Copy path" }));
+    await waitFor(() => expect(files.getFileEntryPaths).toHaveBeenCalledOnce());
+    vi.mocked(listProjects).mockRejectedValueOnce(new Error("isolated refresh failure"));
+    await act(async () => {
+      emit({ kind: "app_reset" });
+      paths.resolve({ relativePath: "old.ts", absolutePath: "X:/obsolete/old.ts" });
+    });
+    await screen.findByText("Changes were saved, but some views could not be refreshed.");
+    expect(clipboard).not.toHaveBeenCalled();
+    expect(screen.queryByRole("treeitem", { name: "old.ts" })).not.toBeInTheDocument();
+    expect(screen.getByTestId("durable-shell")).toBe(shell);
+    expect(fake.clear).toHaveBeenCalledOnce();
+    await act(async () => refreshedRoot.resolve(page("", [entry("fresh.ts")])));
+    await screen.findByRole("treeitem", { name: "fresh.ts" });
+    expect(files.getFileEntryPaths).toHaveBeenCalledOnce();
+  } finally {
+    if (descriptor) Object.defineProperty(navigator, "clipboard", descriptor);
+    else Reflect.deleteProperty(navigator, "clipboard");
+  }
+});
 /** Reset clears stale rows synchronously and attempts every refresh despite failure. */
 it("clears reset projections, navigates and retries only failed reads", async () => {
   await mount();

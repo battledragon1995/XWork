@@ -1,6 +1,6 @@
-import { cleanup, render, screen } from "@testing-library/react";
+import { act, cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { MemoryRouter } from "react-router";
+import { MemoryRouter, useLocation, useNavigationType } from "react-router";
 import { afterEach, expect, it, vi } from "vitest";
 
 /** Keep composition props observable across rerenders. */
@@ -43,7 +43,112 @@ vi.mock("@/features/terminal", () => ({
   ),
 }));
 
+import type { FileExplorerProps } from "@/features/files";
+import type { SessionFileExplorerSlotProps } from "@/features/sessions/session-route";
+import { useQuitStore } from "./quit-store";
 import { SessionTerminalRoute } from "./session-terminal-route";
+
+/** Supply a mutable public maintenance owner without native operations. */
+const maintenance = vi.hoisted(() => ({ busy: false, invalidationEpoch: 0 }));
+vi.mock("@/features/settings/data-management-provider", () => ({
+  /** Keep synchronous reads tied to the same owner used for rendered props. */
+  useDataManagement: () => ({ ...maintenance, getCurrent: () => maintenance }),
+}));
+
+/** Keep the Files public props observable without fetching a native tree. */
+const explorer = vi.hoisted(() => ({ received: vi.fn() }));
+vi.mock("@/features/files", () => ({
+  /** Capture the exact app-owned identity, boundary and navigation contract. */
+  FileExplorer: (props: FileExplorerProps) => {
+    explorer.received(props);
+    return <p>Files slot</p>;
+  },
+}));
+
+/** App composition must read live owners even before a React rerender and guard stale close. */
+it("composes Files with summary identity, current platform and synchronous Data/Quit guards", () => {
+  const view = render(
+    <MemoryRouter>
+      <SessionTerminalRoute />
+    </MemoryRouter>,
+  );
+  const received = bridge.received.mock.calls.at(-1)?.[0] as {
+    renderFileExplorer(props: SessionFileExplorerSlotProps): React.ReactNode;
+  };
+  const onClose = vi.fn();
+  const slot = {
+    sessionId: "session",
+    projectId: "summary-project",
+    isVisible: true,
+    regionId: "files",
+    onClose,
+  };
+  render(received.renderFileExplorer(slot));
+  const props = explorer.received.mock.calls.at(-1)?.[0] as FileExplorerProps;
+  expect(props.projectId).toBe("summary-project");
+  expect(props.platform).toBe("windows");
+  expect(props.readBoundary()).toEqual({ epoch: 0, suspended: false });
+  maintenance.busy = true;
+  expect(props.readBoundary().suspended).toBe(true);
+  props.onClose();
+  expect(onClose).not.toHaveBeenCalled();
+  maintenance.busy = false;
+  maintenance.invalidationEpoch = 1;
+  props.onClose();
+  expect(onClose).not.toHaveBeenCalled();
+  maintenance.invalidationEpoch = 0;
+  for (const phase of [
+    "requesting",
+    "awaiting-confirmation",
+    "confirming",
+    "integration-failed",
+  ] as const) {
+    act(() => useQuitStore.setState({ phase }));
+    expect(props.readBoundary().suspended).toBe(true);
+  }
+  act(() => useQuitStore.setState({ phase: "snapshot-failed" }));
+  expect(props.readBoundary().suspended).toBe(false);
+  act(() => useQuitStore.setState({ phase: "idle" }));
+  view.unmount();
+});
+
+/** Observe navigation through the real router without replacing the app callback contract. */
+function LocationProbe() {
+  const location = useLocation();
+  const method = useNavigationType();
+  return (
+    <output data-testid="location">
+      {method}:{location.pathname}
+    </output>
+  );
+}
+/** Existing-project recovery pushes overview; removed-project recovery replaces the route. */
+it("routes Files recovery through its project identity and suppresses stale navigation", () => {
+  render(
+    <MemoryRouter initialEntries={["/sessions/fixture"]}>
+      <SessionTerminalRoute />
+      <LocationProbe />
+    </MemoryRouter>,
+  );
+  const received = bridge.received.mock.calls.at(-1)?.[0] as {
+    renderFileExplorer(props: SessionFileExplorerSlotProps): React.ReactElement<FileExplorerProps>;
+  };
+  const element = received.renderFileExplorer({
+    sessionId: "fixture",
+    projectId: "summary-project",
+    isVisible: true,
+    regionId: "files",
+    onClose: vi.fn(),
+  });
+  act(() => element.props.onOpenProject());
+  expect(screen.getByTestId("location")).toHaveTextContent("PUSH:/projects/summary-project");
+  act(() => element.props.onProjectMissing());
+  expect(screen.getByTestId("location")).toHaveTextContent("REPLACE:/projects");
+  maintenance.busy = true;
+  act(() => element.props.onOpenProject());
+  expect(screen.getByTestId("location")).toHaveTextContent("REPLACE:/projects");
+  maintenance.busy = false;
+});
 
 /** Verifies the app supplies Terminal to Sessions and owns settings navigation. */
 it("composes the terminal render slot with app navigation callbacks", async () => {

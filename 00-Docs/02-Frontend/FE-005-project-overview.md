@@ -39,8 +39,14 @@ Sau khi feature hoàn thành, người dùng mở một project từ sidebar, tr
 - Hàng phiên con và chevron mở rộng trên sidebar (`FE-006`, wireframe `#sidebar-sessions`). Bấm hàng project trên sidebar vẫn chỉ điều hướng tới `/projects/:projectId` như FE-004 đã triển khai.
 - Gọi `set_observed_session`: việc đánh dấu output đã xem là của route phiên (`FE-006`), không phải của overview.
 - Khối file mở gần đây, note liên kết và event liên kết (giai đoạn 16, 18, 20) cùng các hành động `New note`, `New event` trong wireframe.
-- Mở file từ danh sách thay đổi Git: hàng thay đổi là văn bản tĩnh; hành vi mở file thuộc Phase 2 (`FE-016`–`FE-018`).
+- Mở file từ danh sách thay đổi Git: hàng thay đổi là văn bản tĩnh. Stage15 (`FE-016`) chỉ duyệt/search/copy/reveal trong phiên, không kích hoạt hàng Git; hành vi mở nội dung chờ contract `BE-014`/`FE-017` từ stage16.
 - Terminal render, stream output và vòng đời tiến trình (`FE-008`, `BE-007`).
+
+### Ranh giới stage15 — File Explorer
+
+- [FE-016 File Explorer](FE-016-file-explorer.md) không đưa cây file vào Project Overview, không ghi recent khi chọn/copy/reveal và không thêm cột `Recent files`. Cột phải vẫn chờ stage16 theo contract hiện tại.
+- `Open project` từ Explorer unavailable trở về route overview hiện có để dùng Locate/Remove của owner Projects; không tạo recovery dialog thứ hai hoặc coi reveal entry là `Open folder` của project root.
+- Không cần sửa source Projects cho stage15. Regression `src/features/projects/project-overview-route.test.tsx` xác nhận chưa có recent/open Git; file này đã thuộc inventory. Native smoke/metrics prior pending không thay đổi.
 
 ## File liên quan
 

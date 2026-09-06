@@ -2,7 +2,8 @@
 import "@testing-library/jest-dom/vitest";
 import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
-import { MemoryRouter, Route, Routes } from "react-router";
+import { useEffect } from "react";
+import { Link, MemoryRouter, Route, Routes } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SessionDetailDto, SessionRuntimeEventDto } from "@/bindings/sessions/sessions";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -11,6 +12,7 @@ import { IpcCallError } from "@/lib/ipc/ipc-error";
 import * as projectsIpc from "@/lib/ipc/projects";
 import * as sessionsIpc from "@/lib/ipc/sessions";
 import { resetRecentTools } from "./recent-tools-store";
+import type { SessionFileExplorerSlotProps } from "./session-route";
 import { SessionRoute } from "./session-route";
 import {
   createCloseImpact,
@@ -233,6 +235,150 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   resetRecentTools();
+});
+
+/** Track the lifetime of a real element returned by the public render callback. */
+function ExplorerProbe(
+  props: SessionFileExplorerSlotProps & { mounted(): void; disposed(): void },
+) {
+  useEffect(() => {
+    props.mounted();
+    return props.disposed;
+  }, [props.mounted, props.disposed]);
+  return (
+    <section
+      data-testid="explorer-slot"
+      data-session={props.sessionId}
+      data-project={props.projectId}
+      hidden={!props.isVisible}
+    >
+      <button type="button" onClick={props.onClose}>
+        Close explorer probe
+      </button>
+    </section>
+  );
+}
+
+/** A reused route must begin closed and never render the prior session's Files identity. */
+it("retires Explorer visibility when navigation reuses the session route", async () => {
+  const user = userEvent.setup();
+  const mounted = vi.fn();
+  const disposed = vi.fn();
+  getSessionMock.mockImplementation(async (id) =>
+    createSessionDetail({ summary: createSessionSummary({ id }) }),
+  );
+  render(
+    <TooltipProvider>
+      <MemoryRouter initialEntries={[`/sessions/${FIXTURE_SESSION_ID}`]}>
+        <Link to="/sessions/second-session">Next session</Link>
+        <Routes>
+          <Route
+            path="/sessions/:sessionId"
+            element={
+              <SessionRoute
+                renderFileExplorer={(props) => (
+                  <ExplorerProbe {...props} mounted={mounted} disposed={disposed} />
+                )}
+              />
+            }
+          />
+        </Routes>
+      </MemoryRouter>
+    </TooltipProvider>,
+  );
+  await user.click(await screen.findByRole("button", { name: "Show File Explorer" }));
+  await user.click(screen.getByRole("link", { name: "Next session" }));
+  await waitFor(() =>
+    expect(screen.getByTestId("explorer-slot")).toHaveAttribute("data-session", "second-session"),
+  );
+  expect(screen.getByRole("button", { name: "Show File Explorer" })).toHaveAttribute(
+    "aria-expanded",
+    "false",
+  );
+  expect(screen.getByTestId("explorer-slot")).not.toBeVisible();
+});
+/** Toggle either session branch without starting tools or replacing the Explorer instance. */
+it.each([false, true])(
+  "preserves the Explorer slot and terminal DOM in populated=%s",
+  async (populated) => {
+    const detail = populated ? createNonEmptySessionDetail() : createSessionDetail();
+    getSessionMock.mockResolvedValue(detail);
+    const mounted = vi.fn();
+    const disposed = vi.fn();
+    const user = userEvent.setup();
+    render(
+      <TooltipProvider>
+        <MemoryRouter initialEntries={[`/sessions/${FIXTURE_SESSION_ID}`]}>
+          <Routes>
+            <Route
+              path="/sessions/:sessionId"
+              element={
+                <SessionRoute
+                  renderFileExplorer={(props) => (
+                    <ExplorerProbe {...props} mounted={mounted} disposed={disposed} />
+                  )}
+                  renderTerminal={() => <div data-testid="terminal-instance">Durable terminal</div>}
+                />
+              }
+            />
+          </Routes>
+        </MemoryRouter>
+      </TooltipProvider>,
+    );
+    const toggle = await screen.findByRole("button", { name: "Show File Explorer" });
+    const slot = screen.getByTestId("explorer-slot");
+    const terminal = screen.queryByTestId("terminal-instance");
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    expect(slot).toHaveAttribute("data-project", detail.summary.projectId);
+    await user.click(toggle);
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+    await user.click(screen.getByRole("button", { name: "Close explorer probe" }));
+    expect(toggle).toHaveFocus();
+    expect(screen.getByTestId("explorer-slot")).toBe(slot);
+    expect(screen.queryByTestId("terminal-instance")).toBe(terminal);
+    expect(mounted).toHaveBeenCalledOnce();
+    expect(disposed).not.toHaveBeenCalled();
+    expect(selectSessionToolMock).not.toHaveBeenCalled();
+    expect(closeRuntimeTargetMock).not.toHaveBeenCalled();
+    expect(screen.queryByText(/Ctrl.?B/)).not.toBeInTheDocument();
+  },
+);
+
+/** Empty-to-populated updates preserve the sibling Explorer instance while the owner creates its tool pane. */
+it("keeps the Explorer slot mounted when an empty session gains a tab", async () => {
+  const mounted = vi.fn();
+  const disposed = vi.fn();
+  const user = userEvent.setup();
+  render(
+    <TooltipProvider>
+      <MemoryRouter initialEntries={[`/sessions/${FIXTURE_SESSION_ID}`]}>
+        <Routes>
+          <Route
+            path="/sessions/:sessionId"
+            element={
+              <SessionRoute
+                renderFileExplorer={(props) => (
+                  <ExplorerProbe {...props} mounted={mounted} disposed={disposed} />
+                )}
+              />
+            }
+          />
+        </Routes>
+      </MemoryRouter>
+    </TooltipProvider>,
+  );
+  await user.click(await screen.findByRole("button", { name: "Show File Explorer" }));
+  const slot = screen.getByTestId("explorer-slot");
+  getSessionMock.mockResolvedValue(createNonEmptySessionDetail());
+  await user.click(screen.getByRole("button", { name: /^Codex/ }));
+  await screen.findByRole("tab", { name: /Codex/ });
+  expect(screen.getByTestId("explorer-slot")).toBe(slot);
+  expect(screen.getByRole("button", { name: "Hide File Explorer" })).toHaveAttribute(
+    "aria-expanded",
+    "true",
+  );
+  expect(mounted).toHaveBeenCalledOnce();
+  expect(disposed).not.toHaveBeenCalled();
 });
 
 describe("SessionRoute states", () => {

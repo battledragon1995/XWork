@@ -8,6 +8,38 @@ import { createNonEmptySessionDetail, createTabDto } from "./sessions-test-fixtu
 
 afterEach(cleanup);
 
+/** The supplied control precedes Tab options and retains its owner-provided ARIA contract. */
+it("places Explorer before Tab options without a fake accelerator", () => {
+  const detail = createNonEmptySessionDetail();
+  render(
+    <TooltipProvider>
+      <SessionTabStrip
+        detail={detail}
+        activeTab={detail.tabs[0]}
+        isBusy={false}
+        onCreate={vi.fn()}
+        onSelect={vi.fn()}
+        onMove={vi.fn()}
+        onClose={vi.fn()}
+        onRename={vi.fn()}
+        onReopen={vi.fn()}
+        onRenameSession={vi.fn()}
+        onDeleteSession={vi.fn()}
+        fileExplorerToggle={
+          <button type="button" aria-expanded="false" aria-controls="explorer">
+            Show File Explorer
+          </button>
+        }
+      />
+    </TooltipProvider>,
+  );
+  const toggle = screen.getByRole("button", { name: "Show File Explorer" });
+  const menu = screen.getByRole("button", { name: "Tab options" });
+  expect(toggle.compareDocumentPosition(menu) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(toggle).toHaveAttribute("aria-controls", "explorer");
+  expect(screen.queryByText(/Ctrl.?B/)).not.toBeInTheDocument();
+});
+
 describe("SessionTabStrip", () => {
   // Verify selection, creation, roving focus, and backend order are presented accessibly.
   it("renders and operates the tablist", async () => {

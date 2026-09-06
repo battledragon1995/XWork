@@ -26,6 +26,7 @@ export function SessionWorkspace(props: {
   onRenameSession(): void;
   onDeleteSession(): void;
   renderTerminal?: SessionTerminalRenderer;
+  fileExplorerToggle?: React.ReactNode;
 }) {
   const catalog = useToolCatalog();
   const mutations = useWorkspaceMutations({
@@ -133,6 +134,16 @@ export function SessionWorkspace(props: {
   return (
     <div ref={workspace} className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden">
       <SessionTabStrip
+        fileExplorerToggle={
+          props.fileExplorerToggle && (
+            <fieldset
+              disabled={isBusy || renameTarget !== null || mutations.pendingClose !== null}
+              className="contents"
+            >
+              {props.fileExplorerToggle}
+            </fieldset>
+          )
+        }
         shortcutSnapshot={props.shortcutSnapshot}
         shortcutPlatform={props.shortcutPlatform}
         detail={props.detail}

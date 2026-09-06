@@ -33,6 +33,13 @@ Người dùng xem, tìm, đổi và khôi phục phím tắt trong Settings. Th
 - Bảy action tab/pane đã có handler workspace vẫn được ghi là khả dụng trong Settings, nhưng chưa có public executor trong Palette; FE-009 hiển thị rõ giới hạn riêng này. Không thêm handler previous/next hoặc focus pane trong stage 12.
 - Test Settings xác nhận nhãn availability; test app/Search xác nhận override/reset/conflict/focus/terminal. Native Windows smoke stage 8–12 vẫn pending, không cập nhật historical plan.
 
+### Ranh giới stage15 — File Explorer
+
+- [FE-016 File Explorer](FE-016-file-explorer.md) có toggle trực quan và tree/menu keyboard cục bộ. BE-009 hiện chưa có action Explorer; `Ctrl B` trong wireframe là trạng thái đích, không được hardcode handler, keycap hoặc dòng catalog frontend trong stage15.
+- Catalog 18 action và availability sau stage12 giữ nguyên. Không sửa backend/defaults/generated binding hoặc source Settings; regression tại `src/features/settings/settings-keyboard-shortcuts-route.test.tsx` xác nhận không quảng bá Explorer shortcut giả.
+- Enter trong cây chọn entry/toggle directory theo FE016; không phải action mở file hoặc phím tắt tùy chỉnh. Open/Ctrl+Enter và flow file pane chờ stage16. Không chặn phím toàn ứng dụng khi focus ngoài Explorer, không ảnh hưởng recorder/IME/terminal.
+- Native smoke/metrics prior pending giữ nguyên. Thiết kế stage15 không xác nhận hoàn tất toàn Phase 2 hoặc sửa historical plans.
+
 ### Ngoài phạm vi
 
 - Không thêm action, multi-stroke shortcut, nhiều tổ hợp cho một action, thao tác bỏ gán phím hoặc nút giải quyết xung đột tự động.

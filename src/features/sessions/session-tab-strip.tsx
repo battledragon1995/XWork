@@ -31,6 +31,7 @@ export function SessionTabStrip(props: {
   detail: SessionDetailDto;
   activeTab: TabDto;
   isBusy: boolean;
+  fileExplorerToggle?: React.ReactNode;
   optionsTriggerRef?: React.Ref<HTMLButtonElement>;
   onCreate(): void;
   onSelect(tabId: string): void;
@@ -128,6 +129,7 @@ export function SessionTabStrip(props: {
           </Tooltip>
         </div>
       </DndContext>
+      {props.fileExplorerToggle}
       <TabOptionsMenu
         triggerRef={props.optionsTriggerRef}
         isBusy={props.isBusy}

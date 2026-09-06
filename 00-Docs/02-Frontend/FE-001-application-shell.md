@@ -68,6 +68,14 @@ Người dùng mở XWork và thấy một khung ứng dụng hoàn chỉnh: sid
 - Bổ sung phạm vi implementation/test: `src/app/search-entry.tsx`, `src/app/search-entry.test.tsx`, `src/app/app-topbar.tsx`, `src/app/app-topbar.test.tsx`, `src/app/app-shell.test.tsx`; các dependency public/source Search nằm trong bảng File liên quan FE-009. Không sửa router hoặc notification business logic.
 - Smoke native stage 8–12 vẫn pending; không coi nội dung thiết kế này là bằng chứng pass, không sửa historical plan.
 
+### Mở rộng giai đoạn 15 — File Explorer
+
+- Contract và inventory implementation/test tại [FE-016 File Explorer](FE-016-file-explorer.md). `src/app/session-terminal-route.tsx` ghép public Files qua optional `renderFileExplorer` của SessionRoute; Sessions sở hữu toggle/placement cho cả phiên rỗng và có tab. Explorer nằm bên cạnh workspace, không thuộc sidebar chính hoặc một route mới.
+- App truyền projectId từ session summary thật, platform hiện hành và boundary/readBoundary từ DataManagement/Quit theo pattern HomeEntry. Epoch/busy phải vô hiệu hóa thao tác và response cũ trước cả React effect; không remount app hoặc terminal để clear cây.
+- Toggle mặc định đóng khi vào route; label `Show File Explorer` / `Hide File Explorer`, không quảng bá `Ctrl+B` khi BE-009 chưa có action. Nút trên tab strip/header và bàn phím cục bộ đáp ứng truy cập Explorer trong stage15.
+- Chỉ duyệt/search/refresh/copy/reveal thật qua BE-013. File click chỉ chọn và giải thích chưa có viewer; không tạo tab/pane, recent files hoặc route giả. BE-014/FE-017 ở stage16 mới kích hoạt read/watch/source viewer và thiết kế luồng mở nội dung.
+- Các file composition, Sessions slot và regression boundary nằm trong bảng File liên quan FE016; không thay shell/router/providers hoặc native capabilities. Native smoke/metrics prior pending giữ nguyên, không sửa historical plans.
+
 ### Ngoài phạm vi
 
 - Nội dung của từng khu vực: Welcome (`FE-002`), Home (`FE-003`), Projects (`FE-004`), Project Overview (`FE-005`), Notes (`FE-019`), Calendar (`FE-021`) và các trang Settings (`FE-011`–`FE-015`, `FE-023`).
