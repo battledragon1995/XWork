@@ -168,10 +168,7 @@ export function TerminalPane(props: TerminalPaneProps) {
         ? (current + 1) % matches.length
         : (current - 1 + matches.length) % matches.length;
     setActiveMatch(next);
-    const rowHeight = Number.parseFloat(
-      getComputedStyle(entry.adapter.element).getPropertyValue("--term-row-height"),
-    );
-    entry.adapter.element.scrollTop = matches[next]?.row * (rowHeight || 17);
+    entry.adapter.scrollToHistoryRow(matches[next].row);
   };
 
   /** Opens an activated DOM hyperlink through the scoped Rust command. */

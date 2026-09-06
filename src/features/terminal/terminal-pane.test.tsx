@@ -48,6 +48,7 @@ const fixture = vi.hoisted(() => {
     clearScreen: vi.fn(() => true),
     focus: vi.fn(),
     jumpToLatest: vi.fn(),
+    scrollToHistoryRow: vi.fn(),
     findQuery: "",
   };
   return {

@@ -10,6 +10,75 @@ import {
   measureTerminalGrid,
 } from "./wterm-adapter";
 
+/** Replays empty startup scrolling without hiding subsequent output or changing stored history. */
+it("omits leading empty scrollback from the rendered terminal", async () => {
+  vi.useFakeTimers();
+  const wasm = readFileSync("node_modules/@wterm/ghostty/wasm/ghostty-vt.wasm");
+  const fetch = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(wasm));
+  const host = document.createElement("div");
+  document.body.appendChild(host);
+  const adapter = new WTermAdapter({ onData: vi.fn(), onResize: vi.fn() });
+  const encode = new TextEncoder();
+  try {
+    await adapter.initialize(host, { columns: 20, rows: 4 });
+    adapter.write(encode.encode("\u001b[4;1H\r\n\u001b[HAsk Codex"));
+    await vi.advanceTimersByTimeAsync(60);
+    expect(adapter.historyCore?.getScrollbackCount()).toBe(1);
+    expect(adapter.element).not.toHaveClass("has-scrollback");
+    expect(adapter.element.querySelectorAll(".term-scrollback-row")).toHaveLength(0);
+    expect(adapter.element.textContent).toContain("Ask Codex");
+
+    adapter.write(encode.encode("\u001b[4;1H\r\n\r\n"));
+    await vi.advanceTimersByTimeAsync(60);
+    expect(adapter.element).toHaveClass("has-scrollback");
+    const history = adapter.element.querySelectorAll(".term-scrollback-row");
+    expect(history).toHaveLength(2);
+    expect(history[0].textContent).toContain("Ask Codex");
+    expect(history[1].textContent?.trim()).toBe("");
+    expect(adapter.readHistoryRows().slice(0, 3)).toEqual(["", "Ask Codex", ""]);
+    adapter.element.style.setProperty("--term-row-height", "18px");
+    adapter.scrollToHistoryRow(2);
+    expect(adapter.element.scrollTop).toBe(18);
+    adapter.scrollToHistoryRow(0);
+    expect(adapter.element.scrollTop).toBe(0);
+
+    adapter.write(encode.encode("\u001b[?1049h"));
+    await vi.advanceTimersByTimeAsync(60);
+    expect(adapter.element).not.toHaveClass("has-scrollback");
+    adapter.write(encode.encode("\u001b[?1049l"));
+    await vi.advanceTimersByTimeAsync(60);
+    expect(adapter.element).toHaveClass("has-scrollback");
+
+    adapter.write(encode.encode("\u001b[3J"));
+    await vi.advanceTimersByTimeAsync(60);
+    expect(adapter.element).not.toHaveClass("has-scrollback");
+  } finally {
+    adapter.destroy();
+    host.remove();
+    fetch.mockRestore();
+    vi.useRealTimers();
+  }
+});
+
+/** Keeps painted whitespace visible because it can carry terminal graphics or highlighting. */
+it("retains leading scrollback with a painted background", async () => {
+  vi.useFakeTimers();
+  const wasm = readFileSync("node_modules/@wterm/ghostty/wasm/ghostty-vt.wasm");
+  const fetch = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(wasm));
+  const adapter = new WTermAdapter({ onData: vi.fn(), onResize: vi.fn() });
+  try {
+    await adapter.initialize(document.createElement("div"), { columns: 20, rows: 4 });
+    adapter.write(new TextEncoder().encode("\u001b[41m \u001b[0m\u001b[4;1H\r\n"));
+    await vi.advanceTimersByTimeAsync(60);
+    expect(adapter.element).toHaveClass("has-scrollback");
+    expect(adapter.element.querySelectorAll(".term-scrollback-row")).toHaveLength(1);
+  } finally {
+    adapter.destroy();
+    fetch.mockRestore();
+    vi.useRealTimers();
+  }
+});
+
 /** Replays ConPTY's split cursor restoration through the production app adapter and CSS. */
 it("does not paint the intermediate cursor after a ConPTY synchronized redraw", async () => {
   vi.useFakeTimers();

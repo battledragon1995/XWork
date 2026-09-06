@@ -203,6 +203,15 @@ export class WTermAdapter {
     return readCoreRows(this.core);
   }
 
+  /** Maps a full-history search row to the viewport after omitting empty startup rows. */
+  scrollToHistoryRow(row: number): void {
+    const hidden = this.core === null ? 0 : leadingEmptyScrollbackRows(this.core);
+    const rowHeight = Number.parseFloat(
+      getComputedStyle(this.root).getPropertyValue("--term-row-height"),
+    );
+    this.root.scrollTop = Math.max(0, row - hidden) * (rowHeight || 17);
+  }
+
   /** Scrolls the retained DOM viewport to its newest rendered row and restores input focus. */
   jumpToLatest(): void {
     this.root.scrollTop = this.root.scrollHeight;
@@ -315,7 +324,30 @@ export function measureTerminalGrid(
   };
 }
 
-/** Keeps XWork resize updates on WTerm's atomic render path using its public core API. */
+/** Excludes unpainted startup rows while preserving blank lines after the first visible output. */
+function leadingEmptyScrollbackRows(core: GhosttyCore): number {
+  const count = core.getScrollbackCount();
+  for (let index = 0; index < count; index += 1) {
+    const offset = count - 1 - index;
+    const length = Math.min(core.getCols(), core.getScrollbackLineLen(offset));
+    for (let column = 0; column < length; column += 1) {
+      const cell = core.getScrollbackCell(offset, column);
+      const text = cellText(cell);
+      if (
+        (text !== "" && text !== " ") ||
+        cell.bg !== 256 ||
+        cell.bgRgb !== undefined ||
+        cell.flags !== 0 ||
+        cell.linkUri !== undefined
+      ) {
+        return index;
+      }
+    }
+  }
+  return count;
+}
+
+/** Keeps XWork presentation changes on WTerm's public core API. */
 class XWorkTerminalSurface extends WTerm {
   private readonly paintHold: { active: boolean };
   private paintHoldStarted = 0;
@@ -334,6 +366,17 @@ class XWorkTerminalSurface extends WTerm {
       /** Forwards core operations with their original receiver and caches bound hot-path methods. */
       get(core, key) {
         if (methods.has(key)) return methods.get(key);
+        if (key === "getScrollbackCount" || key === "getScrollbackDiscardedCount") {
+          /** Keeps newest-relative cell offsets intact and aligns virtual row identities. */
+          const readCount = () => {
+            const hidden = leadingEmptyScrollbackRows(core);
+            return key === "getScrollbackCount"
+              ? core.getScrollbackCount() - hidden
+              : core.getScrollbackDiscardedCount() + hidden;
+          };
+          methods.set(key, readCount);
+          return readCount;
+        }
         const value = Reflect.get(core, key, core);
         const forwarded =
           key === "synchronizedOutput"
