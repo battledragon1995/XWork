@@ -4,6 +4,9 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+patchedDependencies:
+  '@wterm/dom@0.3.4': dd5f4cd02c2406108e67b125601e299f00f70ed51300afb90cf512e7bc106946
+
 importers:
 
   .:
@@ -25,13 +28,13 @@ importers:
         version: 2.3.2
       '@wterm/dom':
         specifier: 0.3.4
-        version: 0.3.4
+        version: 0.3.4(patch_hash=dd5f4cd02c2406108e67b125601e299f00f70ed51300afb90cf512e7bc106946)
       '@wterm/ghostty':
         specifier: 0.3.4
         version: 0.3.4
       '@wterm/react':
         specifier: 0.3.4
-        version: 0.3.4(@wterm/dom@0.3.4)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
+        version: 0.3.4(@wterm/dom@0.3.4(patch_hash=dd5f4cd02c2406108e67b125601e299f00f70ed51300afb90cf512e7bc106946))(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       class-variance-authority:
         specifier: 0.7.1
         version: 0.7.1
@@ -3696,7 +3699,7 @@ snapshots:
 
   '@wterm/core@0.3.4': {}
 
-  '@wterm/dom@0.3.4':
+  '@wterm/dom@0.3.4(patch_hash=dd5f4cd02c2406108e67b125601e299f00f70ed51300afb90cf512e7bc106946)':
     dependencies:
       '@wterm/core': 0.3.4
 
@@ -3704,9 +3707,9 @@ snapshots:
     dependencies:
       '@wterm/core': 0.3.4
 
-  '@wterm/react@0.3.4(@wterm/dom@0.3.4)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)':
+  '@wterm/react@0.3.4(@wterm/dom@0.3.4(patch_hash=dd5f4cd02c2406108e67b125601e299f00f70ed51300afb90cf512e7bc106946))(react-dom@19.2.8(react@19.2.8))(react@19.2.8)':
     dependencies:
-      '@wterm/dom': 0.3.4
+      '@wterm/dom': 0.3.4(patch_hash=dd5f4cd02c2406108e67b125601e299f00f70ed51300afb90cf512e7bc106946)
       react: 19.2.8
       react-dom: 19.2.8(react@19.2.8)
 
