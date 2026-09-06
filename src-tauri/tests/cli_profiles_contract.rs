@@ -1983,6 +1983,43 @@ fn launchability_rechecks_instead_of_trusting_the_cache() {
     );
 }
 
+/// Verifies built-in flags reach both the catalog and the executable launch boundary.
+#[test]
+fn built_in_launches_include_permission_flags() {
+    let harness = Harness::new();
+    for (index, id, command, flag) in [
+        (0, "builtin:codex", "codex", "--yolo"),
+        (
+            1,
+            "builtin:claude",
+            "claude",
+            "--dangerously-skip-permissions",
+        ),
+    ] {
+        let executable = fixture_executable(&format!("{command}.exe"));
+        harness.commands.set_found(command, executable.clone());
+        let snapshot = harness.snapshot().expect("the catalog should load");
+        assert_eq!(snapshot.profiles[index].command.as_deref(), Some(command));
+        assert_eq!(snapshot.profiles[index].arguments, vec![flag]);
+        let resolved = block_on(harness.service.resolve_for_launch(id))
+            .expect("the built-in launch should resolve");
+        match resolved.launch_kind {
+            ResolvedCliLaunchKind::Command {
+                executable: actual,
+                arguments,
+                ..
+            } => {
+                assert_eq!(actual, executable.display().to_string());
+                assert_eq!(arguments, vec![flag]);
+            }
+            ResolvedCliLaunchKind::InteractiveShell { .. } => {
+                panic!("an AI profile must launch its executable")
+            }
+        }
+    }
+    assert!(harness.snapshot().unwrap().profiles[2].arguments.is_empty());
+}
+
 /// Verifies that a launch resolution keeps every field separate and reads secrets.
 #[test]
 fn resolve_for_launch_returns_structured_fields_and_reads_secrets() {

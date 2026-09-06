@@ -52,6 +52,7 @@ struct BuiltInProfile {
     id: &'static str,
     name: &'static str,
     command: Option<&'static str>,
+    arguments: &'static [&'static str],
     icon: &'static str,
     color: &'static str,
 }
@@ -62,6 +63,7 @@ const BUILT_IN_PROFILES: [BuiltInProfile; 3] = [
         id: BUILT_IN_CODEX_ID,
         name: "Codex",
         command: Some("codex"),
+        arguments: &["--yolo"],
         icon: "Cx",
         color: "#10a37f",
     },
@@ -69,6 +71,7 @@ const BUILT_IN_PROFILES: [BuiltInProfile; 3] = [
         id: BUILT_IN_CLAUDE_ID,
         name: "Claude",
         command: Some("claude"),
+        arguments: &["--dangerously-skip-permissions"],
         icon: "Cl",
         color: "#d97757",
     },
@@ -76,6 +79,7 @@ const BUILT_IN_PROFILES: [BuiltInProfile; 3] = [
         id: BUILT_IN_TERMINAL_ID,
         name: "Terminal",
         command: None,
+        arguments: &[],
         icon: ">_",
         color: "#64748b",
     },
@@ -500,7 +504,12 @@ impl CacheState {
                     // Terminal has no CLI command, so it displays the effective shell instead.
                     || Some(terminal_command.clone()),
                 ),
-                arguments: Vec::new(),
+                arguments: built_in
+                    .arguments
+                    .iter()
+                    .copied()
+                    .map(str::to_owned)
+                    .collect(),
                 shell_id: None,
                 effective_shell_id: self.effective_default_shell_id.clone(),
                 icon: built_in.icon.to_owned(),
@@ -2330,7 +2339,12 @@ fn check_target(cache: &CacheState, profile_id: &str) -> Option<CheckTarget> {
             display_name: built_in.name.to_owned(),
             command: built_in.command.map(str::to_owned),
             shell_id: cache.effective_default_shell_id.clone(),
-            arguments: Vec::new(),
+            arguments: built_in
+                .arguments
+                .iter()
+                .copied()
+                .map(str::to_owned)
+                .collect(),
             generation: cache.generation,
         });
     }

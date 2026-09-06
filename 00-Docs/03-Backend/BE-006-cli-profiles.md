@@ -54,11 +54,13 @@ Backend cung cấp ba profile dựng sẵn Codex, Claude và Terminal; CRUD prof
 
 Ba profile dựng sẵn là hằng số trong Rust và không có row trong SQLite:
 
-| ID ổn định | Tên | Command | Icon | Màu | Hành vi shell |
-|---|---|---|---|---|---|
-| `builtin:codex` | `Codex` | `codex` | `Cx` | `#10a37f` | Dùng shell mặc định chung. |
-| `builtin:claude` | `Claude` | `claude` | `Cl` | `#d97757` | Dùng shell mặc định chung. |
-| `builtin:terminal` | `Terminal` | Không có command CLI riêng | `>_` | `#64748b` | Mở shell mặc định chung ở chế độ interactive. |
+| ID ổn định | Tên | Command | Arguments | Icon | Màu | Hành vi shell |
+|---|---|---|---|---|---|---|
+| `builtin:codex` | `Codex` | `codex` | `["--yolo"]` | `Cx` | `#10a37f` | Dùng shell mặc định chung. |
+| `builtin:claude` | `Claude` | `claude` | `["--dangerously-skip-permissions"]` | `Cl` | `#d97757` | Dùng shell mặc định chung. |
+| `builtin:terminal` | `Terminal` | Không có command CLI riêng | `[]` | `>_` | `#64748b` | Mở shell mặc định chung ở chế độ interactive. |
+
+`CliProfileDto.arguments` và `resolve_for_launch` dùng cùng arguments dựng sẵn ở bảng trên, tương ứng lệnh khởi động `codex --yolo` và `claude --dangerously-skip-permissions`. Availability check chỉ resolve executable `codex` hoặc `claude`, không ghép cờ vào command. FE-006 và FE-013 hiển thị command cùng arguments theo DTO. Thay đổi có hiệu lực ở lần launch tiếp theo, không sửa tiến trình đang chạy hoặc arguments của profile tùy chỉnh; không cần migration vì built-in không lưu trong SQLite.
 
 ID profile là opaque đối với consumer. Profile tùy chỉnh dùng `profile-` nối UUID v4 dạng lowercase có dấu gạch ngang; toàn ID dài 44 ký tự, backend tự sinh và frontend không được cung cấp ID.
 
@@ -712,6 +714,7 @@ pub enum CliProfilesError {
 
 - [ ] Registry BE-002 áp dụng `0003_create_cli_profiles.sql` đúng sau version 2, idempotent qua `PRAGMA user_version`, tạo đúng bốn bảng/constraint và rollback toàn bộ khi migration lỗi.
 - [ ] App luôn trả Codex, Claude, Terminal theo đúng ID/thứ tự; chúng không có row database và update/delete bị từ chối.
+- [ ] Catalog và launch spec của Codex chứa đúng `["--yolo"]`, Claude chứa đúng `["--dangerously-skip-permissions"]`; executable vẫn tách riêng và Terminal có arguments rỗng. Integration test `built_in_launches_include_permission_flags` xác nhận bằng resolver giả, không chạy CLI thật.
 - [ ] CRUD custom profile round-trip chính xác tên, command, từng argument, shell, icon, màu và env order qua restart; command và arguments không bị nối thành một chuỗi.
 - [ ] Default shell và shell override resolve đúng; Terminal/profile kế thừa đổi effective shell sau `set_default_cli_shell`, profile override không đổi.
 - [ ] Windows resolver tìm bare command bằng `PATH`/`PATHEXT`, nhận absolute executable, từ chối relative path có separator và không chạy file trong mọi check.
