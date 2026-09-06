@@ -3,6 +3,7 @@ use std::{
     sync::Arc,
 };
 
+use crate::files::{FilesError, FilesRevealCallback, FilesService};
 use crate::notifications::{
     NOTIFICATIONS_CHANGED_EVENT, NotificationCollaborators, NotificationService,
 };
@@ -10,6 +11,7 @@ use crate::platform::data::TauriDataPlatform;
 use crate::platform::notification::{NativeNotification, UnavailableNotification};
 use notification_dependencies::{AppNotificationDependencies, NotificationVisibility};
 use tauri::{App, AppHandle, Builder, Emitter, Manager, Runtime, WebviewWindow, WindowEvent};
+use tauri_plugin_opener::OpenerExt;
 
 use crate::{
     platform::{
@@ -108,6 +110,7 @@ pub fn configure<R: Runtime>(builder: Builder<R>) -> Builder<R> {
         native_cli_profile_collaborators,
         true,
         None,
+        None,
         true,
     )
 }
@@ -128,6 +131,7 @@ pub fn configure_with_app_data_dir<R: Runtime>(
         native_cli_profile_collaborators,
         true,
         Some(true),
+        None,
         false,
     )
 }
@@ -153,6 +157,7 @@ where
         native_cli_profile_collaborators,
         true,
         Some(true),
+        None,
         false,
     )
 }
@@ -178,6 +183,7 @@ where
         native_cli_profile_collaborators,
         true,
         Some(true),
+        None,
         false,
     )
 }
@@ -210,6 +216,7 @@ where
         // Command tests drive hydration, cleanup, and checks explicitly instead.
         false,
         Some(true),
+        None,
         false,
     )
 }
@@ -237,6 +244,33 @@ where
         cli_profile_collaborators,
         false,
         Some(true),
+        None,
+        false,
+    )
+}
+
+/// Applies isolated composition with fake Projects and Files native collaborators.
+#[doc(hidden)]
+pub fn configure_with_files_for_tests<R, C>(
+    builder: Builder<R>,
+    app_data_dir: PathBuf,
+    project_collaborators: C,
+    reveal: FilesRevealCallback,
+) -> Builder<R>
+where
+    R: Runtime,
+    C: FnOnce(&AppHandle<R>) -> ProjectCollaborators + Send + 'static,
+{
+    configure_app(
+        builder,
+        Some(app_data_dir),
+        None,
+        |_app| Ok(()),
+        project_collaborators,
+        native_cli_profile_collaborators,
+        false,
+        Some(true),
+        Some(reveal),
         false,
     )
 }
@@ -358,6 +392,10 @@ fn app_invoke_handler<R: Runtime>() -> impl Fn(tauri::ipc::Invoke<R>) -> bool + 
         crate::projects::commands::open_project_folder,
         crate::projects::commands::get_remove_project_impact,
         crate::projects::commands::remove_project,
+        crate::files::commands::list_file_children,
+        crate::files::commands::search_file_tree,
+        crate::files::commands::get_file_entry_paths,
+        crate::files::commands::reveal_file_entry,
         crate::settings::get_settings,
         crate::settings::get_keyboard_shortcuts,
         crate::settings::set_keyboard_shortcut,
@@ -428,6 +466,7 @@ fn configure_app<R, F, C, P>(
     cli_profile_collaborators: P,
     start_background_work: bool,
     initial_visibility: Option<bool>,
+    files_reveal_override: Option<FilesRevealCallback>,
     native_terminal_interactions: bool,
 ) -> Builder<R>
 where
@@ -451,6 +490,7 @@ where
                 let data_location = app_data_dir.clone();
                 let storage = setup_storage(app, app_data_dir)?;
                 let project_guard = setup_projects(app, storage.clone(), project_collaborators);
+                setup_files(app, files_reveal_override, native_terminal_interactions);
                 setup_settings(app, storage.clone())?;
                 setup_keyboard_shortcuts(app, storage.clone())?;
                 setup_cli_profiles(
@@ -545,6 +585,35 @@ where
                 }
             },
         )
+}
+
+/// Constructs and manages Files from the public Projects owner query.
+fn setup_files<R: Runtime>(
+    app: &mut App<R>,
+    reveal_override: Option<FilesRevealCallback>,
+    native_reveal: bool,
+) {
+    let reveal = reveal_override.unwrap_or_else(|| {
+        if native_reveal {
+            let handle = app.handle().clone();
+            Arc::new(
+                // Delegates only a path already validated by the Files service.
+                move |path: &Path| {
+                    handle
+                        .opener()
+                        .reveal_item_in_dir(path)
+                        .map_err(|_| FilesError::RevealFailed)
+                },
+            )
+        } else {
+            Arc::new(
+                // Keeps isolated composition fail-closed for native reveal.
+                |_path: &Path| Err(FilesError::RevealFailed),
+            )
+        }
+    });
+    let service = FilesService::new(app.state::<ProjectService>().inner().clone(), reveal);
+    app.manage(service);
 }
 
 /// Composes Data Management only after all Phase 1 owners are ready.

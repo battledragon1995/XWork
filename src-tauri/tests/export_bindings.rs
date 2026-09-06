@@ -5,6 +5,11 @@ use xwork_lib::app::lifecycle::{
     AppLifecycleError, LifecycleEvent, QuitRequestDto, QuitSummaryDto, SessionNavigationDto,
     TrayOperation, WindowOperation,
 };
+use xwork_lib::files::{
+    FileEntryPathsDto, FileEntryRequestDto, FileSearchTruncatedReasonDto, FileTreeEntryDto,
+    FileTreeEntryKindDto, FileTreePageDto, FileTreeSearchDto, FileTreeWarningDto,
+    FileTreeWarningReasonDto, FilesError, ListFileChildrenRequestDto, SearchFileTreeRequestDto,
+};
 use xwork_lib::projects::{
     GitFileChangeDto, GitFileChangeKindDto, GitHeadDto, GitRepositoryKindDto,
     InvalidProjectFolderReasonDto, ProjectAvailabilityDto, ProjectChangeKindDto,
@@ -320,6 +325,35 @@ fn assert_binding_is_current(path: PathBuf, generated: String) {
         fs::write(&path, generated).expect("the generated binding should be written");
         panic!("bindings were regenerated; rerun the test to verify a clean output");
     }
+}
+
+/// Generates the consolidated Files contract in dependency order.
+fn generated_files_binding() -> String {
+    let config = Config::default();
+    [
+        ListFileChildrenRequestDto::export_to_string(&config).unwrap(),
+        SearchFileTreeRequestDto::export_to_string(&config).unwrap(),
+        FileEntryRequestDto::export_to_string(&config).unwrap(),
+        FileTreeEntryKindDto::export_to_string(&config).unwrap(),
+        FileTreeEntryDto::export_to_string(&config).unwrap(),
+        FileTreeWarningReasonDto::export_to_string(&config).unwrap(),
+        FileTreeWarningDto::export_to_string(&config).unwrap(),
+        FileTreePageDto::export_to_string(&config).unwrap(),
+        FileSearchTruncatedReasonDto::export_to_string(&config).unwrap(),
+        FileTreeSearchDto::export_to_string(&config).unwrap(),
+        FileEntryPathsDto::export_to_string(&config).unwrap(),
+        FilesError::export_to_string(&config).unwrap(),
+    ]
+    .join("\n")
+}
+
+/// Regenerates the Files binding and verifies a clean second run.
+#[test]
+fn files_binding_matches_rust_contract() {
+    assert_binding_is_current(
+        binding_path(&["files", "files.ts"]),
+        generated_files_binding(),
+    );
 }
 
 /// Regenerates the binding and fails once whenever committed output is stale.

@@ -16,6 +16,7 @@ use xwork_lib::app::lifecycle::{
     QuitSummaryDto,
 };
 use xwork_lib::app::official_plugins_initialized;
+use xwork_lib::files::FilesService;
 use xwork_lib::projects::{
     ProjectChangedEventDto, ProjectEventSink, ProjectFuture, ProjectPlatform, ProjectService,
     ProjectsError,
@@ -157,6 +158,7 @@ fn composition_root_builds_and_manages_storage() {
     run_setup(&mut app);
 
     assert_eq!(managed_schema_version(&app), 5);
+    assert!(app.try_state::<FilesService>().is_some());
     assert!(
         app.try_state::<xwork_lib::notifications::NotificationService>()
             .is_some()
@@ -293,6 +295,7 @@ fn lifecycle_composition_orders_setup_and_registers_commands() {
             let ready = app.try_state::<Storage>().is_some()
                 && app.try_state::<AppLifecycleState>().is_some()
                 && app.try_state::<ProjectService>().is_some()
+                && app.try_state::<FilesService>().is_some()
                 && app.try_state::<SearchService>().is_some()
                 && app.try_state::<SettingsService>().is_some()
                 && app.try_state::<CliProfilesService>().is_some()
@@ -600,6 +603,7 @@ fn projects_composition_publishes_nothing_when_startup_fails() {
 
     assert!(result.is_err());
     assert!(app.try_state::<ProjectService>().is_none());
+    assert!(app.try_state::<FilesService>().is_none());
     assert!(app.try_state::<DataMaintenanceGate>().is_none());
     assert!(app.try_state::<ProjectsDataParticipant>().is_none());
     assert!(app.try_state::<SettingsService>().is_none());
@@ -627,6 +631,7 @@ fn projects_composition_publishes_nothing_for_a_newer_database() {
 
     assert!(result.is_err());
     assert!(app.try_state::<ProjectService>().is_none());
+    assert!(app.try_state::<FilesService>().is_none());
     assert!(app.try_state::<DataMaintenanceGate>().is_none());
     assert!(app.try_state::<SettingsService>().is_none());
 }
