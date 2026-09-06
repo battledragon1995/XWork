@@ -15,6 +15,12 @@ pub const MAX_SCAN_ENTRIES: usize = 100_000;
 pub const MAX_WARNINGS: usize = 20;
 /// Maximum encoded cursor size.
 pub const MAX_CURSOR_BYTES: usize = 8 * 1_024;
+/// Maximum file size retained by the source viewer.
+pub const MAX_VIEWER_BYTES: u64 = 5 * 1_024 * 1_024;
+/// Maximum number of attached and retained file handles.
+pub const MAX_FILE_HANDLES: usize = 64;
+/// Maximum aggregate bytes retained by text handles.
+pub const MAX_TEXT_BUFFER_BYTES: usize = 64 * 1_024 * 1_024;
 
 /// Requests one page of visible direct children.
 #[derive(Clone, Debug, Deserialize, TS)]
@@ -129,6 +135,313 @@ pub struct FileTreeSearchDto {
 pub struct FileEntryPathsDto {
     pub relative_path: String,
     pub absolute_path: String,
+}
+
+/// Requests opening one project-relative file in an empty pane.
+#[derive(Clone, Debug, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase", export_to = "files/files.ts")]
+pub struct OpenFileInPaneRequestDto {
+    pub session_id: String,
+    pub tab_id: String,
+    pub pane_id: String,
+    pub relative_path: String,
+}
+
+/// Identifies one process-local file handle.
+#[derive(Clone, Debug, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase", export_to = "files/files.ts")]
+pub struct FileHandleRequestDto {
+    pub file_handle_id: String,
+}
+
+/// Selects how an external Markdown conflict is resolved in memory.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase", export_to = "files/files.ts")]
+pub enum ExternalFileResolutionDto {
+    KeepMine,
+    ReloadFromDisk,
+}
+
+/// Requests resolving a conflict against an exact handle revision.
+#[derive(Clone, Debug, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase", export_to = "files/files.ts")]
+pub struct ResolveExternalFileChangeRequestDto {
+    pub file_handle_id: String,
+    pub expected_revision: String,
+    pub resolution: ExternalFileResolutionDto,
+}
+
+/// Classifies whether a valid text file belongs to the future Markdown editor.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase", export_to = "files/files.ts")]
+pub enum TextFileModeDto {
+    SourceReadOnly,
+    Markdown,
+}
+
+/// Identifies the lossless text encoding returned by Files.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase", export_to = "files/files.ts")]
+pub enum TextEncodingDto {
+    Utf8,
+}
+
+/// Describes logical line-ending bytes without modifying them.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase", export_to = "files/files.ts")]
+pub enum LineEndingDto {
+    None,
+    Lf,
+    Crlf,
+    Mixed,
+}
+
+/// Returns one bounded, lossless UTF-8 source snapshot.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase", export_to = "files/files.ts")]
+pub struct TextFileDto {
+    pub text: String,
+    pub byte_size: u64,
+    pub line_count: u32,
+    pub mime_type: String,
+    pub syntax_hint: Option<String>,
+    pub encoding: TextEncodingDto,
+    pub has_utf8_bom: bool,
+    pub line_ending: LineEndingDto,
+    pub mode: TextFileModeDto,
+}
+
+/// Classifies viewer content without exposing binary bytes.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, TS)]
+#[serde(
+    tag = "kind",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
+#[ts(
+    tag = "kind",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase",
+    export_to = "files/files.ts"
+)]
+pub enum FileContentDto {
+    Text {
+        file: TextFileDto,
+    },
+    Binary {
+        byte_size: u64,
+        mime_type: String,
+    },
+    TooLarge {
+        byte_size: u64,
+        limit_bytes: u64,
+        mime_type: String,
+    },
+}
+
+/// Describes one observed disk version with an opaque fingerprint token.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase", export_to = "files/files.ts")]
+pub struct FileDiskVersionDto {
+    pub disk_revision: String,
+    pub observed_at_ms: i64,
+    pub modified_at_ms: Option<i64>,
+    pub byte_size: u64,
+    pub mime_type: String,
+}
+
+/// Describes the current authoritative runtime state of a file handle.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, TS)]
+#[serde(
+    tag = "kind",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
+#[ts(
+    tag = "kind",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase",
+    export_to = "files/files.ts"
+)]
+pub enum FileHandleStateDto {
+    Ready {
+        content: FileContentDto,
+        disk: FileDiskVersionDto,
+    },
+    ExternalConflict {
+        local: TextFileDto,
+        external: FileDiskVersionDto,
+    },
+    Missing {
+        last_disk: Option<FileDiskVersionDto>,
+        local: Option<TextFileDto>,
+    },
+    Unreadable {
+        last_disk: Option<FileDiskVersionDto>,
+        local: Option<TextFileDto>,
+    },
+    ProjectRootChanged,
+}
+
+/// Reports whether a handle receives native hints or targeted polling.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase", export_to = "files/files.ts")]
+pub enum FileWatchModeDto {
+    Native,
+    PollingFallback,
+}
+
+/// Returns one bounded process-local file handle snapshot.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase", export_to = "files/files.ts")]
+pub struct FileHandleDto {
+    pub id: String,
+    pub project_id: String,
+    pub session_id: String,
+    pub tab_id: String,
+    pub pane_id: String,
+    pub name: String,
+    pub relative_path: String,
+    pub revision: String,
+    pub watch_mode: FileWatchModeDto,
+    pub is_dirty: bool,
+    pub dirty_since_ms: Option<i64>,
+    pub edit_count: u32,
+    pub state: FileHandleStateDto,
+}
+
+/// Reports a recoverable post-attach warning.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase", export_to = "files/files.ts")]
+pub enum OpenFileWarningDto {
+    RecentFileNotRecorded,
+}
+
+/// Returns the attached handle and any bounded post-attach warning.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase", export_to = "files/files.ts")]
+pub struct OpenFileResultDto {
+    pub file: FileHandleDto,
+    pub warnings: Vec<OpenFileWarningDto>,
+}
+
+/// Classifies current availability of one durable recent path.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase", export_to = "files/files.ts")]
+pub enum RecentFileAvailabilityDto {
+    Available,
+    Missing,
+    NotVisible,
+    LinkDenied,
+    ProjectUnavailable,
+    Unreadable,
+}
+
+/// Returns one recent file enriched with current runtime facts.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase", export_to = "files/files.ts")]
+pub struct RecentFileDto {
+    pub project_id: String,
+    pub name: String,
+    pub parent_path: String,
+    pub relative_path: String,
+    pub opened_at_ms: i64,
+    pub availability: RecentFileAvailabilityDto,
+    pub is_open: bool,
+    pub has_unsaved_changes: bool,
+}
+
+/// Identifies the visible reason a handle revision changed.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase", export_to = "files/files.ts")]
+pub enum FileHandleChangeKindDto {
+    Reloaded,
+    ConflictDetected,
+    Missing,
+    Unreadable,
+    ProjectRootChanged,
+    WatchModeChanged,
+}
+
+/// Invalidates one handle without sending source content through an event.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase", export_to = "files/files.ts")]
+pub struct FileHandleChangedEventDto {
+    pub file_handle_id: String,
+    pub revision: String,
+    pub change: FileHandleChangeKindDto,
+}
+
+/// Invalidates the recent list of one project.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase", export_to = "files/files.ts")]
+pub struct RecentFilesChangedEventDto {
+    pub project_id: String,
+}
+
+/// Carries a future editor snapshot without exposing an IPC command in stage16.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FileEditorSnapshot {
+    pub text: String,
+    pub expected_handle_revision: String,
+    pub base_disk_revision: String,
+}
+
+/// Identifies an empty pane resolved by the Sessions owner.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FilePaneTarget {
+    pub session_id: String,
+    pub tab_id: String,
+    pub pane_id: String,
+    pub project_id: String,
+}
+
+/// Supplies one owner-filtered regular file to Unified Search.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenableFileSearchItem {
+    pub project_id: String,
+    pub relative_path: String,
+    pub file_name: String,
+    pub source_order: u32,
+}
+
+/// Returns a bounded candidate slice and whether more matches exist.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenableFileSearchSlice {
+    pub items: Vec<OpenableFileSearchItem>,
+    pub has_more: bool,
+}
+
+/// Owns recent reset facts outside the coordinator transaction.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RecentFilesResetPlan {
+    pub removed_count: u32,
+    pub affected_project_ids: Vec<String>,
+}
+
+/// Owns post-commit recent invalidations.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RecentFilesResetProjection {
+    pub removed_count: u32,
+    pub affected_project_ids: Vec<String>,
 }
 
 /// Saturates an arbitrary issue count into the public warning count.

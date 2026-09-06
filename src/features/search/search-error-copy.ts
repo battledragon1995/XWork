@@ -17,6 +17,11 @@ export function searchErrorCopy(error: unknown): string {
 
 /** Label one partial source failure using fixed product copy. */
 export function sourceFailureCopy(failure: SearchSourceFailureDto): string {
-  const labels = { projects: "Projects", sessions: "Sessions", commands: "Commands" };
+  const labels = {
+    projects: "Projects",
+    sessions: "Sessions",
+    files: "Files",
+    commands: "Commands",
+  };
   return `${labels[failure.source]}: ${failure.reason === "timeout" ? "Timed out" : "Unavailable"}`;
 }

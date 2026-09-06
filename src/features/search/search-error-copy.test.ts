@@ -17,7 +17,7 @@ it("sanitizes transport failures", () => {
   expect(searchErrorCopy(new Error("secret"))).toBe("Could not search. Try again.");
 });
 /** Label each source and both failure reasons. */
-it.each(["projects", "sessions", "commands"] as const)("labels %s failures", (source) => {
+it.each(["projects", "sessions", "files", "commands"] as const)("labels %s failures", (source) => {
   expect(sourceFailureCopy({ source, reason: "timeout" })).toContain("Timed out");
   expect(sourceFailureCopy({ source, reason: "unavailable" })).toContain("Unavailable");
 });

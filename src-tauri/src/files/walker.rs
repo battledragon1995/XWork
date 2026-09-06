@@ -14,6 +14,61 @@ use super::{
     path_policy::{is_link_like, validate_relative_path},
 };
 
+/// Searches visible regular files without allowing directories to consume the candidate cap.
+pub(crate) fn search_regular_files(
+    root: &Path,
+    query: &str,
+    limit: usize,
+) -> Result<Vec<FileTreeEntryDto>, FilesError> {
+    let folded = query.to_lowercase();
+    let mut matches = Vec::new();
+    let mut inspected = 0_usize;
+    let walker = ignore::WalkBuilder::new(root)
+        .hidden(false)
+        .follow_links(false)
+        .git_ignore(true)
+        .git_exclude(true)
+        .ignore(true)
+        .max_depth(Some(MAX_PATH_COMPONENTS))
+        .build();
+    for entry in walker {
+        let entry = entry.map_err(|_| FilesError::FileSystemReadFailed)?;
+        if entry.path() == root {
+            continue;
+        }
+        inspected = inspected.saturating_add(1);
+        if inspected > MAX_SCAN_ENTRIES {
+            return Err(FilesError::TraversalLimitExceeded);
+        }
+        if entry
+            .file_type()
+            .is_none_or(|kind| !kind.is_file() || kind.is_symlink())
+        {
+            continue;
+        }
+        let Some(name) = entry.file_name().to_str() else {
+            continue;
+        };
+        if is_vcs_metadata(name) || !name.to_lowercase().contains(&folded) {
+            continue;
+        }
+        let relative_path =
+            slash_relative(root, entry.path()).map_err(|_| FilesError::FileSystemReadFailed)?;
+        matches.push(FileTreeEntryDto {
+            name: name.to_owned(),
+            relative_path,
+            kind: FileTreeEntryKindDto::File,
+        });
+    }
+    matches.sort_by(|left, right| {
+        left.relative_path
+            .as_bytes()
+            .cmp(right.relative_path.as_bytes())
+    });
+    matches.truncate(limit);
+    Ok(matches)
+}
+
 /// Holds one directory page before service-owned project fields are added.
 pub(crate) struct FileTreePage {
     pub entries: Vec<FileTreeEntryDto>,

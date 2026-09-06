@@ -10,11 +10,12 @@ use std::{
 use tokio::time::timeout;
 
 use super::{
-    ProjectSearchDocument, ProjectSearchSource, SearchGroupDto, SearchResultDto,
-    SearchResultKindDto, SearchSessionStatus, SearchShortcutDto, SearchSourceDto,
-    SearchSourceError, SearchSourceFailureDto, SearchSourceFailureReasonDto, SearchTargetDto,
-    SessionSearchDocument, SessionSearchSource, ShortcutActionSearchDocument,
-    ShortcutCatalogSource, UnifiedSearchError, UnifiedSearchInputDto, UnifiedSearchResponseDto,
+    FileSearchDocument, FileSearchSource, ProjectSearchDocument, ProjectSearchSource,
+    SearchCandidates, SearchGroupDto, SearchResultDto, SearchResultKindDto, SearchSessionStatus,
+    SearchShortcutDto, SearchSourceDto, SearchSourceError, SearchSourceFailureDto,
+    SearchSourceFailureReasonDto, SearchTargetDto, SessionSearchDocument, SessionSearchSource,
+    ShortcutActionSearchDocument, ShortcutCatalogSource, UnifiedSearchError, UnifiedSearchInputDto,
+    UnifiedSearchResponseDto,
     ranking::{rank_text, validate_context_id, validate_query},
 };
 
@@ -70,6 +71,7 @@ pub struct SearchService {
     projects: Arc<dyn ProjectSearchSource>,
     sessions: Arc<dyn SessionSearchSource>,
     shortcuts: Arc<dyn ShortcutCatalogSource>,
+    files: Arc<dyn FileSearchSource>,
 }
 
 /// Retains ranking metadata until one group has been sorted and capped.
@@ -99,6 +101,21 @@ impl SearchService {
         sessions: Arc<dyn SessionSearchSource>,
         shortcuts: Arc<dyn ShortcutCatalogSource>,
     ) -> Result<Self, UnifiedSearchError> {
+        Self::new_with_files(
+            projects,
+            sessions,
+            Arc::new(EmptyFileSearchSource),
+            shortcuts,
+        )
+    }
+
+    /// Creates a service with the active stage16 Files source.
+    pub fn new_with_files(
+        projects: Arc<dyn ProjectSearchSource>,
+        sessions: Arc<dyn SessionSearchSource>,
+        files: Arc<dyn FileSearchSource>,
+        shortcuts: Arc<dyn ShortcutCatalogSource>,
+    ) -> Result<Self, UnifiedSearchError> {
         if let Ok(actions) = shortcuts.shortcut_actions() {
             validate_catalog(&actions)?;
         }
@@ -106,6 +123,7 @@ impl SearchService {
             projects,
             sessions,
             shortcuts,
+            files,
         })
     }
 
@@ -126,16 +144,18 @@ impl SearchService {
         let mut failures = Vec::new();
         let joined = timeout(
             TOTAL_TIMEOUT,
-            join_two(
+            join_three(
                 timeout(SOURCE_TIMEOUT, self.projects.list_projects()),
                 timeout(SOURCE_TIMEOUT, self.sessions.list_sessions()),
+                timeout(SOURCE_TIMEOUT, self.files.search_files(&query, 64)),
             ),
         )
         .await;
-        let (projects, sessions) = match joined {
-            Ok((project_outcome, session_outcome)) => (
+        let (projects, sessions, files) = match joined {
+            Ok((project_outcome, session_outcome, file_outcome)) => (
                 source_outcome(project_outcome, SearchSourceDto::Projects, &mut failures),
                 source_outcome(session_outcome, SearchSourceDto::Sessions, &mut failures),
+                candidate_outcome(file_outcome, SearchSourceDto::Files, &mut failures),
             ),
             Err(_) => {
                 failures.push(failure(
@@ -146,7 +166,11 @@ impl SearchService {
                     SearchSourceDto::Sessions,
                     SearchSourceFailureReasonDto::Timeout,
                 ));
-                (None, None)
+                failures.push(failure(
+                    SearchSourceDto::Files,
+                    SearchSourceFailureReasonDto::Timeout,
+                ));
+                (None, None, None)
             }
         };
         let shortcut_outcome = self.shortcuts.shortcut_actions();
@@ -191,6 +215,11 @@ impl SearchService {
             } else if let Some(group) = session_group(&query, &items, &project_names) {
                 groups.push(group);
             }
+        }
+        if let Some(candidates) = files
+            && let Some(group) = file_group(&query, candidates)
+        {
+            groups.push(group);
         }
 
         let context_project = input.context_project_id.as_deref().and_then(|id| {
@@ -271,7 +300,54 @@ impl SearchService {
     }
 }
 
-/// Polls two independent futures until both have completed.
+/// Polls three independent source futures until every source has completed.
+async fn join_three<A, B, C>(first: A, second: B, third: C) -> (A::Output, B::Output, C::Output)
+where
+    A: Future,
+    B: Future,
+    C: Future,
+{
+    let mut first = pin!(first);
+    let mut second = pin!(second);
+    let mut third = pin!(third);
+    let mut first_output = None;
+    let mut second_output = None;
+    let mut third_output = None;
+    poll_fn(|context| {
+        if first_output.is_none()
+            && let Poll::Ready(output) = first.as_mut().poll(context)
+        {
+            first_output = Some(output);
+        }
+        if second_output.is_none()
+            && let Poll::Ready(output) = second.as_mut().poll(context)
+        {
+            second_output = Some(output);
+        }
+        if third_output.is_none()
+            && let Poll::Ready(output) = third.as_mut().poll(context)
+        {
+            third_output = Some(output);
+        }
+        match (
+            first_output.take(),
+            second_output.take(),
+            third_output.take(),
+        ) {
+            (Some(first), Some(second), Some(third)) => Poll::Ready((first, second, third)),
+            (first, second, third) => {
+                first_output = first;
+                second_output = second;
+                third_output = third;
+                Poll::Pending
+            }
+        }
+    })
+    .await
+}
+
+/// Polls two independent futures for focused concurrency unit tests.
+#[cfg(test)]
 async fn join_two<A, B>(first: A, second: B) -> (A::Output, B::Output)
 where
     A: Future,
@@ -323,6 +399,25 @@ fn source_outcome<T>(
     }
 }
 
+/// Converts one bounded candidate timeout or owner error into a source outcome.
+fn candidate_outcome<T>(
+    outcome: Result<Result<SearchCandidates<T>, SearchSourceError>, tokio::time::error::Elapsed>,
+    source: SearchSourceDto,
+    failures: &mut Vec<SearchSourceFailureDto>,
+) -> Option<SearchCandidates<T>> {
+    match outcome {
+        Ok(Ok(items)) => Some(items),
+        Ok(Err(SearchSourceError::Unavailable)) => {
+            failures.push(failure(source, SearchSourceFailureReasonDto::Unavailable));
+            None
+        }
+        Err(_) => {
+            failures.push(failure(source, SearchSourceFailureReasonDto::Timeout));
+            None
+        }
+    }
+}
+
 /// Creates one sanitized source failure.
 fn failure(
     source: SearchSourceDto,
@@ -342,6 +437,7 @@ fn source_order(source: SearchSourceDto) -> u8 {
     match source {
         SearchSourceDto::Projects => 0,
         SearchSourceDto::Sessions => 1,
+        SearchSourceDto::Files => 2,
         SearchSourceDto::Commands => 5,
     }
 }
@@ -364,6 +460,80 @@ fn validate_catalog(actions: &[ShortcutActionSearchDocument]) -> Result<(), Unif
         }
     }
     Ok(())
+}
+
+/// Keeps Files inactive for legacy constructors used by pre-stage16 tests.
+struct EmptyFileSearchSource;
+
+impl FileSearchSource for EmptyFileSearchSource {
+    /// Returns no candidates and no failure for an intentionally inactive source.
+    fn search_files<'a>(
+        &'a self,
+        _query: &'a str,
+        _candidate_limit: u32,
+    ) -> super::SearchFuture<'a, Result<SearchCandidates<FileSearchDocument>, SearchSourceError>>
+    {
+        Box::pin(async {
+            Ok(SearchCandidates {
+                items: Vec::new(),
+                has_more: false,
+            })
+        })
+    }
+}
+
+/// Ranks and caps owner-filtered file candidates.
+fn file_group(
+    query: &str,
+    candidates: SearchCandidates<FileSearchDocument>,
+) -> Option<SearchGroupDto> {
+    let source_has_more = candidates.has_more;
+    let mut scored = candidates
+        .items
+        .into_iter()
+        .filter_map(|file| {
+            let context = if let Some((parent, _)) = file.relative_path.rsplit_once('/') {
+                format!("{} › {}", file.project_name, parent)
+            } else {
+                file.project_name.clone()
+            };
+            rank_text(query, &file.file_name, Some(&context), &[]).map(|ranked| ScoredResult {
+                result: SearchResultDto {
+                    key: format!("file:{}:{}", file.project_id, file.relative_path),
+                    kind: SearchResultKindDto::File,
+                    title: ranked.title,
+                    context: ranked.context,
+                    title_highlights: ranked.title_highlights,
+                    context_highlights: ranked.context_highlights,
+                    target: SearchTargetDto::File {
+                        project_id: file.project_id.clone(),
+                        relative_path: file.relative_path.clone(),
+                    },
+                    shortcut: None,
+                    supports_open_in_split: file.supports_open_in_split,
+                },
+                score: ranked.score,
+                source_order: file.source_order,
+                catalog_tier: 0,
+                identity: format!("{}:{}", file.project_id, file.relative_path),
+            })
+        })
+        .collect::<Vec<_>>();
+    scored.sort_by(|left, right| {
+        right
+            .score
+            .cmp(&left.score)
+            .then_with(|| left.source_order.cmp(&right.source_order))
+            .then_with(|| left.identity.cmp(&right.identity))
+    });
+    let has_more = source_has_more || scored.len() > GROUP_LIMIT;
+    scored.truncate(GROUP_LIMIT);
+    (!scored.is_empty()).then(|| SearchGroupDto {
+        kind: SearchResultKindDto::File,
+        label: "Files".to_owned(),
+        results: scored.into_iter().map(|item| item.result).collect(),
+        has_more,
+    })
 }
 
 /// Ranks and caps project results.

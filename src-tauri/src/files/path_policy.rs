@@ -129,7 +129,7 @@ impl FilePathPolicy {
             FilePathIntent::OpenVisibleFile | FilePathIntent::ExistingHandleFile
                 if !metadata.is_file() =>
             {
-                return Err(FilesError::EntryNotFound {
+                return Err(FilesError::NotRegularFile {
                     relative_path: relative_path.to_owned(),
                 });
             }

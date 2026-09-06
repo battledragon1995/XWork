@@ -180,7 +180,7 @@ fn migration_creates_projects_schema() {
     let directory = tempfile::TempDir::new().expect("the temporary directory should be created");
     let storage = Storage::open(directory.path()).expect("storage should open");
 
-    assert_eq!(schema_version(&storage), 5);
+    assert_eq!(schema_version(&storage), 6);
     assert_eq!(
         schema_object_names(&storage, "table"),
         vec![
@@ -191,6 +191,7 @@ fn migration_creates_projects_schema() {
             "keyboard_shortcut_overrides",
             "notifications",
             "projects",
+            "recent_files",
             "settings",
         ]
     );
@@ -201,7 +202,8 @@ fn migration_creates_projects_schema() {
             "idx_notifications_source",
             "idx_notifications_target",
             "idx_notifications_unread",
-            "idx_projects_list_order"
+            "idx_projects_list_order",
+            "recent_files_by_project_opened"
         ]
     );
     assert_eq!(
@@ -228,7 +230,7 @@ fn migration_creates_projects_schema() {
     // Reopening must not rerun the migration or change the committed schema version.
     drop(storage);
     let reopened = Storage::open(directory.path()).expect("storage should reopen");
-    assert_eq!(schema_version(&reopened), 5);
+    assert_eq!(schema_version(&reopened), 6);
     assert_eq!(
         schema_object_names(&reopened, "table"),
         vec![
@@ -239,6 +241,7 @@ fn migration_creates_projects_schema() {
             "keyboard_shortcut_overrides",
             "notifications",
             "projects",
+            "recent_files",
             "settings",
         ]
     );

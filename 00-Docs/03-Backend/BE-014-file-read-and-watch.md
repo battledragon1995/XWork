@@ -34,6 +34,14 @@ Backend đọc an toàn file nằm trong project đã đăng ký, trả nội du
 - Khi BE-012 được ghép, mọi upsert/prune Recent Files thông thường lấy shared maintenance read permit. Reset dùng typed reset-only API trong transaction xuyên domain; nó chỉ xóa `recent_files`, không đóng handle, watcher hoặc buffer.
 - Cleanup watcher/file buffer trong app reset tiếp tục đi duy nhất qua `SessionManager::shutdown_all` → `PaneContentRuntime` → `FileHandleManager`; reset-only participant không gọi lifecycle API lần hai.
 
+### Phân kỳ stage16 và điểm ghép hiện tại
+
+- Stage16 triển khai read/watch, sáu command bên dưới, recent query và Files source adapter của BE-010. Mọi text được trình bày read-only; `TextFileModeDto::Markdown` chỉ giữ phân loại cho stage17, không cấp quyền edit/save. Hook `replace_editor_snapshot` và conflict/lifecycle trong memory được kiểm thử bằng Rust; không đăng ký `update_markdown_buffer` hoặc `save_markdown_file` trước BE-015.
+- Router hiện nằm trong `app/data_runtime.rs`; mở rộng tại đó và giữ weak late-bind như Terminal. Recent reset thêm typed participant trong transaction BE-012 hiện có tại `settings/data.rs`/`settings/data_participant.rs`; không thay toàn bộ kiến trúc backup hoặc scaffold Notes/Events/Reminders. Notifications vẫn chạy trước Recent Files khi reset và publish sau Recent Files.
+- Search thêm public port/DTO Files vào các module Search hiện hữu và map project name qua public Projects query. Candidate discovery vẫn theo tên file của BE-013; ranking BE-010 trên path/project context chỉ áp dụng candidate owner đã trả, không biến query thành content index hoặc quét mọi file chỉ vì tên project khớp.
+- Trước lượt FE-017, frontend chỉ nhận thay đổi tương thích union Search: nhãn lỗi Files và nhánh từ chối kích hoạt file có giải thích. Luồng mở tab/split và UI recent/source được thiết kế, tích hợp ở lượt frontend kế tiếp. Không đổi source text thành editable để khớp wireframe Markdown.
+- Budget text bao gồm snapshot live, retained và buffer phục hồi. Nếu reload/reconcile không reserve được phần tăng thêm, giữ snapshot hợp lệ trước đó và trả `FileMemoryLimitReached`; worker chỉ ghi category an toàn, thử lại khi có hint/focus sau, không vượt budget hoặc loại buffer dirty. Reset dọn handle/watch hiện tại qua Sessions nhưng service phải nhận open mới sau resume; shutdown ứng dụng thật mới kết thúc worker vĩnh viễn.
+
 ### Ngoài phạm vi
 
 - Duyệt/filter cây, copy path và reveal trong file manager; dùng command/path resolver của `BE-013`.
@@ -57,6 +65,19 @@ Backend đọc an toàn file nằm trong project đã đăng ký, trả nội du
 | `src-tauri/src/app/mod.rs` | Ghép storage, maintenance gate, Files dependencies, handle manager, watcher/event/platform adapter; late-bind lifecycle router, reset adapter và đăng ký command. |
 | `src-tauri/src/app/data_reset_participants.rs` | Adapter typed Recent Files reset-only sang `DataResetOnlyParticipant` BE-012. |
 | `src-tauri/src/app/search_sources.rs` | Adapter public `FilesService::search_openable_files` sang Files source của BE-010, không đọc repository/path state nội bộ. |
+| `src-tauri/src/app/data_runtime.rs` | Router Files weak late-bind và adapter public Projects/Sessions theo cấu trúc hiện tại. |
+| `src-tauri/src/settings/data.rs` | Ghép Recent Files prepare/apply/publish vào transaction reset hiện có, giữ cleanup qua Sessions. |
+| `src-tauri/src/search/mod.rs` | Public Files source port, candidate document và variant DTO theo BE-010. |
+| `src-tauri/src/search/service.rs` | Ghép Files source vào deadline, grouping, ranking và partial failure hiện có. |
+| `src-tauri/src/search/ranking.rs` | Ranking candidate Files theo hợp đồng BE-010. |
+| `src-tauri/tests/unified_search_contract.rs` | Contract Files source, cap, timeout, partial failure và regression ba source cũ. |
+| `src-tauri/tests/files_tree_commands.rs` | Regression bốn command BE-013 khi mở rộng composition Files. |
+| `src-tauri/tests/storage_foundation.rs` | Registry/schema version 6 và regression migration. |
+| `src/bindings/search.ts` | Union Search sinh từ Rust cho Files source. |
+| `src/app/search-entry.tsx` | Nhánh tương thích File target trước khi frontend có luồng mở file. |
+| `src/app/search-entry.test.tsx` | File target không rơi vào command dispatch hoặc mở pane trước lượt FE. |
+| `src/features/search/search-error-copy.ts` | Nhãn lỗi Files source theo union mới. |
+| `src/features/search/search-error-copy.test.ts` | Copy lỗi Files timeout/unavailable. |
 | `src-tauri/src/files/mod.rs` | Re-export DTO/error/service, lifecycle delegate và public search/recent contract cần cho composition/consumer. |
 | `src-tauri/src/files/models.rs` | DTO open handle/content/version/conflict/recent/event cùng internal search/editor value type. |
 | `src-tauri/src/files/path_policy.rs` | Tái sử dụng `ProjectRootIdentity`, intent resolver, validated path/writer target và revalidation của BE-013 cho open cùng handle đã bind. |

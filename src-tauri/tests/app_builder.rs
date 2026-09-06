@@ -157,7 +157,7 @@ fn composition_root_builds_and_manages_storage() {
     let mut app = build_isolated_app(directory.path().to_path_buf());
     run_setup(&mut app);
 
-    assert_eq!(managed_schema_version(&app), 5);
+    assert_eq!(managed_schema_version(&app), 6);
     assert!(app.try_state::<FilesService>().is_some());
     assert!(
         app.try_state::<xwork_lib::notifications::NotificationService>()
@@ -262,7 +262,7 @@ fn composition_root_fails_for_newer_database() {
     let database_path = directory.path().join(Storage::DATABASE_FILE_NAME);
     let connection = Connection::open(database_path).expect("the fixture database should open");
     connection
-        .pragma_update(None, "user_version", 6)
+        .pragma_update(None, "user_version", 7)
         .expect("the fixture schema version should be set");
     drop(connection);
 
@@ -324,7 +324,7 @@ fn projects_composition_manages_storage_project_and_gate() {
     let mut app = build_isolated_app(directory.path().to_path_buf());
     run_setup(&mut app);
 
-    assert_eq!(managed_schema_version(&app), 5);
+    assert_eq!(managed_schema_version(&app), 6);
     let gate = app.state::<DataMaintenanceGate>();
     let service = app.state::<ProjectService>();
     let settings = app.state::<SettingsService>();
@@ -409,6 +409,12 @@ fn projects_composition_routes_lifecycle_and_projects_commands() {
         "open_project_folder",
         "get_remove_project_impact",
         "remove_project",
+        "open_file_in_pane",
+        "get_open_file",
+        "reload_open_file",
+        "resolve_external_file_change",
+        "open_file_with_default_app",
+        "list_recent_files",
         "update_settings",
         "create_cli_profile",
         "update_cli_profile",
@@ -619,7 +625,7 @@ fn projects_composition_publishes_nothing_for_a_newer_database() {
     let database_path = directory.path().join(Storage::DATABASE_FILE_NAME);
     let connection = Connection::open(database_path).expect("the fixture database should open");
     connection
-        .pragma_update(None, "user_version", 6)
+        .pragma_update(None, "user_version", 7)
         .expect("the fixture schema version should be set");
     drop(connection);
     let mut app = build_isolated_app(directory.path().to_path_buf());
@@ -646,7 +652,7 @@ fn keyboard_shortcuts_composition_manages_state_and_participant() {
     let directory = tempfile::TempDir::new().unwrap();
     let mut app = build_isolated_app(directory.path().to_path_buf());
     run_setup(&mut app);
-    assert_eq!(managed_schema_version(&app), 5);
+    assert_eq!(managed_schema_version(&app), 6);
     assert!(
         app.state::<KeyboardShortcutsService>()
             .shares_gate_with(app.state::<DataMaintenanceGate>().inner())

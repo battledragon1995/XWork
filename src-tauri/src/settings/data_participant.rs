@@ -2,6 +2,7 @@ use crate::app::data_participants::{
     CliProfilesDataParticipant, KeyboardShortcutsDataParticipant, ProjectsDataParticipant,
     SettingsDataParticipant,
 };
+use crate::files::RecentFilesResetProjection;
 use crate::notifications::{NotificationCommittedProjection, NotificationService};
 use crate::projects::{ProjectCommittedProjection, ProjectImportPlan};
 use crate::settings::{
@@ -42,4 +43,5 @@ pub struct ResetCommittedProjections {
     pub cli_profiles: CliProfilesCommittedProjection,
     pub keyboard_shortcuts: KeyboardShortcutsCommittedProjection,
     pub notifications: NotificationCommittedProjection,
+    pub recent_files: Option<RecentFilesResetProjection>,
 }

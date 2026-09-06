@@ -6,9 +6,15 @@ use xwork_lib::app::lifecycle::{
     TrayOperation, WindowOperation,
 };
 use xwork_lib::files::{
-    FileEntryPathsDto, FileEntryRequestDto, FileSearchTruncatedReasonDto, FileTreeEntryDto,
+    ExternalFileResolutionDto, FileContentDto, FileDiskVersionDto, FileEntryPathsDto,
+    FileEntryRequestDto, FileHandleChangeKindDto, FileHandleChangedEventDto, FileHandleDto,
+    FileHandleRequestDto, FileHandleStateDto, FileSearchTruncatedReasonDto, FileTreeEntryDto,
     FileTreeEntryKindDto, FileTreePageDto, FileTreeSearchDto, FileTreeWarningDto,
-    FileTreeWarningReasonDto, FilesError, ListFileChildrenRequestDto, SearchFileTreeRequestDto,
+    FileTreeWarningReasonDto, FileWatchModeDto, FilesError, LineEndingDto,
+    ListFileChildrenRequestDto, OpenFileInPaneRequestDto, OpenFileResultDto, OpenFileWarningDto,
+    RecentFileAvailabilityDto, RecentFileDto, RecentFilesChangedEventDto,
+    ResolveExternalFileChangeRequestDto, SearchFileTreeRequestDto, TextEncodingDto, TextFileDto,
+    TextFileModeDto,
 };
 use xwork_lib::projects::{
     GitFileChangeDto, GitFileChangeKindDto, GitHeadDto, GitRepositoryKindDto,
@@ -285,7 +291,8 @@ fn search_binding_matches_rust_contract() {
     assert!(generated.contains("projectId"));
     assert!(generated.contains("sessionId"));
     assert!(generated.contains("actionId"));
-    for future_phase in ["relativePath", "noteId", "eventId"] {
+    assert!(generated.contains("relativePath"));
+    for future_phase in ["noteId", "eventId"] {
         assert!(!generated.contains(future_phase));
     }
     assert_binding_is_current(binding_path(&["search.ts"]), generated);
@@ -342,6 +349,26 @@ fn generated_files_binding() -> String {
         FileSearchTruncatedReasonDto::export_to_string(&config).unwrap(),
         FileTreeSearchDto::export_to_string(&config).unwrap(),
         FileEntryPathsDto::export_to_string(&config).unwrap(),
+        OpenFileInPaneRequestDto::export_to_string(&config).unwrap(),
+        FileHandleRequestDto::export_to_string(&config).unwrap(),
+        ExternalFileResolutionDto::export_to_string(&config).unwrap(),
+        ResolveExternalFileChangeRequestDto::export_to_string(&config).unwrap(),
+        TextFileModeDto::export_to_string(&config).unwrap(),
+        TextEncodingDto::export_to_string(&config).unwrap(),
+        LineEndingDto::export_to_string(&config).unwrap(),
+        TextFileDto::export_to_string(&config).unwrap(),
+        FileContentDto::export_to_string(&config).unwrap(),
+        FileDiskVersionDto::export_to_string(&config).unwrap(),
+        FileHandleStateDto::export_to_string(&config).unwrap(),
+        FileWatchModeDto::export_to_string(&config).unwrap(),
+        FileHandleDto::export_to_string(&config).unwrap(),
+        OpenFileWarningDto::export_to_string(&config).unwrap(),
+        OpenFileResultDto::export_to_string(&config).unwrap(),
+        RecentFileAvailabilityDto::export_to_string(&config).unwrap(),
+        RecentFileDto::export_to_string(&config).unwrap(),
+        FileHandleChangeKindDto::export_to_string(&config).unwrap(),
+        FileHandleChangedEventDto::export_to_string(&config).unwrap(),
+        RecentFilesChangedEventDto::export_to_string(&config).unwrap(),
         FilesError::export_to_string(&config).unwrap(),
     ]
     .join("\n")

@@ -715,15 +715,15 @@ impl SessionManager {
         self.mutate_session(&session_id, SessionChangeKindDto::Updated, |state| {
             let session = session_from_mut(state, &session_id)?;
             let pane = find_pane_in_session_mut(session, pane_id)?;
-            let PaneContentDto::ToolSelection { profile_id, .. } = &pane.content else {
-                return Err(SessionsError::PaneNotEmpty);
-            };
-            if let PaneContentRef::Terminal {
-                profile_id: next, ..
-            } = &content
-                && next != profile_id
-            {
-                return Err(SessionsError::PaneNotEmpty);
+            match (&pane.content, &content) {
+                (
+                    PaneContentDto::ToolSelection { profile_id, .. },
+                    PaneContentRef::Terminal {
+                        profile_id: next, ..
+                    },
+                ) if next == profile_id => {}
+                (PaneContentDto::Empty, PaneContentRef::File { .. }) => {}
+                _ => return Err(SessionsError::PaneNotEmpty),
             }
             if matches!(content, PaneContentRef::ToolSelection { .. }) {
                 return Err(SessionsError::PaneNotEmpty);

@@ -1,15 +1,72 @@
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use crate::{
+    files::FilesService,
     projects::{ProjectAvailabilityDto, ProjectService},
     search::{
-        ProjectSearchDocument, ProjectSearchSource, SearchFuture, SearchSessionStatus,
-        SearchShortcutChord, SearchSourceError, SessionSearchDocument, SessionSearchSource,
+        FileSearchDocument, FileSearchSource, ProjectSearchDocument, ProjectSearchSource,
+        SearchCandidates, SearchFuture, SearchSessionStatus, SearchShortcutChord,
+        SearchSourceError, SessionSearchDocument, SessionSearchSource,
         ShortcutActionSearchDocument, ShortcutCatalogSource,
     },
     sessions::{SessionManager, SessionStatusDto},
     settings::KeyboardShortcutsService,
 };
+
+/// Adapts Files candidates and Projects display names to Search documents.
+pub(super) struct AppFileSearchSource {
+    files: FilesService,
+    projects: ProjectService,
+}
+
+impl AppFileSearchSource {
+    /// Creates a Files source adapter over public owner queries only.
+    pub(super) fn new(files: FilesService, projects: ProjectService) -> Self {
+        Self { files, projects }
+    }
+}
+
+impl FileSearchSource for AppFileSearchSource {
+    /// Enriches relative file identities with current project display names.
+    fn search_files<'a>(
+        &'a self,
+        query: &'a str,
+        candidate_limit: u32,
+    ) -> SearchFuture<'a, Result<SearchCandidates<FileSearchDocument>, SearchSourceError>> {
+        Box::pin(async move {
+            let slice = self
+                .files
+                .search_openable_files(query, candidate_limit)
+                .await
+                .map_err(|_| SearchSourceError::Unavailable)?;
+            let names = self
+                .projects
+                .list_projects(None)
+                .await
+                .map_err(|_| SearchSourceError::Unavailable)?
+                .into_iter()
+                .map(|project| (project.id, project.display_name))
+                .collect::<HashMap<_, _>>();
+            let items = slice
+                .items
+                .into_iter()
+                .map(|item| FileSearchDocument {
+                    project_name: names.get(&item.project_id).cloned().unwrap_or_default(),
+                    project_id: item.project_id,
+                    relative_path: item.relative_path,
+                    file_name: item.file_name,
+                    supports_open_in_split: true,
+                    source_order: item.source_order,
+                })
+                .collect();
+            Ok(SearchCandidates {
+                items,
+                has_more: slice.has_more,
+            })
+        })
+    }
+}
 
 /// Adapts the Projects public query to Search-owned documents.
 pub(super) struct AppProjectSearchSource {

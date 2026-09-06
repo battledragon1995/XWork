@@ -19,6 +19,10 @@ use super::{
     tray::refresh_attention_menu,
 };
 use crate::{
+    files::{
+        FileDependencies, FileHandleManager, FileHandleManagerWeak, FilePaneTarget, FilesError,
+        FilesFuture,
+    },
     projects::{
         ProjectFuture, ProjectRuntimeGuard, ProjectRuntimeImpact, ProjectService, ProjectsError,
     },
@@ -121,6 +125,7 @@ impl CliProfileLookup for SessionsCliProfileLookup {
 pub(crate) struct PaneContentRuntimeRouter {
     inner: Mutex<PhaseOneContentState>,
     terminal: OnceLock<TerminalManagerWeak>,
+    files: OnceLock<FileHandleManagerWeak>,
 }
 
 /// Stores retained tool selections under opaque process-local tokens.
@@ -138,6 +143,7 @@ impl PaneContentRuntimeRouter {
                 retained: HashMap::new(),
             }),
             terminal: OnceLock::new(),
+            files: OnceLock::new(),
         }
     }
 
@@ -146,6 +152,21 @@ impl PaneContentRuntimeRouter {
         self.terminal
             .set(manager.downgrade())
             .map_err(|_| TerminalError::SessionAttachFailed)
+    }
+
+    /// Binds the Files lifecycle delegate exactly once.
+    pub(crate) fn bind_files(&self, manager: &FileHandleManager) -> Result<(), FilesError> {
+        self.files
+            .set(manager.downgrade())
+            .map_err(|_| FilesError::SessionAttachFailed)
+    }
+
+    /// Upgrades the bound Files manager or fails closed during invalid setup.
+    fn files(&self) -> Result<FileHandleManager, SessionsError> {
+        self.files
+            .get()
+            .and_then(FileHandleManagerWeak::upgrade)
+            .ok_or_else(|| content_failure("delegate", "files"))
     }
 
     /// Upgrades the bound terminal manager or fails closed during invalid setup.
@@ -171,9 +192,11 @@ impl PaneContentRuntime for PaneContentRuntimeRouter {
                     .close_impact(terminal_id)
                     .await
                     .map_err(|_| content_failure("inspect", terminal_id)),
-                PaneContentRef::File { file_handle_id, .. } => {
-                    Err(content_failure("inspect", file_handle_id))
-                }
+                PaneContentRef::File { file_handle_id, .. } => self
+                    .files()?
+                    .close_impact(file_handle_id)
+                    .await
+                    .map_err(|_| content_failure("inspect", file_handle_id)),
             }
         })
     }
@@ -191,6 +214,13 @@ impl PaneContentRuntime for PaneContentRuntimeRouter {
                     .close_for_session(terminal_id, retention)
                     .await
                     .map_err(|_| content_failure("close", terminal_id));
+            }
+            if let PaneContentRef::File { file_handle_id, .. } = content {
+                return self
+                    .files()?
+                    .close_for_session(file_handle_id, retention)
+                    .await
+                    .map_err(|_| content_failure("close", file_handle_id));
             }
             if !matches!(content, PaneContentRef::ToolSelection { .. }) {
                 return Err(content_failure("close", content_id(content)));
@@ -237,6 +267,13 @@ impl PaneContentRuntime for PaneContentRuntimeRouter {
                     .await
                     .map_err(|_| content_failure("reopen", &handle.token));
             }
+            if handle.owner == PaneContentOwner::Files {
+                return self
+                    .files()?
+                    .reopen_for_session(handle.clone())
+                    .await
+                    .map_err(|_| content_failure("reopen", &handle.token));
+            }
             if handle.owner != PaneContentOwner::Sessions {
                 return Err(content_failure("reopen", &handle.token));
             }
@@ -265,6 +302,13 @@ impl PaneContentRuntime for PaneContentRuntimeRouter {
                     .await
                     .map_err(|_| content_failure("discard", &handle.token));
             }
+            if handle.owner == PaneContentOwner::Files {
+                return self
+                    .files()?
+                    .discard_for_session(handle.clone())
+                    .await
+                    .map_err(|_| content_failure("discard", &handle.token));
+            }
             if handle.owner != PaneContentOwner::Sessions {
                 return Err(content_failure("discard", &handle.token));
             }
@@ -276,6 +320,126 @@ impl PaneContentRuntime for PaneContentRuntimeRouter {
                 .remove(&handle.token);
             Ok(())
         })
+    }
+}
+
+/// Adapts public Projects and Sessions APIs to the narrow Files dependency port.
+pub(crate) struct AppFileDependencies {
+    projects: ProjectService,
+    sessions: Weak<SessionManager>,
+}
+
+impl AppFileDependencies {
+    /// Creates a Files adapter without retaining the Sessions manager strongly.
+    pub(crate) fn new(projects: ProjectService, sessions: Weak<SessionManager>) -> Self {
+        Self { projects, sessions }
+    }
+
+    /// Upgrades the current Sessions owner for one operation.
+    fn sessions(&self) -> Result<Arc<SessionManager>, FilesError> {
+        self.sessions
+            .upgrade()
+            .ok_or(FilesError::SessionAttachFailed)
+    }
+}
+
+impl FileDependencies for AppFileDependencies {
+    /// Resolves one exact empty pane and derives project ownership from Sessions.
+    fn resolve_empty_pane<'a>(
+        &'a self,
+        session_id: &'a str,
+        tab_id: &'a str,
+        pane_id: &'a str,
+    ) -> FilesFuture<'a, Result<FilePaneTarget, FilesError>> {
+        Box::pin(async move {
+            let session = self
+                .sessions()?
+                .get_session(session_id)
+                .await
+                .map_err(|_| FilesError::InvalidSessionTarget)?;
+            let tab = session
+                .tabs
+                .iter()
+                .find(|tab| tab.id == tab_id)
+                .ok_or(FilesError::InvalidSessionTarget)?;
+            let pane =
+                find_file_pane(&tab.layout, pane_id).ok_or(FilesError::InvalidSessionTarget)?;
+            if pane.content != PaneContentDto::Empty {
+                return Err(FilesError::PaneNotEmpty {
+                    pane_id: pane_id.to_owned(),
+                });
+            }
+            Ok(FilePaneTarget {
+                session_id: session_id.to_owned(),
+                tab_id: tab_id.to_owned(),
+                pane_id: pane_id.to_owned(),
+                project_id: session.summary.project_id,
+            })
+        })
+    }
+
+    /// Resolves the current canonical available root through Projects.
+    fn available_project_root<'a>(
+        &'a self,
+        project_id: &'a str,
+    ) -> FilesFuture<'a, Result<PathBuf, FilesError>> {
+        Box::pin(async move {
+            self.projects
+                .available_root(project_id)
+                .await
+                .map(|root| root.root_path)
+                .map_err(|error| FilesError::from_projects(error, project_id))
+        })
+    }
+
+    /// Returns project identifiers in Projects-owned display order.
+    fn ordered_project_ids<'a>(&'a self) -> FilesFuture<'a, Result<Vec<String>, FilesError>> {
+        Box::pin(async move {
+            self.projects
+                .ordered_project_ids()
+                .await
+                .map_err(|_| FilesError::ProjectAccessFailed)
+        })
+    }
+
+    /// Attaches Files-owned content while Sessions performs the final emptiness check.
+    fn attach_file<'a>(
+        &'a self,
+        target: &'a FilePaneTarget,
+        file_handle_id: &'a str,
+        title: &'a str,
+    ) -> FilesFuture<'a, Result<(), FilesError>> {
+        Box::pin(async move {
+            self.sessions()?
+                .attach_runtime_content(
+                    target.pane_id.as_str(),
+                    PaneContentRef::File {
+                        file_handle_id: file_handle_id.to_owned(),
+                        title: title.to_owned(),
+                    },
+                )
+                .await
+                .map(|_| ())
+                .map_err(|error| match error {
+                    SessionsError::PaneNotEmpty => FilesError::PaneNotEmpty {
+                        pane_id: target.pane_id.clone(),
+                    },
+                    _ => FilesError::SessionAttachFailed,
+                })
+        })
+    }
+}
+
+/// Finds one pane in a session-owned layout without exposing Sessions internals.
+fn find_file_pane<'a>(
+    node: &'a PaneLayoutNodeDto,
+    pane_id: &str,
+) -> Option<&'a crate::sessions::PaneDto> {
+    match node {
+        PaneLayoutNodeDto::Pane { pane } => (pane.id == pane_id).then_some(pane),
+        PaneLayoutNodeDto::Split { first, second, .. } => {
+            find_file_pane(first, pane_id).or_else(|| find_file_pane(second, pane_id))
+        }
     }
 }
 

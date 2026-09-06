@@ -37,6 +37,7 @@ pub struct SearchTextRangeDto {
 pub enum SearchResultKindDto {
     Project,
     Session,
+    File,
     Command,
 }
 
@@ -72,6 +73,10 @@ pub enum SearchTargetDto {
     Session {
         project_id: String,
         session_id: String,
+    },
+    File {
+        project_id: String,
+        relative_path: String,
     },
     Command {
         action_id: String,
@@ -113,6 +118,7 @@ pub struct SearchGroupDto {
 pub enum SearchSourceDto {
     Projects,
     Sessions,
+    Files,
     Commands,
 }
 
@@ -220,6 +226,24 @@ pub struct ShortcutActionSearchDocument {
     pub source_order: u32,
 }
 
+/// Supplies one bounded openable file candidate to Search.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct FileSearchDocument {
+    pub project_id: String,
+    pub relative_path: String,
+    pub file_name: String,
+    pub project_name: String,
+    pub supports_open_in_split: bool,
+    pub source_order: u32,
+}
+
+/// Carries one bounded source-owned candidate prefix.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SearchCandidates<T> {
+    pub items: Vec<T>,
+    pub has_more: bool,
+}
+
 /// Sanitizes every owner failure into one source-level category.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SearchSourceError {
@@ -240,6 +264,16 @@ pub trait SessionSearchSource: Send + Sync {
     fn list_sessions<'a>(
         &'a self,
     ) -> SearchFuture<'a, Result<Vec<SessionSearchDocument>, SearchSourceError>>;
+}
+
+/// Searches owner-filtered openable files without absolute paths.
+pub trait FileSearchSource: Send + Sync {
+    /// Returns a bounded matching candidate slice.
+    fn search_files<'a>(
+        &'a self,
+        query: &'a str,
+        candidate_limit: u32,
+    ) -> SearchFuture<'a, Result<SearchCandidates<FileSearchDocument>, SearchSourceError>>;
 }
 
 /// Reads the current action and shortcut catalog.

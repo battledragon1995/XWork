@@ -259,6 +259,20 @@ it.each([
   expect(createSession).not.toHaveBeenCalled();
   expect(getSession).not.toHaveBeenCalled();
 });
+
+/** Files results stay visible but cannot dispatch before the Files UI implementation. */
+it("does not activate a file search result", async () => {
+  vi.mocked(searchUnified).mockResolvedValue(
+    response({ kind: "file", projectId: "p", relativePath: "src/main.rs" }),
+  );
+  mount();
+  await open();
+  expect(screen.getByRole("option")).toHaveAttribute("aria-disabled", "true");
+  await activate();
+  expect(getProject).not.toHaveBeenCalled();
+  expect(getSession).not.toHaveBeenCalled();
+  expect(createSession).not.toHaveBeenCalled();
+});
 /** Owner context is resolved before any search request. */
 it.each(["/projects/p", "/sessions/s"])("resolves %s context", async (path) => {
   mount(path);

@@ -3,7 +3,11 @@ use std::{
     sync::Arc,
 };
 
-use crate::files::{FilesError, FilesRevealCallback, FilesService};
+use crate::files::{
+    FILE_HANDLE_CHANGED_EVENT, FileHandleEventSink, FilesClock, FilesError, FilesOpenCallback,
+    FilesRevealCallback, FilesService, RECENT_FILES_CHANGED_EVENT, RecentFilesEventSink,
+    system_files_clock,
+};
 use crate::notifications::{
     NOTIFICATIONS_CHANGED_EVENT, NotificationCollaborators, NotificationService,
 };
@@ -53,12 +57,14 @@ use data_participants::{
     SettingsDataParticipant,
 };
 use data_runtime::{
-    AppDataRuntime, AppTerminalDependencies, DeferredProjectRuntimeGuard, PaneContentRuntimeRouter,
-    SessionsAppRuntime, SessionsCliProfileLookup, SessionsProjectAccess, TauriSessionEventSink,
-    TauriTerminalEventSink,
+    AppDataRuntime, AppFileDependencies, AppTerminalDependencies, DeferredProjectRuntimeGuard,
+    PaneContentRuntimeRouter, SessionsAppRuntime, SessionsCliProfileLookup, SessionsProjectAccess,
+    TauriSessionEventSink, TauriTerminalEventSink,
 };
 use lifecycle::{AppLifecycleError, AppLifecycleState, AppRuntime};
-use search_sources::{AppProjectSearchSource, AppSessionSearchSource, AppShortcutCatalogSource};
+use search_sources::{
+    AppFileSearchSource, AppProjectSearchSource, AppSessionSearchSource, AppShortcutCatalogSource,
+};
 
 /// Describes whether a native close event should be intercepted.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -396,6 +402,12 @@ fn app_invoke_handler<R: Runtime>() -> impl Fn(tauri::ipc::Invoke<R>) -> bool + 
         crate::files::commands::search_file_tree,
         crate::files::commands::get_file_entry_paths,
         crate::files::commands::reveal_file_entry,
+        crate::files::commands::open_file_in_pane,
+        crate::files::commands::get_open_file,
+        crate::files::commands::reload_open_file,
+        crate::files::commands::resolve_external_file_change,
+        crate::files::commands::open_file_with_default_app,
+        crate::files::commands::list_recent_files,
         crate::settings::get_settings,
         crate::settings::get_keyboard_shortcuts,
         crate::settings::set_keyboard_shortcut,
@@ -490,7 +502,6 @@ where
                 let data_location = app_data_dir.clone();
                 let storage = setup_storage(app, app_data_dir)?;
                 let project_guard = setup_projects(app, storage.clone(), project_collaborators);
-                setup_files(app, files_reveal_override, native_terminal_interactions);
                 setup_settings(app, storage.clone())?;
                 setup_keyboard_shortcuts(app, storage.clone())?;
                 setup_cli_profiles(
@@ -501,6 +512,14 @@ where
                 );
                 let (sessions, content_router) =
                     setup_sessions(app, project_guard, initial_visibility)?;
+                setup_files(
+                    app,
+                    storage.clone(),
+                    sessions.clone(),
+                    content_router.clone(),
+                    files_reveal_override,
+                    native_terminal_interactions,
+                )?;
                 setup_search(app, sessions.clone())?;
                 let terminal =
                     setup_terminal(app, &sessions, content_router, native_terminal_interactions)?;
@@ -562,6 +581,15 @@ where
                 if window.label() != "main" {
                     return;
                 }
+                if matches!(event, WindowEvent::Focused(true)) {
+                    if let Some(files) = window.app_handle().try_state::<FilesService>() {
+                        let files = files.inner().clone();
+                        tauri::async_runtime::spawn(async move {
+                            let _ = files.reconcile_open_files().await;
+                        });
+                    }
+                    return;
+                }
                 let WindowEvent::CloseRequested { api, .. } = event else {
                     return;
                 };
@@ -590,9 +618,12 @@ where
 /// Constructs and manages Files from the public Projects owner query.
 fn setup_files<R: Runtime>(
     app: &mut App<R>,
+    storage: Storage,
+    sessions: Arc<SessionManager>,
+    content_router: Arc<PaneContentRuntimeRouter>,
     reveal_override: Option<FilesRevealCallback>,
     native_reveal: bool,
-) {
+) -> Result<(), Box<dyn std::error::Error>> {
     let reveal = reveal_override.unwrap_or_else(|| {
         if native_reveal {
             let handle = app.handle().clone();
@@ -612,8 +643,48 @@ fn setup_files<R: Runtime>(
             )
         }
     });
-    let service = FilesService::new(app.state::<ProjectService>().inner().clone(), reveal);
+    let open_external: FilesOpenCallback = if native_reveal {
+        let handle = app.handle().clone();
+        Arc::new(move |path: &Path| {
+            let path = path.to_str().ok_or(FilesError::OpenExternalFailed)?;
+            handle
+                .opener()
+                .open_path(path, None::<&str>)
+                .map_err(|_| FilesError::OpenExternalFailed)
+        })
+    } else {
+        Arc::new(|_path: &Path| Err(FilesError::OpenExternalFailed))
+    };
+    let event_app = app.handle().clone();
+    let handle_events: FileHandleEventSink = Arc::new(move |event| {
+        event_app
+            .emit_to("main", FILE_HANDLE_CHANGED_EVENT, event)
+            .map_err(|_| FilesError::FileReadFailed)
+    });
+    let recent_app = app.handle().clone();
+    let recent_events: RecentFilesEventSink = Arc::new(move |event| {
+        recent_app
+            .emit_to("main", RECENT_FILES_CHANGED_EVENT, event)
+            .map_err(|_| FilesError::RecentFilesFailed)
+    });
+    let clock: FilesClock = Arc::new(system_files_clock);
+    let dependencies = Arc::new(AppFileDependencies::new(
+        app.state::<ProjectService>().inner().clone(),
+        Arc::downgrade(&sessions),
+    ));
+    let service = FilesService::new_with_runtime(
+        dependencies,
+        storage,
+        app.state::<DataMaintenanceGate>().inner().clone(),
+        reveal,
+        open_external,
+        clock,
+        handle_events,
+        recent_events,
+    );
+    content_router.bind_files(&service.handle_manager())?;
     app.manage(service);
+    Ok(())
 }
 
 /// Composes Data Management only after all Phase 1 owners are ready.
@@ -634,7 +705,7 @@ fn setup_data_management<R: Runtime>(
             .clone(),
         notifications: notifications.clone(),
     };
-    let service = DataManagementService::with_seams(
+    let service = DataManagementService::with_files_seams(
         storage,
         app.state::<DataMaintenanceGate>().inner().clone(),
         participants,
@@ -642,6 +713,7 @@ fn setup_data_management<R: Runtime>(
         Arc::new(TauriDataPlatform::new(app.handle().clone(), app_data_dir)),
         Arc::new(SystemDataClock::new()),
         Arc::new(TauriDataEventSink(app.handle().clone())),
+        app.state::<FilesService>().inner().clone(),
     );
     app.manage(service);
 }
@@ -651,11 +723,15 @@ fn setup_search<R: Runtime>(
     app: &mut App<R>,
     sessions: Arc<SessionManager>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let service = SearchService::new(
+    let service = SearchService::new_with_files(
         Arc::new(AppProjectSearchSource::new(
             app.state::<ProjectService>().inner().clone(),
         )),
         Arc::new(AppSessionSearchSource::new(sessions)),
+        Arc::new(AppFileSearchSource::new(
+            app.state::<FilesService>().inner().clone(),
+            app.state::<ProjectService>().inner().clone(),
+        )),
         Arc::new(AppShortcutCatalogSource::new(
             app.state::<KeyboardShortcutsService>().inner().clone(),
         )),

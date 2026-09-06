@@ -289,7 +289,7 @@ fn migration_creates_empty_shortcut_overrides() {
                         |row| row.get(0),
                     )
                     .unwrap();
-                assert_eq!(version, 5);
+                assert_eq!(version, 6);
                 let count: i64 = connection
                     .query_row(
                         "SELECT COUNT(*) FROM keyboard_shortcut_overrides",

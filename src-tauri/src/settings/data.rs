@@ -11,6 +11,7 @@ use ts_rs::TS;
 
 use crate::{
     app::data_runtime::{DataResetCompletion, DataRuntimeControl},
+    files::FilesService,
     platform::data::{DataPlatform, MAX_BACKUP_BYTES},
     projects::ProjectBackupRecordV1,
     shared::DataMaintenanceGate,
@@ -362,6 +363,7 @@ struct DataManagementInner {
     platform: Arc<dyn DataPlatform>,
     clock: Arc<dyn DataClock>,
     events: Arc<dyn DataEventSink>,
+    files: Option<FilesService>,
     state: Mutex<OperationState>,
 }
 
@@ -385,6 +387,7 @@ impl DataManagementService {
                 platform,
                 clock,
                 events,
+                files: None,
                 state: Mutex::new(OperationState {
                     next_request_id: 1,
                     active: false,
@@ -392,6 +395,33 @@ impl DataManagementService {
                 }),
             }),
         }
+    }
+
+    /// Creates the production coordinator with the stage16 recent reset participant.
+    #[allow(clippy::too_many_arguments)]
+    pub fn with_files_seams(
+        storage: Storage,
+        gate: DataMaintenanceGate,
+        participants: DataParticipants,
+        runtime: Arc<dyn DataRuntimeControl>,
+        platform: Arc<dyn DataPlatform>,
+        clock: Arc<dyn DataClock>,
+        events: Arc<dyn DataEventSink>,
+        files: FilesService,
+    ) -> Self {
+        let mut service = Self::with_seams(
+            storage,
+            gate,
+            participants,
+            runtime,
+            platform,
+            clock,
+            events,
+        );
+        Arc::get_mut(&mut service.inner)
+            .expect("new coordinator is uniquely owned")
+            .files = Some(files);
+        service
     }
 
     /// Returns the configured location after ensuring it exists.
@@ -916,13 +946,28 @@ impl DataManagementService {
     async fn apply_reset(&self) -> Result<ResetCommittedProjections, DataManagementError> {
         let storage = self.inner.storage.clone();
         let participants = self.inner.participants.clone();
+        let files = self.inner.files.clone();
         tauri::async_runtime::spawn_blocking(move || {
             storage.with_transaction(|tx| {
+                let notifications = participants
+                    .notifications
+                    .reset_notifications_in(tx)
+                    .map_err(|_| DataManagementError::PersistenceFailed)?;
+                let recent_plan = files
+                    .as_ref()
+                    .map(|files| files.prepare_recent_files_reset_in(tx))
+                    .transpose()
+                    .map_err(|_| DataManagementError::PersistenceFailed)?;
+                let recent_files = match (&files, recent_plan.as_ref()) {
+                    (Some(files), Some(plan)) => Some(
+                        files
+                            .reset_recent_files_in(tx, plan)
+                            .map_err(|_| DataManagementError::PersistenceFailed)?,
+                    ),
+                    _ => None,
+                };
                 Ok(ResetCommittedProjections {
-                    notifications: participants
-                        .notifications
-                        .reset_notifications_in(tx)
-                        .map_err(|_| DataManagementError::PersistenceFailed)?,
+                    notifications,
                     keyboard_shortcuts: participants
                         .keyboard_shortcuts
                         .apply_reset(tx)
@@ -939,6 +984,7 @@ impl DataManagementService {
                         .projects
                         .apply_reset(tx)
                         .map_err(|_| DataManagementError::PersistenceFailed)?,
+                    recent_files,
                 })
             })
         })
@@ -964,6 +1010,9 @@ impl DataManagementService {
             .participants
             .keyboard_shortcuts
             .publish_after_commit(projections.keyboard_shortcuts);
+        if let (Some(files), Some(projection)) = (&self.inner.files, projections.recent_files) {
+            files.publish_recent_files_reset(projection);
+        }
         self.inner
             .participants
             .notifications
