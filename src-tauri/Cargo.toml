@@ -44,3 +44,4 @@ libc = "=0.2.189"
 [dev-dependencies]
 tauri = { version = "=2.11.5", features = ["test"] }
 tempfile = "=3.27.0"
+tokio = { version = "=1.53.1", features = ["rt", "time", "test-util"] }

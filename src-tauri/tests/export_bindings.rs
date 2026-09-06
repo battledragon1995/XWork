@@ -12,6 +12,11 @@ use xwork_lib::projects::{
     ProjectGitSummaryDto, ProjectUnavailableReasonDto, ProjectsError, RemoveProjectImpactDto,
     RemoveProjectResultDto,
 };
+use xwork_lib::search::{
+    SearchGroupDto, SearchResultDto, SearchResultKindDto, SearchShortcutDto, SearchSourceDto,
+    SearchSourceFailureDto, SearchSourceFailureReasonDto, SearchTargetDto, SearchTextRangeDto,
+    UnifiedSearchError, UnifiedSearchInputDto, UnifiedSearchResponseDto,
+};
 use xwork_lib::sessions::{
     CloseImpactDto, CloseResultDto, CloseTargetDto, PaneContentDto, PaneDto, PaneLayoutNodeDto,
     SessionChangeKindDto, SessionDetailDto, SessionRuntimeEventDto, SessionStatusDto,
@@ -206,6 +211,39 @@ fn generated_keyboard_shortcuts_binding() -> String {
         KeyboardShortcutsError::export_to_string(&config).unwrap(),
     ]
     .join("\n")
+}
+
+/// Generates the complete Phase 1 Search binding in dependency order.
+fn generated_search_binding() -> String {
+    let config = Config::default();
+    [
+        UnifiedSearchInputDto::export_to_string(&config).unwrap(),
+        SearchTextRangeDto::export_to_string(&config).unwrap(),
+        SearchResultKindDto::export_to_string(&config).unwrap(),
+        SearchShortcutDto::export_to_string(&config).unwrap(),
+        SearchTargetDto::export_to_string(&config).unwrap(),
+        SearchResultDto::export_to_string(&config).unwrap(),
+        SearchGroupDto::export_to_string(&config).unwrap(),
+        SearchSourceDto::export_to_string(&config).unwrap(),
+        SearchSourceFailureReasonDto::export_to_string(&config).unwrap(),
+        SearchSourceFailureDto::export_to_string(&config).unwrap(),
+        UnifiedSearchResponseDto::export_to_string(&config).unwrap(),
+        UnifiedSearchError::export_to_string(&config).unwrap(),
+    ]
+    .join("\n")
+}
+
+/// Regenerates Search once on drift and verifies Phase 1 target field casing.
+#[test]
+fn search_binding_matches_rust_contract() {
+    let generated = generated_search_binding();
+    assert!(generated.contains("projectId"));
+    assert!(generated.contains("sessionId"));
+    assert!(generated.contains("actionId"));
+    for future_phase in ["relativePath", "noteId", "eventId"] {
+        assert!(!generated.contains(future_phase));
+    }
+    assert_binding_is_current(binding_path(&["search.ts"]), generated);
 }
 
 /// Regenerates shortcuts once on drift and then requires an exact Rust contract match.

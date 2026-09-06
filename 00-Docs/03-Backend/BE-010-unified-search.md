@@ -28,6 +28,13 @@ Backend tổng hợp project, session và command từ public query của capabi
 
 ### Quyết định và giả định đã chốt
 
+- Chốt stage 12: chỉ triển khai DTO variant, document và port của Projects/Sessions/Commands. Các khai báo File/Note/Event bên dưới là contract cho phase sau, chưa sinh vào binding hoặc scaffold source/test giả. Phase 1 tối đa 24 result; giới hạn candidate 64 chỉ áp dụng public search source của phase sau, không cắt list project/session trước matching.
+- Test composition dùng seam `configure_with_search_for_tests` trong `app/mod.rs`, nhận app-data tạm cùng cả Projects và CLI collaborators giả; tắt native hydration/tray/terminal interaction. Không dùng helper Projects hiện tại nguyên trạng vì nó bật CLI collaborator native.
+- Binding được sinh bằng `src-tauri/tests/export_bindings.rs` theo cơ chế hiện có (ghi lại khi drift rồi fail một lần); không tạo binary generator riêng. Target enum phải dùng `rename_all_fields = "camelCase"` cho cả serde và ts-rs để field trong variant đúng contract.
+- Session context dùng `{projectName} · {statusLabel}`; khi snapshot project lỗi hoặc không còn ID tương ứng, vẫn giữ session với context chỉ có status label. Nhãn lần lượt là `No tool chosen`, `Running`, `New output`, `Needs attention`, `Finished`, `Exited with an error`, khớp UI hiện hành. Không giả project name hoặc bỏ session chỉ vì thiếu enrichment.
+- Validation kiểm tra control character trên query sau trim; whitespace đầu/cuối được bỏ theo contract. Giới hạn title 256/context 160 bao gồm một scalar ellipsis khi bị cắt; token của title/context/keyword tách bằng Unicode whitespace, riêng action ID thay dấu chấm/gạch dưới bằng khoảng trắng trước matching.
+- Duplicate domain identity làm source đó `unavailable`; duplicate action ID giữa static catalog và snapshot BE-009 là invariant toàn catalog, trả lỗi top-level `Unavailable`. Constructor Search kiểm tra collision khi snapshot khả dụng và từ chối startup nếu có; snapshot unavailable cho phép startup degraded với static commands, lần query sau thử snapshot lại. Không cache shortcut.
+- Deadline tổng bắt đầu khi request đã validate; domain futures được poll đồng thời, mỗi source tối đa 400 ms và phần await tối đa 500 ms. Snapshot shortcut đồng bộ là public read trong bộ nhớ hiện hành, không thể preempt bằng Tokio timer; CPU ranking cũng không có hard realtime guarantee. Kiểm tra p95 trên Windows riêng với timer test, không dùng wall-clock sleep làm bằng chứng deadline.
 - Search sở hữu consumer-side ports và ranking, còn adapter trong composition root chỉ gọi public query tương ứng với `list_projects(None)`, `list_sessions(None)` và `KeyboardShortcutsService::snapshot()`. Đây là dependency vào contract công khai, không phải quyền truy cập repository/lock nội bộ.
 - Query chạy theo yêu cầu, không duy trì index sao chép. Project/session/command có quy mô nhỏ ở Phase 1; Files/Notes/Events bắt buộc lọc và cap candidate tại source để không tải toàn bộ domain vào Search.
 - Lỗi hoặc timeout một source trả response partial cùng `source_failures`; không làm mất Commands và các nhóm đã trả được. Cách này giữ Command Palette dùng được để điều hướng/khắc phục lỗi mà không giả kết quả từ source hỏng.
@@ -49,7 +56,6 @@ Backend tổng hợp project, session và command từ public query của capabi
 | `src-tauri/src/search/service.rs` | Command catalog, orchestration source song song, timeout, projection và phase registration |
 | `src-tauri/src/app/mod.rs` | Khởi tạo `SearchService`, inject source adapters, manage state và đăng ký command |
 | `src-tauri/src/app/search_sources.rs` | Adapter từ consumer-side ports sang public query BE-003/005/009 và các source phase sau |
-| `src-tauri/src/bin/export_bindings.rs` | Đăng ký DTO/error BE-010 với binding generator |
 | `src/bindings/search.ts` | Binding TypeScript aggregate được sinh từ Rust; không sửa thủ công |
 | `src-tauri/tests/unified_search_contract.rs` | Integration test command, adapters, partial failure, timeout và phase source |
 | `src-tauri/tests/export_bindings.rs` | Contract test binding trên đĩa khớp Rust source |

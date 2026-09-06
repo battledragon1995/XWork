@@ -20,6 +20,7 @@ use xwork_lib::projects::{
     ProjectChangedEventDto, ProjectEventSink, ProjectFuture, ProjectPlatform, ProjectService,
     ProjectsError,
 };
+use xwork_lib::search::SearchService;
 use xwork_lib::sessions::SessionManager;
 use xwork_lib::settings::SettingsService;
 use xwork_lib::shared::DataMaintenanceGate;
@@ -246,6 +247,7 @@ fn lifecycle_composition_orders_setup_and_registers_commands() {
             let ready = app.try_state::<Storage>().is_some()
                 && app.try_state::<AppLifecycleState>().is_some()
                 && app.try_state::<ProjectService>().is_some()
+                && app.try_state::<SearchService>().is_some()
                 && app.try_state::<SettingsService>().is_some()
                 && app.try_state::<CliProfilesService>().is_some()
                 && app.try_state::<DataMaintenanceGate>().is_some();
@@ -330,6 +332,17 @@ fn projects_composition_routes_lifecycle_and_projects_commands() {
         .deserialize::<serde_json::Value>()
         .unwrap();
     assert_eq!(shortcuts["actions"].as_array().unwrap().len(), 18);
+    let search = tauri::test::get_ipc_response(
+        &main,
+        invoke_request_with_body(
+            "search_unified",
+            serde_json::json!({"input": {"query": "", "contextProjectId": null}}),
+        ),
+    )
+    .expect("unified search should be routed")
+    .deserialize::<serde_json::Value>()
+    .expect("unified search should return JSON");
+    assert_eq!(search["groups"][0]["kind"], "command");
     tauri::test::get_ipc_response(&main, invoke_request("reset_all_keyboard_shortcuts"))
         .expect("empty reset should be a successful no-op");
 

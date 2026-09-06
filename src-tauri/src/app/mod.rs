@@ -22,6 +22,7 @@ use crate::{
         ProjectChangedEventDto, ProjectEventSink, ProjectFuture, ProjectPlatform, ProjectService,
         ProjectsError, TauriProjectEventSink, TauriProjectPlatform,
     },
+    search::SearchService,
     sessions::{SessionManager, commands as session_commands},
     settings::{KeyboardShortcutsService, SettingsService},
     shared::DataMaintenanceGate,
@@ -38,6 +39,7 @@ pub mod data_participants;
 pub mod data_runtime;
 pub mod lifecycle;
 mod notification_dependencies;
+mod search_sources;
 pub mod tray;
 
 use data_participants::{
@@ -50,6 +52,7 @@ use data_runtime::{
     TauriTerminalEventSink,
 };
 use lifecycle::{AppLifecycleError, AppLifecycleState, AppRuntime};
+use search_sources::{AppProjectSearchSource, AppSessionSearchSource, AppShortcutCatalogSource};
 
 /// Describes whether a native close event should be intercepted.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -201,6 +204,33 @@ where
         },
         cli_profile_collaborators,
         // Command tests drive hydration, cleanup, and checks explicitly instead.
+        false,
+        Some(true),
+        false,
+    )
+}
+
+/// Applies isolated composition with both owner collaborator sets for Search tests.
+#[doc(hidden)]
+pub fn configure_with_search_for_tests<R, C, P>(
+    builder: Builder<R>,
+    app_data_dir: PathBuf,
+    project_collaborators: C,
+    cli_profile_collaborators: P,
+) -> Builder<R>
+where
+    R: Runtime,
+    C: FnOnce(&AppHandle<R>) -> ProjectCollaborators + Send + 'static,
+    P: FnOnce(&AppHandle<R>) -> CliProfileCollaborators + Send + 'static,
+{
+    configure_app(
+        builder,
+        Some(app_data_dir),
+        None,
+        // Search integration tests do not attach native tray state.
+        |_app| Ok(()),
+        project_collaborators,
+        cli_profile_collaborators,
         false,
         Some(true),
         false,
@@ -369,7 +399,8 @@ fn app_invoke_handler<R: Runtime>() -> impl Fn(tauri::ipc::Invoke<R>) -> bool + 
         crate::notifications::commands::mark_all_notifications_read,
         crate::notifications::commands::delete_notification,
         crate::notifications::commands::clear_read_notifications,
-        crate::notifications::commands::open_notification
+        crate::notifications::commands::open_notification,
+        crate::search::search_unified
     ]
 }
 
@@ -416,6 +447,7 @@ where
                 );
                 let (sessions, content_router) =
                     setup_sessions(app, project_guard, initial_visibility)?;
+                setup_search(app, sessions.clone())?;
                 let terminal =
                     setup_terminal(app, &sessions, content_router, native_terminal_interactions)?;
                 let visibility = NotificationVisibility::new(Arc::downgrade(&sessions));
@@ -492,6 +524,24 @@ where
                 }
             },
         )
+}
+
+/// Constructs and manages Search from public owner-query adapters.
+fn setup_search<R: Runtime>(
+    app: &mut App<R>,
+    sessions: Arc<SessionManager>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let service = SearchService::new(
+        Arc::new(AppProjectSearchSource::new(
+            app.state::<ProjectService>().inner().clone(),
+        )),
+        Arc::new(AppSessionSearchSource::new(sessions)),
+        Arc::new(AppShortcutCatalogSource::new(
+            app.state::<KeyboardShortcutsService>().inner().clone(),
+        )),
+    )?;
+    app.manage(service);
+    Ok(())
 }
 
 /// Opens storage completely before registering it as application state.
