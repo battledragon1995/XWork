@@ -13,7 +13,7 @@ import type {
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { IpcCallError } from "@/lib/ipc/ipc-error";
 import { addProject } from "@/lib/ipc/projects";
-import { HomePlaceholder } from "./home-placeholder";
+
 import { WelcomeScreen } from "./welcome-screen";
 
 // Replace the shared Projects adapter so no test opens a native picker or writes a project.
@@ -369,16 +369,5 @@ describe("Add Project flow", () => {
     await user.click(screen.getByRole("button", { name: "Add Project" }));
 
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-  });
-});
-
-describe("HomePlaceholder", () => {
-  // Verify the branch shown once a project exists keeps the copy the shell used before, so
-  // replacing the route element changes no observable behavior for existing users.
-  it("keeps the Home area copy unchanged", () => {
-    render(<HomePlaceholder />);
-
-    expect(screen.getByRole("heading", { level: 1, name: "Home" })).toBeInTheDocument();
-    expect(screen.getByText("This area arrives with FE-003.")).toBeInTheDocument();
   });
 });

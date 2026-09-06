@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { RouterProvider } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -239,7 +239,7 @@ describe("AppSidebar collapse", () => {
       screen.queryByText("No projects yet. Add a folder to start a session."),
     ).not.toBeInTheDocument();
     for (const name of ["Home", "Projects", "Notes", "Calendar", "Settings"]) {
-      expect(screen.getByRole("link", { name })).toBeInTheDocument();
+      expect(within(getSidebar()).getByRole("link", { name })).toBeInTheDocument();
     }
   });
 
@@ -606,7 +606,7 @@ describe("AppSidebar session composition", () => {
 
     await user.click(screen.getByRole("button", { name: "Sessions for xwork" }));
 
-    const row = await screen.findByRole("link", { name: /Debounce PTY resize/ });
+    const row = await within(getSidebar()).findByRole("link", { name: /Debounce PTY resize/ });
     expect(row).toHaveAttribute("href", "/sessions/s1");
   });
 
@@ -641,7 +641,7 @@ describe("AppSidebar session composition", () => {
     });
     renderShellAt("/sessions/s1");
 
-    const row = await screen.findByRole("link", { name: /Debounce PTY resize/ });
+    const row = await within(getSidebar()).findByRole("link", { name: /Debounce PTY resize/ });
     expect(row).toHaveAttribute("aria-current", "page");
     expect(screen.getByRole("button", { name: "Sessions for xwork" })).toHaveAttribute(
       "aria-expanded",
@@ -673,7 +673,9 @@ describe("AppSidebar session composition", () => {
 
     act(() => useShellStore.getState().toggleSidebarCollapsed());
 
-    expect(screen.queryByRole("link", { name: /Debounce PTY resize/ })).not.toBeInTheDocument();
+    expect(
+      within(getSidebar()).queryByRole("link", { name: /Debounce PTY resize/ }),
+    ).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Sessions for xwork" })).not.toBeInTheDocument();
   });
 });

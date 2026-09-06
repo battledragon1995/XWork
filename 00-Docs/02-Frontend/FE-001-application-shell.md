@@ -86,6 +86,14 @@ Người dùng mở XWork và thấy một khung ứng dụng hoàn chỉnh: sid
 - `BE-001` không có query trạng thái maximized. Icon nút Maximize chỉ phản ánh giá trị trả về gần nhất của `toggle_main_window_maximized`; xem `Edge case`.
 - `File liên quan` của `BE-001` giữ `src-tauri/tauri.conf.json` và `src-tauri/capabilities/main.json` nhưng chưa nêu `decorations: false` và ba quyền frontend cần cho event và kéo cửa sổ. Lát cắt FE-001 thay đổi hai file này; tài liệu `BE-001` cần được cập nhật trong một thay đổi riêng.
 
+### Mở rộng giai đoạn 14 — Home Phase 1
+
+- Contract chi tiết và inventory implementation tại [FE-003 Home](FE-003-home.md). Index `/` dùng `src/app/home-entry.tsx` bọc public `HomeRoute`; chỉ đổi element trong `src/app/app-router.tsx`, giữ path, default entry, breadcrumb `Home` và sidebar active. Đây là phần bổ sung composition cần thiết sau boundary stage 13.
+- HomeEntry truyền `boundary` và `readBoundary()` theo public props FE-003: data `busy`/`invalidationEpoch` và trạng thái Quit. Callback đọc state hiện tại để chặn navigation/response cũ trước khi React effect chạy; Home không import implementation Settings, Projects, Sessions hoặc app store.
+- Đổi maintenance epoch phải làm Home retire project/session snapshot kể cả `/` không unmount. Sau busy query lại public owner; lỗi query sau reset không được hiển thị metadata của generation trước. Không remount toàn app hoặc terminal để refresh Home.
+- Home có hai khối Phase 1, không có Quick Note/note/event. Welcome tiếp tục là nhánh chưa có project. Search `navigation.open_home` hiện hữu vẫn tới `/`; không bổ sung executor/phím tắt cho FE-009/FE-014.
+- Regression tại `src/app/home-entry.test.tsx`, `src/app/app-router.test.tsx`, `src/app/search-entry.test.tsx`, `src/app/data-management-bridge.test.tsx` nằm trong inventory FE-003. Native smoke/metrics stage 13 vẫn pending; thiết kế Home không xác nhận stage 14 hoặc toàn Phase 1 hoàn tất.
+
 ### Mở rộng giai đoạn 13 — Data maintenance boundary
 
 - Theo `FE-015-settings-data.md`, shell ghép một DataManagementProvider/bridge sống xuyên route dưới router và KeyboardShortcutsProvider. Settings giữ operation UI, app bridge refresh public owners và điều hướng; không đưa orchestration Rust lên frontend.

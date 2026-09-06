@@ -17,6 +17,10 @@ vi.mock("@/lib/ipc/projects", () => ({
   onProjectsChanged: vi.fn(),
 }));
 
+vi.mock("@/lib/ipc/sessions", () => ({
+  listSessions: vi.fn(async () => []),
+  onSessionsRuntimeChanged: vi.fn(async () => () => {}),
+}));
 const listProjectsMock = vi.mocked(listProjects);
 const onProjectsChangedMock = vi.mocked(onProjectsChanged);
 
@@ -111,13 +115,13 @@ describe("HomeRoute branches", () => {
   });
 
   // Verify any project at all hands the route to the Home branch instead.
-  it("renders the Home placeholder once a project exists", async () => {
+  it("renders the Home dashboard once a project exists", async () => {
     listProjectsMock.mockResolvedValue([PROJECT]);
 
     renderRoute();
 
     expect(await screen.findByRole("heading", { level: 1, name: "Home" })).toBeInTheDocument();
-    expect(screen.getByText("This area arrives with FE-003.")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Recent projects" })).toBeInTheDocument();
   });
 
   // Verify a recoverable load failure states the problem and offers exactly one retry.
@@ -236,4 +240,42 @@ describe("HomeRoute refresh", () => {
 
     expect(screen.getByRole("button", { name: "Add Project" })).toHaveFocus();
   });
+});
+
+// A degraded listener remains visible even when the authoritative branch is Welcome.
+it("shows listener recovery on Welcome without starting Sessions", async () => {
+  onProjectsChangedMock.mockRejectedValueOnce(new Error("listener"));
+  renderRoute();
+  expect(
+    await screen.findByText("Live updates are unavailable. Refresh to update."),
+  ).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Add Project" })).toBeInTheDocument();
+  await userEvent.setup().click(screen.getByRole("button", { name: "Refresh" }));
+  expect(screen.queryByText("Live updates are unavailable. Refresh to update.")).toBeNull();
+});
+
+// A failed refresh preserves the focused Home row and flags stale metadata explicitly.
+it("keeps the Home branch and focus after a project refresh fails", async () => {
+  listProjectsMock.mockResolvedValue([PROJECT]);
+  renderRoute();
+  const link = await screen.findByRole("link", { name: "Open project xwork" });
+  link.focus();
+  listProjectsMock.mockRejectedValue(
+    new IpcCallError("list_projects", { code: "persistenceFailed" }),
+  );
+  await emitProjectsChanged();
+  expect(screen.getByText("Projects may be out of date.")).toBeInTheDocument();
+  expect(link).toHaveFocus();
+});
+
+// Losing the last focused project transfers focus to Welcome rather than the document body.
+it("moves focus to Welcome only when the focused Home row disappears", async () => {
+  listProjectsMock.mockResolvedValue([PROJECT]);
+  renderRoute();
+  (await screen.findByRole("link", { name: "Open project xwork" })).focus();
+  listProjectsMock.mockResolvedValue([]);
+  await emitProjectsChanged();
+  expect(
+    screen.getByRole("heading", { name: "Every project, every CLI, one window." }),
+  ).toHaveFocus();
 });

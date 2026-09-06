@@ -1,6 +1,5 @@
 import { SettingsDataRoute } from "@/features/settings/settings-data-route";
 import { createMemoryRouter, Navigate, type Params } from "react-router";
-import { HomeRoute } from "@/features/home/home-route";
 import { ProjectOverviewRoute } from "@/features/projects/project-overview-route";
 import { ProjectsRoute } from "@/features/projects/projects-route";
 import { readProjectCrumbLabel } from "@/features/projects/projects-store";
@@ -16,6 +15,7 @@ import { SettingsTerminalProfilesRoute } from "@/features/settings/settings-term
 import { AppErrorBoundary } from "./app-error-boundary";
 import { AppShell } from "./app-shell";
 import { AreaPlaceholder, NotFoundPlaceholder } from "./area-placeholder";
+import { HomeEntry } from "./home-entry";
 import { SessionTerminalRoute } from "./session-terminal-route";
 
 // Breadcrumb metadata a route contributes. Labels live in the route table so no store
@@ -59,7 +59,7 @@ export function createAppRouter(initialEntries: string[] = ["/"]) {
         children: [
           {
             index: true,
-            element: <HomeRoute />,
+            element: <HomeEntry />,
             errorElement: <AppErrorBoundary />,
             handle: crumbs(() => ["Home"]),
           },

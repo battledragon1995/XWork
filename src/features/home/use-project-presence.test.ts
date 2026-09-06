@@ -72,7 +72,7 @@ describe("useProjectPresence", () => {
     const { result } = renderHook(() => useProjectPresence());
 
     expect(result.current.presence).toEqual({ status: "loading" });
-    expect(listProjectsMock).toHaveBeenCalledExactlyOnceWith();
+    await waitFor(() => expect(listProjectsMock).toHaveBeenCalledExactlyOnceWith());
 
     await act(async () => {
       pending.resolve([]);
@@ -90,6 +90,7 @@ describe("useProjectPresence", () => {
     await waitFor(() => {
       expect(result.current.presence).toEqual({ status: "present" });
     });
+    expect((result.current as unknown as { projects: ProjectDto[] }).projects).toEqual([PROJECT]);
   });
 
   // Verify the one documented recoverable load failure keeps a retry path open.
@@ -204,53 +205,27 @@ describe("useProjectPresence", () => {
     expect(result.current.presence).toEqual({ status: "empty" });
   });
 
-  // Verify a slow earlier query cannot overwrite the newest result.
-  it("ignores a stale result that settles after a newer one", async () => {
+  // Discard invalidated flights before starting one trailing authoritative read.
+  it.each([false, true])("coalesces stale flight (rejection: %s)", async (reject) => {
     const first = createDeferred<ProjectDto[]>();
     const second = createDeferred<ProjectDto[]>();
     listProjectsMock.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
-
     const { result } = renderHook(() => useProjectPresence());
-
+    await waitFor(() => expect(listProjectsMock).toHaveBeenCalledTimes(1));
     act(() => {
-      result.current.refresh();
+      projectsChangedHandler()({ change: "added", projectId: "new" });
+      window.dispatchEvent(new Event("focus"));
     });
-
+    expect(listProjectsMock).toHaveBeenCalledTimes(1);
     await act(async () => {
-      second.resolve([PROJECT]);
+      if (reject) first.reject(new Error("old"));
+      else first.resolve([PROJECT]);
     });
-    expect(result.current.presence).toEqual({ status: "present" });
-
-    await act(async () => {
-      first.resolve([]);
-    });
-
-    expect(result.current.presence).toEqual({ status: "present" });
-  });
-
-  // Verify a stale failure is discarded too, so an old rejection cannot replace a new result.
-  it("ignores a stale rejection that settles after a newer result", async () => {
-    const first = createDeferred<ProjectDto[]>();
-    const second = createDeferred<ProjectDto[]>();
-    listProjectsMock.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
-
-    const { result } = renderHook(() => useProjectPresence());
-
-    act(() => {
-      result.current.refresh();
-    });
-
-    await act(async () => {
-      second.resolve([]);
-    });
-
-    await act(async () => {
-      first.reject(new IpcCallError("list_projects", { code: "persistenceFailed" }));
-    });
-
+    expect(result.current.projects).toBeNull();
+    expect(listProjectsMock).toHaveBeenCalledTimes(2);
+    await act(async () => second.resolve([]));
     expect(result.current.presence).toEqual({ status: "empty" });
   });
-
   // Verify a query that settles after unmount cannot update React state.
   it("drops a result that arrives after unmount", async () => {
     const pending = createDeferred<ProjectDto[]>();
@@ -296,4 +271,71 @@ describe("useProjectPresence", () => {
 
     expect(unlisten).toHaveBeenCalledTimes(1);
   });
+});
+
+// Keep the last authoritative snapshot when a same-generation refresh fails.
+it("retains presence and rows on refresh rejection", async () => {
+  listProjectsMock.mockResolvedValue([PROJECT]);
+  const { result } = renderHook(() => useProjectPresence());
+  await waitFor(() => expect(result.current.projects).toEqual([PROJECT]));
+  listProjectsMock.mockRejectedValue(
+    new IpcCallError("list_projects", { code: "persistenceFailed" }),
+  );
+  await act(async () => result.current.refresh());
+  expect(result.current.presence).toEqual({ status: "present" });
+  expect(result.current.projects).toEqual([PROJECT]);
+  expect(result.current.failure).toBe("retryable");
+});
+
+// A listener failure must not prevent an initial read or leak a retry registration.
+it("reads after registration failure and recovers the listener explicitly", async () => {
+  onProjectsChangedMock.mockRejectedValueOnce(new Error("listen"));
+  const { result, unmount } = renderHook(() => useProjectPresence());
+  await waitFor(() => expect(result.current.subscriptionFailed).toBe(true));
+  expect(result.current.projects).toEqual([]);
+  await act(async () => result.current.refresh());
+  expect(result.current.subscriptionFailed).toBe(false);
+  expect(onProjectsChangedMock).toHaveBeenCalledTimes(2);
+  unmount();
+  expect(unlisten).toHaveBeenCalledTimes(1);
+});
+
+// A committed reset retires rows synchronously and a failed replacement cannot restore them.
+it("retires a live epoch before effects and rejects late pre-reset rows", async () => {
+  let boundary = { epoch: 0, suspended: false };
+  listProjectsMock.mockResolvedValue([PROJECT]);
+  const { result, rerender } = renderHook(() =>
+    useProjectPresence({ boundary, readBoundary: () => boundary }),
+  );
+  await waitFor(() => expect(result.current.projects).toEqual([PROJECT]));
+  const old = createDeferred<ProjectDto[]>();
+  listProjectsMock.mockReturnValueOnce(old.promise);
+  act(() => result.current.refresh());
+  boundary = { epoch: 1, suspended: true };
+  await act(async () => old.resolve([PROJECT]));
+  rerender();
+  expect(result.current.projects).toBeNull();
+  listProjectsMock.mockRejectedValue(
+    new IpcCallError("list_projects", { code: "persistenceFailed" }),
+  );
+  boundary = { epoch: 1, suspended: false };
+  rerender();
+  await waitFor(() => expect(result.current.failure).toBe("retryable"));
+  expect(result.current.projects).toBeNull();
+});
+
+// Remove a known identity immediately and prevent an invalidated response from reviving it.
+it("removes a row before its trailing query completes", async () => {
+  listProjectsMock.mockResolvedValue([PROJECT]);
+  const { result } = renderHook(() => useProjectPresence());
+  await waitFor(() => expect(result.current.projects).toEqual([PROJECT]));
+  const old = createDeferred<ProjectDto[]>();
+  const trailing = createDeferred<ProjectDto[]>();
+  listProjectsMock.mockReturnValueOnce(old.promise).mockReturnValueOnce(trailing.promise);
+  act(() => result.current.refresh());
+  act(() => projectsChangedHandler()({ change: "removed", projectId: PROJECT.id }));
+  expect(result.current.projects).toEqual([]);
+  await act(async () => old.resolve([PROJECT]));
+  expect(result.current.projects).toEqual([]);
+  await act(async () => trailing.resolve([]));
 });

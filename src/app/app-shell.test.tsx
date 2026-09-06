@@ -5,7 +5,7 @@ import { createSettingsSnapshot } from "@/features/settings/settings-test-fixtur
 import { resetSettingsStore } from "@/features/settings/settings-store";
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { RouterProvider } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -218,7 +218,7 @@ describe("AppShell", () => {
       screen.getByRole("button", { name: "Maximize" }),
       screen.getByRole("button", { name: "Close (hides to tray)" }),
       screen.getByRole("link", { name: "Home" }),
-      screen.getByRole("link", { name: "Projects" }),
+      within(screen.getByRole("navigation")).getByRole("link", { name: "Projects" }),
       screen.getByRole("link", { name: "Notes" }),
       screen.getByRole("link", { name: "Calendar" }),
       screen.getByRole("button", { name: "Add Project" }),

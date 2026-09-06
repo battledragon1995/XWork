@@ -295,7 +295,7 @@ describe("createAppRouter", () => {
     renderAt("/");
 
     expect(await screen.findByRole("heading", { level: 1, name: "Home" })).toBeInTheDocument();
-    expect(screen.getByText("This area arrives with FE-003.")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Recent projects" })).toBeInTheDocument();
   });
 
   // Verify the same route resolves to the Welcome branch when no project exists yet.
