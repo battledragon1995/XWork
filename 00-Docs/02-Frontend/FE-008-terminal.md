@@ -31,9 +31,9 @@ Người dùng chạy và tương tác với Terminal/Codex/Claude/custom CLI ng
 |---|---|
 | `src/features/terminal/index.ts` | Public entry của terminal. |
 | `src/features/terminal/terminal-provider.tsx` | Sở hữu registry và listener suốt đời main webview. |
-| `src/features/terminal/terminal-pane.tsx` | Gắn vùng terminal được registry giữ vào pane đang hiển thị; status, menu, find bar. |
+| `src/features/terminal/terminal-pane.tsx` | Gắn vùng terminal được registry giữ vào pane đang hiển thị; status, menu, find bar và gộp thay đổi kích thước trước khi đo lại grid. |
 | `src/features/terminal/terminal-registry.ts` | Pending launch, ownership theo ID, ordering, reconnect, retained/disposed và input queue. |
-| `src/features/terminal/wterm-adapter.ts` | WTerm/Ghostty, đo cell, theme, input/IME, selection, viewport và clear screen. |
+| `src/features/terminal/wterm-adapter.ts` | WTerm/Ghostty, đo cell, theme, input/IME, selection, viewport, clear screen và giữ hình trong lúc resize redraw chưa ổn định. |
 | `src/features/terminal/terminal-search.ts` | Tìm trên scrollback và grid, ánh xạ grapheme/cell, hủy lượt tìm cũ. |
 | `src/features/terminal/terminal-actions.tsx` | Menu có nhãn cho copy/paste/find/clear/link và truy cập lịch sử bằng bàn phím. |
 | `src/features/terminal/terminal-find-bar.tsx` | Query, kết quả hiện tại/tổng, trước/sau, đóng. |
@@ -57,6 +57,7 @@ Người dùng chạy và tương tác với Terminal/Codex/Claude/custom CLI ng
 | `src/features/terminal/terminal-pane.test.tsx` | Component: trạng thái, focus, menu, find, read-only. |
 | `src/features/terminal/terminal-registry.test.ts` | Unit: lifecycle, stream, input, resize, race và recovery. |
 | `src/features/terminal/wterm-adapter.test.ts` | Unit: cấu hình core, theme, clear, clipboard routing, teardown. |
+| `src/features/terminal/wterm-resize.test.ts` | Unit với WTerm/Ghostty thật: resize, output vẽ lại chia đợt, synchronized output, phản hồi giao thức tức thời và cleanup. |
 | `src/features/terminal/terminal-search.test.ts` | Unit: toàn history, Unicode, wrap, tìm hủy được. |
 | `src/features/terminal/terminal-actions.test.tsx` | Component: keyboard, clipboard/link và lỗi. |
 | `src/features/terminal/terminal-find-bar.test.tsx` | Component: query, kết quả rỗng, navigation và trả focus. |
@@ -158,7 +159,11 @@ Mỗi icon có tooltip và accessible name; menu dùng arrow keys/Enter/Escape, 
 - Registry giữ WTerm, Ghostty core và element riêng từng terminal. Pane chỉ gắn/tháo element; ẩn thì giữ trong container không tương tác do provider sở hữu. Không gọi `destroy/init` khi đổi route. Khi dispose: destroy WTerm, hủy timer/observer/listener và bỏ mọi tham chiếu tới core/WASM/element để GC thu hồi; không gọi API `dispose()` chưa tồn tại trong Ghostty 0.3.4.
 - Đọc token FE-012: `--terminal-background`, `--terminal-foreground`, `--terminal-ansi-0` đến `--terminal-ansi-15`, `--terminal-font-size`. Theme cập nhật instance hiện có; không reset history. Đổi font/theme bằng Settings khi terminal ở nền phải có hiệu lực khi hiện lại.
 - Tắt autoResize nội bộ nếu nó không tính đúng zoom; adapter là owner đo và resize. Đợi font ready và viewport khác zero. Lấy số cell từ kích thước nội dung thực chia kích thước cell đo trong cùng hệ tọa độ; tránh nhân `--ui-scale` hai lần. Kẹp columns `2..500`, rows `1..300`, không gửi zero khi hidden.
-- Đo lại sau layout/font/zoom đổi; gộp resize trong khoảng lặng 50 ms, gửi size cuối, bỏ trùng. Core resize và PTY resize là hai bước được theo dõi bằng ack; lỗi giữ `lastAckSize`, hiện lỗi và thử lại ở lần đo hợp lệ kế tiếp hoặc Try again, không loop vô hạn. Khi hiện lại pane phải đo trước khi cho gõ.
+- Với thay đổi layout do `ResizeObserver`, chờ khoảng lặng `100 ms` rồi đo grid trong `requestAnimationFrame`; mỗi thay đổi mới hủy timer/frame đang chờ. Chỉ áp dụng size cuối hợp lệ và bỏ size trùng, không resize core/PTY ở từng khung hình kéo. Khi pane ẩn hoặc unmount, hủy công việc đo đang chờ. Initial launch và attach lại vẫn đo grid trực tiếp theo vòng đời registry.
+- Core resize và PTY resize là hai bước được theo dõi bằng ack; lỗi giữ `lastAckSize`, hiện lỗi và thử lại ở lần đo hợp lệ kế tiếp hoặc Try again, không loop vô hạn. Khi hiện lại pane phải đo trước khi cho gõ.
+- Xử lý chống nháy nằm trong source adapter của XWork, dùng API công khai của WTerm/Ghostty; không dựa vào patch dependency. Cập nhật kích thước core rồi để renderer dựng lại lưới và vẽ trong cùng lượt render, tránh xóa DOM ở khung hình trước khi vẽ. Trong lúc kéo, bố cục pane vẫn thay đổi ngay; nội dung terminal cũ có thể bị cắt theo viewport cho tới khi grid mới được áp dụng.
+- Sau mỗi đợt resize, giữ DOM đã vẽ trong khi CLI/ConPTY gửi các phần xóa/vẽ lại qua nhiều output chunk. Nhả hold sau `75 ms` không có write mới, nhưng tối đa `250 ms` tính từ đầu đợt hold, kể cả khi có thêm resize/write. Các giới hạn này áp dụng cho hold hiển thị của XWork; khi nhả hold vẫn tôn trọng synchronized-output mode và fallback của WTerm, không tự tắt mode của CLI. Shell không phát output sau resize vẫn được vẽ lại khi hold kết thúc.
+- Hold chỉ ảnh hưởng thời điểm paint: raw bytes vẫn được parse ngay theo thứ tự; `onData` và terminal query reply vẫn đi vào hàng input ngay, không chờ timer. Không chèn escape sequence giả vào output/history hoặc đổi trạng thái parser để giữ hình. Scroll event trong lúc hold không được kích hoạt một lượt paint vượt qua hold; dispose hủy timer và listener liên quan. Khi output liên tục vượt giới hạn hold, cho phép vẽ trạng thái hiện tại để tránh giữ hình vô hạn.
 
 ## Luồng chính
 
@@ -244,6 +249,8 @@ interface TerminalViewState {
 | Session/tab/pane/profile/process state | Backend | Không sao chép business state thành persistence frontend; TerminalDto là snapshot có reconcile. |
 | WTerm/core/history/element/Channel | Registry trong provider | Không đưa vào React state hoặc serialize Zustand; sống độc lập DOM pane, giữ qua reopen slot. |
 | Pending launch, input/resize/output sequence, queue, callback generation | Registry theo target/terminal ID | Không reset do rerender/StrictMode; dispose bỏ tất cả. |
+| Resize debounce timer/frame | UI của pane đang hiển thị | Gộp layout `100 ms`; hủy khi ẩn/unmount. |
+| Resize paint hold và thời điểm bắt đầu | Adapter của terminal | State hiển thị tạm thời `75 ms`/`250 ms`; không đổi parser/PTY state, không persistence; dispose hủy timer/listener. |
 | Find, selection, scroll position, menu/Browse History | UI theo terminal | Không qua backend; Browse History snapshot chỉ tồn tại khi mở. |
 | Palette/font | CSS token FE-012 | Terminal chỉ tiêu thụ; không ghi Settings hoặc import store của Settings. |
 
@@ -298,6 +305,9 @@ Sessions định nghĩa shape slot ngay trong `session-route.tsx`, chỉ gồm s
 | Callback từ generation cũ sau disposal | Bỏ; không tái tạo registry, menu hoặc notification. |
 | UTF-8/ANSI/grapheme chia giữa frame | Giữ byte và thứ tự; core parser xử lý phần tiếp theo, không tự thêm replacement character ở frontend. |
 | Resize/theme khi đang tìm | Hủy tọa độ kết quả cũ, scan lại; không highlight nhầm cột hoặc reset query. |
+| Kéo resize liên tục rồi ẩn/đóng pane | Không gửi từng size trung gian; hủy timer/frame đo chưa chạy, không resize từ callback của pane đã tháo. |
+| CLI xóa màn hình rồi gửi header/prompt ở các chunk sau resize | Giữ DOM trước resize trong khoảng settling có giới hạn; parse/reply vẫn tức thời, scroll event không làm lộ lượt paint chưa hoàn tất. |
+| CLI ghi liên tục hoặc không ghi gì sau resize | Không giữ hình vô hạn; nhả hold XWork theo giới hạn thời gian, vẫn tôn trọng synchronized-output mode thật của CLI. |
 | Core lỗi/cạn bộ nhớ | Giữ thông báo lỗi và phần view còn đọc được; không hứa phục hồi full history từ ring; người dùng đóng qua FE-007. |
 
 ## Tiêu chí hoàn thành
@@ -312,18 +322,21 @@ Sessions định nghĩa shape slot ngay trong `session-route.tsx`, chỉ gồm s
 - [ ] Clear Screen không gọi write_terminal, không mất lịch sử tìm được, không reset modes; disabled trong alternate screen.
 - [ ] URL text thường/OSC 8 mở qua Rust sau tương tác; HTTP/HTTPS hợp lệ được mở, các scheme khác không bao giờ đến opener; không navigation main webview.
 - [ ] Theme/font thay đổi từ FE-012 giữ history, resize đúng khi UI zoom; một đến bốn pane output đồng thời vẫn nhập và kéo resize được.
+- [ ] ResizeObserver burst chỉ áp dụng grid sau khoảng lặng `100 ms` và animation frame; không resize từng khung hình kéo, callback bị hủy khi pane tháo. Adapter giữ DOM qua clear/redraw chia chunk theo `75 ms`/`250 ms`, không trì hoãn protocol reply và không để scroll paint vượt hold; shell idle và CLI output liên tục đều được vẽ lại.
 - [ ] Mọi action có đường vào trực quan và bàn phím, focus không bị kẹt trong terminal, Browse History cho đọc/chọn bằng bàn phím/screen reader; status không đọc từng chunk output.
 - [ ] Generated DTO/error khớp Rust; ba command interaction pass contract test main-only và target validation.
 - [ ] Trên Windows: `pnpm format:check`, `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm build`, `pnpm format:rust`, `pnpm lint:rust`, `pnpm test:rust` và `pnpm tauri build` pass.
 - [ ] Smoke thủ công Windows WebView2: shell/Codex/Claude nếu đã cài, alternate screen, mouse SGR, synchronized output, Unicode/wide/emoji/Vietnamese IME, clipboard, find, links, clear, resize 1–4 pane, tray và close/reopen. Không desktop E2E tự động; macOS hoãn tới release.
+- [ ] Sau khi sửa adapter, kiểm tra trên lần khởi động ứng dụng mới với renderer mới: provider giữ registry bằng `useRef`, nên chỉ Vite hot reload không chứng minh terminal đang mở đã dùng code mới. Quan sát cả lúc kéo và sau khi dừng với resize chiều rộng/chiều cao, maximize/restore và CLI redraw; kiểm thử DOM không thay thế việc kiểm tra nháy trực quan trên Windows.
 
 ## Kiểm thử
 
 | File test | Loại | Hành vi kiểm tra |
 |---|---|---|
-| `src/features/terminal/terminal-pane.test.tsx` | Component | Loading/empty/error/exited, focus, visibility, không launch lại khi đổi content. |
+| `src/features/terminal/terminal-pane.test.tsx` | Component | Loading/empty/error/exited, focus, visibility, không launch lại khi đổi content; debounce resize qua fake timer/frame và hủy callback khi unmount. |
 | `src/features/terminal/terminal-registry.test.ts` | Unit | Start gate, raw ordering/recovery, final drain, ack queue, unknown outcome, polling/reconcile, retain/dispose. |
 | `src/features/terminal/wterm-adapter.test.ts` | Unit | Core config/ownership, no local echo, resize/zoom/theme, clear giữ history, OSC 52 và clipboard interception. |
+| `src/features/terminal/wterm-resize.test.ts` | Unit với core/renderer thật | Primary/alternate screen, synchronized release/fallback; resize không output, clear/redraw chia chunk, scroll trong hold, query reply tức thời, output liên tục không giữ hình vô hạn và dispose không còn timer. |
 | `src/features/terminal/terminal-search.test.ts` | Unit | History ngoài DOM, Unicode cell offsets, boundary row, no match, cancellation và output trong lúc tìm. |
 | `src/features/terminal/terminal-actions.test.tsx` | Component | Copy/Paste/link activation, stale clipboard reply, bracketed paste và keyboard history. |
 | `src/features/terminal/terminal-find-bar.test.tsx` | Component | Query rỗng/loading/count/wrap navigation/Escape/focus. |
