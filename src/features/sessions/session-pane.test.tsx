@@ -2,6 +2,7 @@ import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { KeyboardShortcutsDto } from "@/bindings/keyboard-shortcuts";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { SessionPane } from "./session-pane";
 import { createPaneDto, createToolCatalogData, FIXTURE_ROOT_PATH } from "./sessions-test-fixture";
@@ -17,6 +18,8 @@ describe("SessionPane", () => {
       <TooltipProvider>
         <MemoryRouter>
           <SessionPane
+            shortcutSnapshot={snapshot}
+            shortcutPlatform="windows"
             pane={createPaneDto()}
             tabId="tab-1"
             rootPath={FIXTURE_ROOT_PATH}
@@ -53,6 +56,8 @@ describe("SessionPane", () => {
       <TooltipProvider>
         <MemoryRouter>
           <SessionPane
+            shortcutSnapshot={snapshot}
+            shortcutPlatform="windows"
             pane={createPaneDto()}
             tabId="tab-1"
             rootPath={null}
@@ -91,6 +96,8 @@ describe("SessionPane", () => {
       <TooltipProvider>
         <MemoryRouter>
           <SessionPane
+            shortcutSnapshot={snapshot}
+            shortcutPlatform="windows"
             pane={createPaneDto({
               content: {
                 kind: "terminal",
@@ -139,4 +146,118 @@ describe("SessionPane", () => {
     );
     expect(screen.queryByText("Terminals arrive with FE-008.")).not.toBeInTheDocument();
   });
+});
+
+const snapshot: KeyboardShortcutsDto = {
+  actions: [
+    {
+      actionId: "panes.split_right",
+      label: "Split right",
+      category: "panes",
+      scope: "application",
+      defaultChord: { primary: true, alt: false, shift: false, keyCode: "Backslash" },
+      currentChord: { primary: true, alt: false, shift: false, keyCode: "Backslash" },
+      isCustom: false,
+      conflictsWith: [],
+      isDispatchable: true,
+    },
+    {
+      actionId: "panes.split_down",
+      label: "Split down",
+      category: "panes",
+      scope: "application",
+      defaultChord: { primary: true, alt: true, shift: false, keyCode: "Backslash" },
+      currentChord: { primary: true, alt: true, shift: false, keyCode: "Backslash" },
+      isCustom: false,
+      conflictsWith: [],
+      isDispatchable: true,
+    },
+    {
+      actionId: "panes.maximize_toggle",
+      label: "Maximize or restore pane",
+      category: "panes",
+      scope: "application",
+      defaultChord: { primary: true, alt: false, shift: true, keyCode: "KeyM" },
+      currentChord: { primary: true, alt: false, shift: true, keyCode: "KeyM" },
+      isCustom: false,
+      conflictsWith: [],
+      isDispatchable: true,
+    },
+    {
+      actionId: "panes.close",
+      label: "Close pane",
+      category: "panes",
+      scope: "application",
+      defaultChord: { primary: true, alt: false, shift: true, keyCode: "KeyW" },
+      currentChord: { primary: true, alt: false, shift: true, keyCode: "KeyW" },
+      isCustom: false,
+      conflictsWith: [],
+      isDispatchable: true,
+    },
+  ],
+};
+/** Rerenders replace every pane accelerator and remove unavailable configuration. */
+it("updates pane labels and restore guidance from the same snapshot", () => {
+  /** Render a stable pane while replacing only its shortcut inputs. */
+  const pane = (shortcutSnapshot: KeyboardShortcutsDto | null) => (
+    <TooltipProvider>
+      <MemoryRouter>
+        <SessionPane
+          shortcutSnapshot={shortcutSnapshot}
+          shortcutPlatform="windows"
+          pane={createPaneDto()}
+          tabId="tab-1"
+          rootPath={null}
+          profiles={[]}
+          catalog={createToolCatalogData()}
+          paneCount={2}
+          paneIndex={1}
+          isActive
+          isMaximized
+          isHiddenByMaximize={false}
+          isBusy={false}
+          selectingProfileId={null}
+          onActivate={vi.fn()}
+          onSplit={vi.fn()}
+          onToggleMaximize={vi.fn()}
+          onClose={vi.fn()}
+          onSelectProfile={vi.fn()}
+        />
+      </MemoryRouter>
+    </TooltipProvider>
+  );
+  const view = render(pane(snapshot));
+  const changed: KeyboardShortcutsDto = {
+    actions: snapshot.actions.map(
+      // Give each action a distinct override with no modifier ambiguity.
+      (action, index) => ({
+        ...action,
+        currentChord: { primary: false, alt: false, shift: false, keyCode: `F${index + 5}` },
+        isCustom: true,
+      }),
+    ),
+  };
+  view.rerender(pane(changed));
+  for (const label of [
+    "Split right (F5)",
+    "Split down (F6)",
+    "Restore layout (F7)",
+    "Close pane (F8)",
+  ])
+    expect(screen.getByRole("button", { name: label })).toBeInTheDocument();
+  expect(screen.getByText("Maximized · 1 of 2 panes · F7 to restore")).toBeInTheDocument();
+  view.rerender(
+    pane({
+      actions: changed.actions.map(
+        // Conflicts replace accelerators while preserving direct controls.
+        (action) => ({ ...action, isDispatchable: false, conflictsWith: ["tabs.create"] }),
+      ),
+    }),
+  );
+  expect(
+    screen.getByRole("button", { name: "Close pane (Shortcut conflict — change it in Settings)" }),
+  ).toBeEnabled();
+  view.rerender(pane(null));
+  expect(screen.getByRole("button", { name: "Close pane" })).toBeEnabled();
+  expect(screen.queryByText(/to restore/)).not.toBeInTheDocument();
 });

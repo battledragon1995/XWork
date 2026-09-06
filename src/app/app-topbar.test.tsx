@@ -679,3 +679,15 @@ describe("AppTopbar session breadcrumb", () => {
     await waitFor(() => expect(readBreadcrumb()).toEqual(expected));
   });
 });
+
+/** Isolate platform detection introduced by the persistent shortcut provider. */
+vi.mock("@/lib/ipc/app-info", () => ({
+  readAppInfo: vi.fn(async () => ({ osPlatform: "windows" })),
+}));
+/** Isolate shortcut snapshot reads for shell-mounted tests. */
+vi.mock("@/lib/ipc/keyboard-shortcuts", () => ({
+  getKeyboardShortcuts: vi.fn(async () => ({ actions: [] })),
+  setKeyboardShortcut: vi.fn(),
+  resetKeyboardShortcut: vi.fn(),
+  resetAllKeyboardShortcuts: vi.fn(),
+}));

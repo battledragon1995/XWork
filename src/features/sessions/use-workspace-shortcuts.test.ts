@@ -1,5 +1,6 @@
 import { renderHook } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
+import type { KeyboardShortcutsDto } from "@/bindings/keyboard-shortcuts";
 import { useWorkspaceShortcuts } from "./use-workspace-shortcuts";
 
 describe("useWorkspaceShortcuts", () => {
@@ -9,6 +10,8 @@ describe("useWorkspaceShortcuts", () => {
     const view = renderHook(() =>
       useWorkspaceShortcuts({
         isEnabled: true,
+        shortcutSnapshot: snapshot,
+        shortcutPlatform: "windows",
         onCreateTab,
         onCloseTab: vi.fn(),
         onReopenTab: vi.fn(),
@@ -30,6 +33,8 @@ describe("useWorkspaceShortcuts", () => {
     renderHook(() =>
       useWorkspaceShortcuts({
         isEnabled: true,
+        shortcutSnapshot: snapshot,
+        shortcutPlatform: "windows",
         canCloseTab: false,
         onCreateTab: vi.fn(),
         onCloseTab,
@@ -66,6 +71,8 @@ describe("useWorkspaceShortcuts", () => {
     const view = renderHook(() =>
       useWorkspaceShortcuts({
         isEnabled: true,
+        shortcutSnapshot: snapshot,
+        shortcutPlatform: "windows",
         onCreateTab: vi.fn(),
         onCloseTab: vi.fn(),
         onReopenTab: vi.fn(),
@@ -92,4 +99,140 @@ describe("useWorkspaceShortcuts", () => {
     terminal.remove();
     view.unmount();
   });
+});
+
+const snapshot: KeyboardShortcutsDto = {
+  actions: [
+    {
+      actionId: "tabs.create",
+      label: "New tab",
+      category: "tabs",
+      scope: "application",
+      defaultChord: { primary: true, alt: false, shift: false, keyCode: "KeyT" },
+      currentChord: { primary: true, alt: false, shift: false, keyCode: "KeyT" },
+      isCustom: false,
+      conflictsWith: [],
+      isDispatchable: true,
+    },
+    {
+      actionId: "tabs.close",
+      label: "Close tab",
+      category: "tabs",
+      scope: "application",
+      defaultChord: { primary: true, alt: false, shift: false, keyCode: "KeyW" },
+      currentChord: { primary: true, alt: false, shift: false, keyCode: "KeyW" },
+      isCustom: false,
+      conflictsWith: [],
+      isDispatchable: true,
+    },
+    {
+      actionId: "tabs.reopen_closed",
+      label: "Reopen closed tab",
+      category: "tabs",
+      scope: "application",
+      defaultChord: { primary: true, alt: false, shift: true, keyCode: "KeyT" },
+      currentChord: { primary: true, alt: false, shift: true, keyCode: "KeyT" },
+      isCustom: false,
+      conflictsWith: [],
+      isDispatchable: true,
+    },
+    {
+      actionId: "panes.split_right",
+      label: "Split right",
+      category: "panes",
+      scope: "application",
+      defaultChord: { primary: true, alt: false, shift: false, keyCode: "Backslash" },
+      currentChord: { primary: true, alt: false, shift: false, keyCode: "Backslash" },
+      isCustom: false,
+      conflictsWith: [],
+      isDispatchable: true,
+    },
+    {
+      actionId: "panes.split_down",
+      label: "Split down",
+      category: "panes",
+      scope: "application",
+      defaultChord: { primary: true, alt: true, shift: false, keyCode: "Backslash" },
+      currentChord: { primary: true, alt: true, shift: false, keyCode: "Backslash" },
+      isCustom: false,
+      conflictsWith: [],
+      isDispatchable: true,
+    },
+    {
+      actionId: "panes.maximize_toggle",
+      label: "Maximize or restore pane",
+      category: "panes",
+      scope: "application",
+      defaultChord: { primary: true, alt: false, shift: true, keyCode: "KeyM" },
+      currentChord: { primary: true, alt: false, shift: true, keyCode: "KeyM" },
+      isCustom: false,
+      conflictsWith: [],
+      isDispatchable: true,
+    },
+    {
+      actionId: "panes.close",
+      label: "Close pane",
+      category: "panes",
+      scope: "application",
+      defaultChord: { primary: true, alt: false, shift: true, keyCode: "KeyW" },
+      currentChord: { primary: true, alt: false, shift: true, keyCode: "KeyW" },
+      isCustom: false,
+      conflictsWith: [],
+      isDispatchable: true,
+    },
+  ],
+};
+/** All editable surfaces, prevented events and dialogs retain their native input. */
+it("preserves editable, dialog, IME and prevented event guards", () => {
+  const onCreateTab = vi.fn();
+  renderHook(
+    // Register the real listener against an explicit committed snapshot.
+    () =>
+      useWorkspaceShortcuts({
+        isEnabled: true,
+        shortcutSnapshot: snapshot,
+        shortcutPlatform: "windows",
+        onCreateTab,
+        onCloseTab: vi.fn(),
+        onReopenTab: vi.fn(),
+        onSplit: vi.fn(),
+        onToggleMaximize: vi.fn(),
+        onClosePane: vi.fn(),
+      }),
+  );
+  for (const tag of ["input", "textarea", "select"]) {
+    const target = document.createElement(tag);
+    document.body.append(target);
+    const event = new KeyboardEvent("keydown", {
+      code: "KeyT",
+      ctrlKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    target.dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(false);
+    target.remove();
+  }
+  for (const attribute of ["contenteditable", "data-editor-root", "data-terminal-root"]) {
+    const root = document.createElement("div");
+    root.setAttribute(attribute, "true");
+    const child = document.createElement("span");
+    root.append(child);
+    document.body.append(root);
+    child.dispatchEvent(
+      new KeyboardEvent("keydown", { code: "KeyT", ctrlKey: true, bubbles: true }),
+    );
+    root.remove();
+  }
+  for (const extra of [{ repeat: true }, { isComposing: true }, { keyCode: 229 }])
+    window.dispatchEvent(new KeyboardEvent("keydown", { code: "KeyT", ctrlKey: true, ...extra }));
+  const prevented = new KeyboardEvent("keydown", { code: "KeyT", ctrlKey: true, cancelable: true });
+  prevented.preventDefault();
+  window.dispatchEvent(prevented);
+  const dialog = document.createElement("div");
+  dialog.setAttribute("role", "dialog");
+  document.body.append(dialog);
+  window.dispatchEvent(new KeyboardEvent("keydown", { code: "KeyT", ctrlKey: true }));
+  dialog.remove();
+  expect(onCreateTab).not.toHaveBeenCalled();
 });

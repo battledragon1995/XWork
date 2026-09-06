@@ -1,18 +1,24 @@
 import { useEffect, useRef, useState } from "react";
+import type { KeyboardShortcutsDto } from "@/bindings/keyboard-shortcuts";
 import type { CloseTargetDto, SessionDetailDto, TabDto } from "@/bindings/sessions/sessions";
 import type { CliProfileDto } from "@/bindings/terminal/cli-profiles";
 import { Button } from "@/components/ui/button";
+import type { ShortcutPlatform } from "@/lib/utils/keyboard-shortcuts";
 import { CloseTargetDialog } from "./close-target-dialog";
 import { PaneLayout } from "./pane-layout";
 import { RenameTabDialog } from "./rename-tab-dialog";
+import { countPanes, PANE_LIMIT } from "./session-layout";
+import type { SessionTerminalRenderer } from "./session-route";
 import { SessionTabStrip } from "./session-tab-strip";
 import { useToolCatalog } from "./use-tool-catalog";
 import { useWorkspaceMutations } from "./use-workspace-mutations";
 import { useWorkspaceShortcuts } from "./use-workspace-shortcuts";
-import type { SessionTerminalRenderer } from "./session-route";
 
 /** Render the complete backend-owned tab and pane workspace for a nonempty session. */
 export function SessionWorkspace(props: {
+  shortcutSnapshot?: KeyboardShortcutsDto | null;
+  shortcutPlatform?: ShortcutPlatform | null;
+
   detail: SessionDetailDto;
   rootPath: string | null;
   onApplyDetail(detail: SessionDetailDto): void;
@@ -99,7 +105,10 @@ export function SessionWorkspace(props: {
   };
 
   useWorkspaceShortcuts({
+    shortcutSnapshot: props.shortcutSnapshot,
+    shortcutPlatform: props.shortcutPlatform,
     isEnabled: !isBusy && renameTarget === null && mutations.pendingClose === null,
+    canSplit: activeTab !== undefined && countPanes(activeTab.layout) < PANE_LIMIT,
     canReopenTab: props.detail.canReopenLastClosedTab,
     onCreateTab: () => void mutations.createTab(),
     onCloseTab: () => {
@@ -124,6 +133,8 @@ export function SessionWorkspace(props: {
   return (
     <div ref={workspace} className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden">
       <SessionTabStrip
+        shortcutSnapshot={props.shortcutSnapshot}
+        shortcutPlatform={props.shortcutPlatform}
         detail={props.detail}
         activeTab={activeTab}
         isBusy={isBusy}
@@ -159,6 +170,8 @@ export function SessionWorkspace(props: {
 
       <div className="min-h-0 min-w-0 flex-1 overflow-hidden">
         <PaneLayout
+          shortcutSnapshot={props.shortcutSnapshot}
+          shortcutPlatform={props.shortcutPlatform}
           tab={activeTab}
           rootPath={props.rootPath}
           catalog={catalog}

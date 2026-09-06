@@ -7,14 +7,15 @@ import { readSessionCrumb } from "@/features/sessions/sessions-store";
 import { SettingsAboutRoute } from "@/features/settings/settings-about-route";
 import { SettingsAppearanceRoute } from "@/features/settings/settings-appearance-route";
 import { SettingsGeneralRoute } from "@/features/settings/settings-general-route";
+import { SettingsKeyboardShortcutsRoute } from "@/features/settings/settings-keyboard-shortcuts-route";
 import { SETTINGS_SECTIONS } from "@/features/settings/settings-nav";
 import { SettingsRoute } from "@/features/settings/settings-route";
 import { SettingsSectionPlaceholder } from "@/features/settings/settings-section-placeholder";
 import { SettingsTerminalProfilesRoute } from "@/features/settings/settings-terminal-profiles-route";
 import { AppErrorBoundary } from "./app-error-boundary";
 import { AppShell } from "./app-shell";
-import { SessionTerminalRoute } from "./session-terminal-route";
 import { AreaPlaceholder, NotFoundPlaceholder } from "./area-placeholder";
+import { SessionTerminalRoute } from "./session-terminal-route";
 
 // Breadcrumb metadata a route contributes. Labels live in the route table so no store
 // has to mirror them and so a later feature slice can keep them while replacing `element`.
@@ -29,6 +30,7 @@ function crumbs(build: RouteCrumbHandle["crumbs"]): RouteCrumbHandle {
 
 // Select the real pages and keep every deferred owner explicit in its placeholder.
 function settingsSectionElement(section: (typeof SETTINGS_SECTIONS)[number]) {
+  if (section.slug === "keyboard-shortcuts") return <SettingsKeyboardShortcutsRoute />;
   if (section.slug === "general") {
     return <SettingsGeneralRoute />;
   }

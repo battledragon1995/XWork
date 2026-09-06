@@ -1,6 +1,7 @@
 import type { CSSProperties } from "react";
 import { Outlet } from "react-router";
 import { SidebarInset, SidebarProvider } from "@/components/animate-ui/components/radix/sidebar";
+import { KeyboardShortcutsProvider } from "@/features/settings/keyboard-shortcuts-provider";
 import { AppSidebar } from "./app-sidebar";
 import { AppTopbar } from "./app-topbar";
 import { useQuitStore } from "./quit-store";
@@ -38,36 +39,38 @@ export function AppShell() {
   useLifecycleEvents();
 
   return (
-    <div className="grid h-full grid-cols-[minmax(0,1fr)] grid-rows-[40px_minmax(0,1fr)] bg-canvas">
-      <AppTopbar onQuit={() => void startQuit()} isCheckingQuit={isCheckingQuit} />
-      <SidebarProvider
-        data-testid="shell-body"
-        open={!isCollapsed}
-        onOpenChange={() => toggleSidebarCollapsed()}
-        style={
-          {
-            "--sidebar-width": `${sidebarWidthPx}px`,
-            "--sidebar-width-icon": `${COLLAPSED_SIDEBAR_WIDTH_PX}px`,
-          } as CSSProperties
-        }
-        className="relative h-full min-h-0 min-w-0"
-      >
-        <AppSidebar />
-        {!isCollapsed && <SidebarResizeHandle />}
-        <SidebarInset className="flex min-h-0 min-w-0 flex-col overflow-hidden bg-canvas">
-          {hasIntegrationFailure && (
-            <p
-              role="alert"
-              className="shrink-0 border-b border-hairline bg-surface-card px-8 py-2.5 text-[13px] text-error"
-            >
-              {INTEGRATION_MESSAGE}
-            </p>
-          )}
-          <div className="min-h-0 flex-1 overflow-hidden">
-            <Outlet />
-          </div>
-        </SidebarInset>
-      </SidebarProvider>
-    </div>
+    <KeyboardShortcutsProvider>
+      <div className="grid h-full grid-cols-[minmax(0,1fr)] grid-rows-[40px_minmax(0,1fr)] bg-canvas">
+        <AppTopbar onQuit={() => void startQuit()} isCheckingQuit={isCheckingQuit} />
+        <SidebarProvider
+          data-testid="shell-body"
+          open={!isCollapsed}
+          onOpenChange={() => toggleSidebarCollapsed()}
+          style={
+            {
+              "--sidebar-width": `${sidebarWidthPx}px`,
+              "--sidebar-width-icon": `${COLLAPSED_SIDEBAR_WIDTH_PX}px`,
+            } as CSSProperties
+          }
+          className="relative h-full min-h-0 min-w-0"
+        >
+          <AppSidebar />
+          {!isCollapsed && <SidebarResizeHandle />}
+          <SidebarInset className="flex min-h-0 min-w-0 flex-col overflow-hidden bg-canvas">
+            {hasIntegrationFailure && (
+              <p
+                role="alert"
+                className="shrink-0 border-b border-hairline bg-surface-card px-8 py-2.5 text-[13px] text-error"
+              >
+                {INTEGRATION_MESSAGE}
+              </p>
+            )}
+            <div className="min-h-0 flex-1 overflow-hidden">
+              <Outlet />
+            </div>
+          </SidebarInset>
+        </SidebarProvider>
+      </div>
+    </KeyboardShortcutsProvider>
   );
 }

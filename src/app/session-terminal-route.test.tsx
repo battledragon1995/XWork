@@ -1,12 +1,22 @@
-import { render, screen } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router";
-import { expect, it, vi } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 
+/** Keep composition props observable across rerenders. */
+const bridge = vi.hoisted(() => ({
+  status: "ready",
+  pending: null as string | null,
+  snapshot: { actions: [] },
+  platform: "windows",
+  received: vi.fn(),
+}));
+afterEach(cleanup);
 vi.mock("@/features/sessions/session-route", () => ({
   /** Invokes the supplied terminal slot with one generated-contract-shaped target. */
-  SessionRoute: (props: { renderTerminal(values: Record<string, unknown>): React.ReactNode }) =>
-    props.renderTerminal({
+  SessionRoute: (props: { renderTerminal(values: Record<string, unknown>): React.ReactNode }) => {
+    bridge.received(props);
+    return props.renderTerminal({
       sessionId: "session-1",
       tabId: "tab-2",
       paneId: "pane-3",
@@ -21,7 +31,8 @@ vi.mock("@/features/sessions/session-route", () => ({
       onActivate: vi.fn(),
       onRefreshSession: vi.fn(),
       onCheckProfile: vi.fn(),
-    }),
+    });
+  },
 }));
 vi.mock("@/features/terminal", () => ({
   /** Exposes app navigation callbacks from the composed terminal slot. */
@@ -44,4 +55,44 @@ it("composes the terminal render slot with app navigation callbacks", async () =
   );
   await user.click(screen.getByRole("button", { name: "Terminal slot" }));
   expect(screen.getByRole("button", { name: "Terminal slot" })).toBeInTheDocument();
+});
+
+/** Supply the public provider boundary without invoking native APIs. */
+vi.mock("@/features/settings/keyboard-shortcuts-provider", () => ({
+  /** Return the current public state for the composition root. */
+  useKeyboardShortcuts: () => bridge,
+}));
+
+/** Composition exposes only confirmed dispatchable snapshots to Sessions. */
+it("passes refreshed props and suppresses unconfirmed configuration", () => {
+  const view = render(
+    <MemoryRouter>
+      <SessionTerminalRoute />
+    </MemoryRouter>,
+  );
+  expect(bridge.received).toHaveBeenLastCalledWith(
+    expect.objectContaining({ shortcutSnapshot: bridge.snapshot, shortcutPlatform: "windows" }),
+  );
+  for (const status of ["refreshing", "error", "loading"]) {
+    bridge.status = status;
+    view.rerender(
+      <MemoryRouter>
+        <SessionTerminalRoute />
+      </MemoryRouter>,
+    );
+    expect(bridge.received).toHaveBeenLastCalledWith(
+      expect.objectContaining({ shortcutSnapshot: null }),
+    );
+  }
+  bridge.status = "ready";
+  bridge.pending = "set";
+  view.rerender(
+    <MemoryRouter>
+      <SessionTerminalRoute />
+    </MemoryRouter>,
+  );
+  expect(bridge.received).toHaveBeenLastCalledWith(
+    expect.objectContaining({ shortcutSnapshot: null }),
+  );
+  bridge.pending = null;
 });

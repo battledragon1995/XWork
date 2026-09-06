@@ -1,15 +1,20 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Group, Panel, useGroupRef } from "react-resizable-panels";
+import type { KeyboardShortcutsDto } from "@/bindings/keyboard-shortcuts";
 import type { PaneLayoutNodeDto, TabDto } from "@/bindings/sessions/sessions";
 import type { CliProfileDto } from "@/bindings/terminal/cli-profiles";
+import type { ShortcutPlatform } from "@/lib/utils/keyboard-shortcuts";
 import { PaneSplitHandle, ratioFromGroupLayout } from "./pane-split-handle";
 import { countPanes, paneIndex, ratioToPercent } from "./session-layout";
 import { SessionPane } from "./session-pane";
-import type { ToolCatalogData } from "./use-tool-catalog";
 import type { SessionTerminalRenderer } from "./session-route";
+import type { ToolCatalogData } from "./use-tool-catalog";
 
 /** Callbacks shared by every recursive pane node. */
 export interface PaneLayoutProps {
+  shortcutSnapshot?: KeyboardShortcutsDto | null;
+  shortcutPlatform?: ShortcutPlatform | null;
+
   sessionId?: string;
   tab: TabDto;
   rootPath: string | null;
@@ -111,6 +116,8 @@ function LayoutNode(props: PaneLayoutProps & { node: PaneLayoutNodeDto }) {
   const profiles = props.catalog.snapshot?.profiles ?? [];
   return (
     <SessionPane
+      shortcutSnapshot={props.shortcutSnapshot}
+      shortcutPlatform={props.shortcutPlatform}
       pane={node.pane}
       tabId={tab.id}
       rootPath={props.rootPath}

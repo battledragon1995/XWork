@@ -1,9 +1,13 @@
 import { useEffect } from "react";
+import type { KeyboardShortcutsDto } from "@/bindings/keyboard-shortcuts";
 import type { SplitDirectionDto } from "@/bindings/sessions/sessions";
+import type { ShortcutPlatform } from "@/lib/utils/keyboard-shortcuts";
 import { matchWorkspaceShortcut } from "./workspace-shortcuts";
 
 /** Callbacks and global enablement for workspace-local shortcuts. */
 export interface WorkspaceShortcutHandlers {
+  shortcutSnapshot?: KeyboardShortcutsDto | null;
+  shortcutPlatform?: ShortcutPlatform | null;
   isEnabled: boolean;
   canCreateTab?: boolean;
   canCloseTab?: boolean;
@@ -24,18 +28,25 @@ function isEditableTarget(target: EventTarget | null): boolean {
   return (
     target instanceof HTMLInputElement ||
     target instanceof HTMLTextAreaElement ||
+    target instanceof HTMLSelectElement ||
     (target instanceof HTMLElement &&
-      (target.isContentEditable || target.closest("[data-terminal-root]") !== null))
+      (target.isContentEditable ||
+        target.closest(
+          "[data-terminal-root], [contenteditable], [data-editor-root], .monaco-editor, .cm-editor",
+        ) !== null))
   );
 }
 
-/** Register the seven exact Windows shortcuts for the mounted workspace. */
+/** Register the seven configured workspace shortcuts for the mounted workspace. */
 export function useWorkspaceShortcuts(handlers: WorkspaceShortcutHandlers): void {
   useEffect(() => {
     /** Dispatch one available shortcut and suppress WebView2 only after it is accepted. */
     const handleKeyDown = (event: KeyboardEvent): void => {
       if (
         !handlers.isEnabled ||
+        event.defaultPrevented ||
+        event.keyCode === 229 ||
+        event.getModifierState("AltGraph") ||
         event.repeat ||
         event.isComposing ||
         isEditableTarget(event.target) ||
@@ -44,7 +55,11 @@ export function useWorkspaceShortcuts(handlers: WorkspaceShortcutHandlers): void
         return;
       }
 
-      const shortcut = matchWorkspaceShortcut(event);
+      const shortcut = matchWorkspaceShortcut(
+        event,
+        handlers.shortcutSnapshot,
+        handlers.shortcutPlatform,
+      );
       if (shortcut === null) return;
 
       const isAvailable =

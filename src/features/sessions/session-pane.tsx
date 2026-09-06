@@ -8,16 +8,23 @@ import {
   Terminal,
   X,
 } from "lucide-react";
+import type { KeyboardShortcutsDto } from "@/bindings/keyboard-shortcuts";
 import type { PaneDto } from "@/bindings/sessions/sessions";
 import type { CliProfileDto } from "@/bindings/terminal/cli-profiles";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils/cn";
+import type { ShortcutPlatform } from "@/lib/utils/keyboard-shortcuts";
 import { PaneContentPicker } from "./pane-content-picker";
 import { PaneContentPlaceholder } from "./pane-content-placeholder";
 import { PANE_LIMIT } from "./session-layout";
-import type { ToolCatalogData } from "./use-tool-catalog";
 import type { SessionTerminalRenderer } from "./session-route";
+import type { ToolCatalogData } from "./use-tool-catalog";
+import {
+  shortcutLabel,
+  type WorkspaceShortcutId,
+  workspaceActionLabel,
+} from "./workspace-shortcuts";
 
 /** Resolve the visible pane title from backend content. */
 function paneTitle(pane: PaneDto): string {
@@ -26,6 +33,9 @@ function paneTitle(pane: PaneDto): string {
 
 /** Render one pane leaf with its complete accessible action header. */
 export function SessionPane(props: {
+  shortcutSnapshot?: KeyboardShortcutsDto | null;
+  shortcutPlatform?: ShortcutPlatform | null;
+
   pane: PaneDto;
   tabId: string;
   rootPath: string | null;
@@ -48,6 +58,14 @@ export function SessionPane(props: {
   onRefreshSession?(): void;
   onCheckProfile?(profileId: string): void;
 }) {
+  /** Resolve every pane accelerator from the dispatch snapshot. */
+  const label = (text: string, id: WorkspaceShortcutId) =>
+    workspaceActionLabel(text, id, props.shortcutSnapshot, props.shortcutPlatform);
+  const restoreShortcut = shortcutLabel(
+    "panes.maximizeToggle",
+    props.shortcutSnapshot,
+    props.shortcutPlatform,
+  );
   const splitDisabled = props.paneCount >= PANE_LIMIT || props.isBusy;
   const splitTooltip =
     splitDisabled && props.paneCount >= PANE_LIMIT ? "A tab can hold up to 4 panes." : null;
@@ -141,29 +159,31 @@ export function SessionPane(props: {
         )}
         <span className="ml-auto flex shrink-0 items-center">
           {actionButton(
-            "Split right (Ctrl \\)",
+            label("Split right", "panes.splitRight"),
             <Columns2 />,
             () => props.onSplit("right"),
             splitDisabled,
             undefined,
-            splitTooltip ?? "Split right (Ctrl \\)",
+            splitTooltip ?? label("Split right", "panes.splitRight"),
           )}
           {actionButton(
-            "Split down (Ctrl Alt \\)",
+            label("Split down", "panes.splitDown"),
             <Rows2 />,
             () => props.onSplit("down"),
             splitDisabled,
             undefined,
-            splitTooltip ?? "Split down (Ctrl Alt \\)",
+            splitTooltip ?? label("Split down", "panes.splitDown"),
           )}
           {actionButton(
-            props.isMaximized ? "Restore layout (Ctrl Shift M)" : "Maximize pane (Ctrl Shift M)",
+            props.isMaximized
+              ? label("Restore layout", "panes.maximizeToggle")
+              : label("Maximize pane", "panes.maximizeToggle"),
             props.isMaximized ? <Minimize2 /> : <Maximize2 />,
             props.onToggleMaximize,
             props.isBusy,
             props.isMaximized,
           )}
-          {actionButton("Close pane (Ctrl Shift W)", <X />, props.onClose)}
+          {actionButton(label("Close pane", "panes.close"), <X />, props.onClose)}
         </span>
       </header>
 
@@ -196,7 +216,9 @@ export function SessionPane(props: {
 
       {props.isMaximized && (
         <div className="pointer-events-none absolute bottom-2.5 left-1/2 -translate-x-1/2 rounded-full bg-dark-elevated px-3 py-1 text-xs text-on-dark shadow-pop">
-          Maximized · {props.paneIndex} of {props.paneCount} panes · Ctrl Shift M to restore
+          Maximized · {props.paneIndex} of {props.paneCount} panes
+          {restoreShortcut &&
+            ` · ${restoreShortcut}${restoreShortcut.startsWith("Shortcut conflict") ? "" : " to restore"}`}
         </div>
       )}
     </section>

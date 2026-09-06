@@ -1,27 +1,33 @@
 import {
   closestCenter,
   DndContext,
+  type DragEndEvent,
   KeyboardSensor,
   PointerSensor,
   useSensor,
   useSensors,
-  type DragEndEvent,
 } from "@dnd-kit/core";
 import {
   horizontalListSortingStrategy,
-  sortableKeyboardCoordinates,
   SortableContext,
+  sortableKeyboardCoordinates,
 } from "@dnd-kit/sortable";
 import { Plus } from "lucide-react";
 import { useEffect, useRef } from "react";
+import type { KeyboardShortcutsDto } from "@/bindings/keyboard-shortcuts";
 import type { SessionDetailDto, TabDto } from "@/bindings/sessions/sessions";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import type { ShortcutPlatform } from "@/lib/utils/keyboard-shortcuts";
 import { SessionTab } from "./session-tab";
 import { TabOptionsMenu } from "./tab-options-menu";
+import { workspaceActionLabel } from "./workspace-shortcuts";
 
 /** Render the non-wrapping tablist, sorting controls, and active-tab menu. */
 export function SessionTabStrip(props: {
+  shortcutSnapshot?: KeyboardShortcutsDto | null;
+  shortcutPlatform?: ShortcutPlatform | null;
+
   detail: SessionDetailDto;
   activeTab: TabDto;
   isBusy: boolean;
@@ -111,7 +117,14 @@ export function SessionTabStrip(props: {
                 <Plus aria-hidden="true" />
               </Button>
             </TooltipTrigger>
-            <TooltipContent>New tab (Ctrl T)</TooltipContent>
+            <TooltipContent>
+              {workspaceActionLabel(
+                "New tab",
+                "tabs.create",
+                props.shortcutSnapshot,
+                props.shortcutPlatform,
+              )}
+            </TooltipContent>
           </Tooltip>
         </div>
       </DndContext>

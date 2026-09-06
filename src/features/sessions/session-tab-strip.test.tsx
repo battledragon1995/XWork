@@ -1,6 +1,7 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { KeyboardShortcutsDto } from "@/bindings/keyboard-shortcuts";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { SessionTabStrip } from "./session-tab-strip";
 import { createNonEmptySessionDetail, createTabDto } from "./sessions-test-fixture";
@@ -19,6 +20,8 @@ describe("SessionTabStrip", () => {
     render(
       <TooltipProvider>
         <SessionTabStrip
+          shortcutSnapshot={snapshot}
+          shortcutPlatform="windows"
           detail={detail}
           activeTab={first}
           isBusy={false}
@@ -39,4 +42,61 @@ describe("SessionTabStrip", () => {
     await user.click(screen.getByRole("button", { name: "New tab" }));
     expect(onCreate).toHaveBeenCalledOnce();
   });
+});
+
+const snapshot: KeyboardShortcutsDto = {
+  actions: [
+    {
+      actionId: "tabs.create",
+      label: "New tab",
+      category: "tabs",
+      scope: "application",
+      defaultChord: { primary: true, alt: false, shift: false, keyCode: "KeyT" },
+      currentChord: { primary: true, alt: false, shift: false, keyCode: "KeyT" },
+      isCustom: false,
+      conflictsWith: [],
+      isDispatchable: true,
+    },
+  ],
+};
+/** Updated and missing snapshots change the active New-tab tooltip immediately. */
+it("updates the New tab accelerator after rerender", async () => {
+  const user = userEvent.setup();
+  const detail = createNonEmptySessionDetail();
+  const activeTab = detail.tabs[0];
+  if (activeTab === undefined) throw new Error("Expected fixture tab");
+  /** Keep tab runtime props stable while changing only shortcut configuration. */
+  const strip = (shortcutSnapshot: KeyboardShortcutsDto | null) => (
+    <TooltipProvider delayDuration={0}>
+      <SessionTabStrip
+        detail={detail}
+        activeTab={activeTab}
+        shortcutSnapshot={shortcutSnapshot}
+        shortcutPlatform="windows"
+        isBusy={false}
+        onCreate={vi.fn()}
+        onSelect={vi.fn()}
+        onMove={vi.fn()}
+        onClose={vi.fn()}
+        onRename={vi.fn()}
+        onReopen={vi.fn()}
+        onRenameSession={vi.fn()}
+        onDeleteSession={vi.fn()}
+      />
+    </TooltipProvider>
+  );
+  const view = render(strip(snapshot));
+  await user.hover(screen.getByRole("button", { name: "New tab" }));
+  expect(await screen.findByRole("tooltip")).toHaveTextContent("New tab (Ctrl T)");
+  const changed: KeyboardShortcutsDto = {
+    actions: snapshot.actions.map(
+      // Use one explicit override without mutating the fixture.
+      (action) => ({ ...action, currentChord: { ...action.currentChord, keyCode: "KeyY" } }),
+    ),
+  };
+  view.rerender(strip(changed));
+  expect(screen.getByRole("tooltip")).toHaveTextContent("New tab (Ctrl Y)");
+  view.rerender(strip(null));
+  expect(screen.getByRole("tooltip")).toHaveTextContent("New tab");
+  expect(screen.getByRole("tooltip")).not.toHaveTextContent("Ctrl");
 });

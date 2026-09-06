@@ -203,7 +203,6 @@ describe("createAppRouter", () => {
 
   // Verify every deferred route keeps the frame and names the feature that will own it.
   it.each([
-    ["/settings/keyboard-shortcuts", "Keyboard Shortcuts", "FE-014"],
     ["/settings/notifications", "Notifications", "FE-023"],
     ["/settings/data", "Data", "FE-015"],
   ])("renders %s with the %s placeholder", async (path, section, owner) => {
@@ -254,7 +253,8 @@ describe("createAppRouter", () => {
     expect(await screen.findByText("Version 0.0.0")).toBeInTheDocument();
     expect(readBreadcrumb()).toEqual(["Settings", "About"]);
     expect(getSettingsMock).toHaveBeenCalledOnce();
-    expect(readAppInfoMock).toHaveBeenCalledOnce();
+    // About and the retained shortcut provider each read their own app-info boundary.
+    expect(readAppInfoMock).toHaveBeenCalledTimes(2);
   });
 
   // Verify a missing Settings child falls through to the shell's existing Not Found route.
@@ -514,4 +514,23 @@ describe("AppProviders", () => {
     expect(screen.getAllByRole("dialog")).toHaveLength(1);
     expect(screen.getByRole("heading", { name: "Quit XWork?" })).toBeInTheDocument();
   });
+});
+
+/** Isolate provider reads from the native backend. */
+vi.mock("@/lib/ipc/keyboard-shortcuts", () => ({
+  getKeyboardShortcuts: vi.fn(async () => ({ actions: [] })),
+  setKeyboardShortcut: vi.fn(),
+  resetKeyboardShortcut: vi.fn(),
+  resetAllKeyboardShortcuts: vi.fn(),
+}));
+
+/** FE-014 now mounts its real page inside the existing Settings frame. */
+it("renders the real keyboard shortcut route", async () => {
+  render(
+    <AppProviders>
+      <RouterProvider router={createAppRouter(["/settings/keyboard-shortcuts"])} />
+    </AppProviders>,
+  );
+  expect(await screen.findByRole("textbox", { name: "Search actions" })).toBeInTheDocument();
+  expect(screen.queryByText(/arrives with FE-014/i)).not.toBeInTheDocument();
 });

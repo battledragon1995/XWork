@@ -128,3 +128,15 @@ describe("AppShell", () => {
     }
   });
 });
+
+/** Isolate provider reads from the native backend. */
+vi.mock("@/lib/ipc/keyboard-shortcuts", () => ({
+  getKeyboardShortcuts: vi.fn(async () => ({ actions: [] })),
+  setKeyboardShortcut: vi.fn(),
+  resetKeyboardShortcut: vi.fn(),
+  resetAllKeyboardShortcuts: vi.fn(),
+}));
+/** Isolate platform detection for shell-only tests. */
+vi.mock("@/lib/ipc/app-info", () => ({
+  readAppInfo: vi.fn(async () => ({ osPlatform: "windows" })),
+}));

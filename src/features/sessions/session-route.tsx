@@ -1,8 +1,11 @@
 import { Pen } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router";
+import type { KeyboardShortcutsDto } from "@/bindings/keyboard-shortcuts";
+import type { PaneContentDto } from "@/bindings/sessions/sessions";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import type { ShortcutPlatform } from "@/lib/utils/keyboard-shortcuts";
 import { DeleteSessionDialog } from "./delete-session-dialog";
 import { RenameSessionDialog } from "./rename-session-dialog";
 import { SessionActionsMenu } from "./session-actions-menu";
@@ -10,7 +13,6 @@ import { SessionToolPicker } from "./session-tool-picker";
 import { SessionWorkspace } from "./session-workspace";
 import { useSessionDetail } from "./use-session-detail";
 import { useSessionLifecycle } from "./use-session-lifecycle";
-import type { PaneContentDto } from "@/bindings/sessions/sessions";
 
 /** Copy for a session that could not be opened for any reason other than being gone. */
 export const SESSION_OPEN_FAILED_MESSAGE = "XWork couldn't open this session.";
@@ -117,7 +119,11 @@ function SessionHeader(props: {
  * have a way in even once a session has tabs; FE-007 may fold those two entries into the tab
  * strip and drop the header from the branch it owns.
  */
-export function SessionRoute(props: { renderTerminal?: SessionTerminalRenderer }) {
+export function SessionRoute(props: {
+  shortcutSnapshot?: KeyboardShortcutsDto | null;
+  shortcutPlatform?: ShortcutPlatform | null;
+  renderTerminal?: SessionTerminalRenderer;
+}) {
   const { sessionId = "" } = useParams();
   const navigate = useNavigate();
   const detail = useSessionDetail(sessionId);
@@ -267,6 +273,8 @@ export function SessionRoute(props: { renderTerminal?: SessionTerminalRenderer }
     return (
       <div className="h-full min-h-0 overflow-hidden">
         <SessionWorkspace
+          shortcutSnapshot={props.shortcutSnapshot}
+          shortcutPlatform={props.shortcutPlatform}
           detail={detail.detail}
           rootPath={detail.project?.rootPath ?? null}
           onApplyDetail={detail.applyDetail}
