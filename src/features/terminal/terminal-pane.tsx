@@ -59,18 +59,26 @@ export function TerminalPane(props: TerminalPaneProps) {
     if (element === null || !props.isVisible) return;
     const detach = entry.attach(element);
     let resizeFrame: number | null = null;
-    /** Moves terminal measurement outside ResizeObserver delivery to prevent layout loops. */
+    let resizeTimer: ReturnType<typeof setTimeout> | null = null;
+    /** Applies the settled pane size once instead of asking ConPTY to redraw on every drag frame. */
     const scheduleResize = (): void => {
+      if (resizeTimer !== null) clearTimeout(resizeTimer);
       if (resizeFrame !== null) cancelAnimationFrame(resizeFrame);
-      resizeFrame = requestAnimationFrame(() => {
-        resizeFrame = null;
-        entry.adapter.measureAndResize();
-      });
+      resizeFrame = null;
+      resizeTimer = setTimeout(() => {
+        resizeTimer = null;
+        // Keep layout measurement outside ResizeObserver delivery to avoid feedback loops.
+        resizeFrame = requestAnimationFrame(() => {
+          resizeFrame = null;
+          entry.adapter.measureAndResize();
+        });
+      }, 100);
     };
     const observer = new ResizeObserver(scheduleResize);
     observer.observe(element);
     return () => {
       observer.disconnect();
+      if (resizeTimer !== null) clearTimeout(resizeTimer);
       if (resizeFrame !== null) cancelAnimationFrame(resizeFrame);
       detach();
     };

@@ -1,4 +1,4 @@
-import type { CellData } from "@wterm/dom";
+import type { CellData, WTermOptions } from "@wterm/dom";
 import { WTerm } from "@wterm/dom";
 import { GhosttyCore, type GhosttyOptions } from "@wterm/ghostty";
 import ghosttyWasmUrl from "@wterm/ghostty/ghostty-vt.wasm?url";
@@ -8,6 +8,10 @@ export const RETAINED_SCROLLBACK_BYTES = 0xffffffff;
 
 /** Covers ConPTY's delayed cursor restoration after a TUI synchronized update. */
 const CURSOR_SETTLE_MS = 50;
+
+/** Lets separate ConPTY redraw reads settle without freezing a continuously writing CLI. */
+const RESIZE_PAINT_QUIET_MS = 75;
+const RESIZE_PAINT_MAX_MS = 250;
 
 /** Measured character grid used for initial launch and later PTY resizing. */
 export interface TerminalGridSize {
@@ -311,13 +315,89 @@ export function measureTerminalGrid(
   };
 }
 
+/** Keeps XWork resize updates on WTerm's atomic render path using its public core API. */
+class XWorkTerminalSurface extends WTerm {
+  private readonly paintHold: { active: boolean };
+  private paintHoldStarted = 0;
+  private paintHoldTimer: ReturnType<typeof setTimeout> | null = null;
+
+  /** Prevents WTerm's scroll paint from bypassing an in-progress resize output hold. */
+  private readonly holdScrollPaint = (event: Event): void => {
+    if (this.paintHold.active && event.target === this.element) event.stopImmediatePropagation();
+  };
+
+  /** Adds a presentation-only hold while leaving the real parser and its replies unchanged. */
+  constructor(element: HTMLElement, options: WTermOptions & { core: GhosttyCore }) {
+    const paintHold = { active: false };
+    const methods = new Map<PropertyKey, unknown>();
+    const presentationCore = new Proxy(options.core, {
+      /** Forwards core operations with their original receiver and caches bound hot-path methods. */
+      get(core, key) {
+        if (methods.has(key)) return methods.get(key);
+        const value = Reflect.get(core, key, core);
+        const forwarded =
+          key === "synchronizedOutput"
+            ? () => paintHold.active || core.synchronizedOutput()
+            : typeof value === "function"
+              ? value.bind(core)
+              : value;
+        if (typeof forwarded === "function") methods.set(key, forwarded);
+        return forwarded;
+      },
+    });
+    super(element, { ...options, core: presentationCore });
+    this.paintHold = paintHold;
+    element.addEventListener("scroll", this.holdScrollPaint, true);
+  }
+
+  /** Updates the grid without clearing the DOM before WTerm's next paint. */
+  override resize(columns: number, rows: number): void {
+    if (this.bridge === null) return;
+    if (!this.paintHold.active) this.paintHoldStarted = performance.now();
+    this.paintHold.active = true;
+    this.bridge.resize(columns, rows);
+    this.cols = columns;
+    this.rows = rows;
+    // Renderer.render detects the new dimensions and rebuilds and paints in one call.
+    // An empty write schedules that paint while respecting synchronized CLI output.
+    this.write("");
+    this.onResize?.(columns, rows);
+  }
+
+  /** Parses immediately but retains the previous DOM until a resize redraw settles or times out. */
+  override write(data: string | Uint8Array): void {
+    super.write(data);
+    if (!this.paintHold.active) return;
+    if (this.paintHoldTimer !== null) clearTimeout(this.paintHoldTimer);
+    const remaining = RESIZE_PAINT_MAX_MS - (performance.now() - this.paintHoldStarted);
+    this.paintHoldTimer = setTimeout(
+      () => {
+        this.paintHoldTimer = null;
+        this.paintHold.active = false;
+        // Re-evaluate the CLI's own synchronized-output mode before scheduling the final paint.
+        super.write("");
+      },
+      Math.max(0, Math.min(RESIZE_PAINT_QUIET_MS, remaining)),
+    );
+  }
+
+  /** Cancels a pending resize paint before releasing the renderer and core. */
+  override destroy(): void {
+    if (this.paintHoldTimer !== null) clearTimeout(this.paintHoldTimer);
+    this.paintHoldTimer = null;
+    this.paintHold.active = false;
+    this.element.removeEventListener("scroll", this.holdScrollPaint, true);
+    super.destroy();
+  }
+}
+
 /** Production factory pinned to WTerm/Ghostty 0.3.4 and its local WASM asset. */
 const browserWTermFactory: WTermAdapterFactory = {
   /** Loads one explicit Ghostty core. */
   loadCore: (options) => GhosttyCore.load(options),
   /** Creates WTerm with `onData` present before `init`, preventing local echo. */
   createSurface: (element, options) =>
-    new WTerm(element, {
+    new XWorkTerminalSurface(element, {
       core: options.core,
       cols: options.columns,
       rows: options.rows,

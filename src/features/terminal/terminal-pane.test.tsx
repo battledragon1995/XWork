@@ -150,10 +150,10 @@ it("attaches one retained surface and exposes a truthful loading state", () => {
   expect(fixture.entry.activate).toHaveBeenCalledTimes(1);
 });
 
-/** Verifies resize delivery is coalesced outside the observer callback to avoid layout loops. */
-it("defers terminal measurement until the next animation frame", () => {
+/** Coalesces a drag into one measured resize and cancels work when the pane detaches. */
+it("waits for the pane size to settle before resizing the terminal", () => {
+  vi.useFakeTimers();
   const resizeCallbacks: ResizeObserverCallback[] = [];
-  const scheduledResizes: FrameRequestCallback[] = [];
   class CapturingResizeObserver {
     /** Captures the component callback for explicit observer delivery. */
     constructor(callback: ResizeObserverCallback) {
@@ -170,24 +170,27 @@ it("defers terminal measurement until the next animation frame", () => {
     disconnect(): void {}
   }
   vi.stubGlobal("ResizeObserver", CapturingResizeObserver);
-  const requestFrame = vi
-    .spyOn(globalThis, "requestAnimationFrame")
-    .mockImplementation((callback) => {
-      scheduledResizes.push(callback);
-      return 7;
-    });
-  const cancelFrame = vi.spyOn(globalThis, "cancelAnimationFrame");
-  renderPane();
+  const pane = renderPane();
+  try {
+    expect(resizeCallbacks).toHaveLength(1);
+    resizeCallbacks[0]?.([], {} as ResizeObserver);
+    vi.advanceTimersByTime(60);
+    expect(fixture.adapter.measureAndResize).not.toHaveBeenCalled();
+    resizeCallbacks[0]?.([], {} as ResizeObserver);
+    vi.advanceTimersByTime(90);
+    expect(fixture.adapter.measureAndResize).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(26);
+    expect(fixture.adapter.measureAndResize).toHaveBeenCalledTimes(1);
 
-  expect(resizeCallbacks).toHaveLength(1);
-  resizeCallbacks[0]?.([], {} as ResizeObserver);
-  resizeCallbacks[0]?.([], {} as ResizeObserver);
-  expect(fixture.adapter.measureAndResize).not.toHaveBeenCalled();
-  expect(requestFrame).toHaveBeenCalledTimes(2);
-  expect(cancelFrame).toHaveBeenCalledWith(7);
-
-  scheduledResizes.at(-1)?.(0);
-  expect(fixture.adapter.measureAndResize).toHaveBeenCalledTimes(1);
+    resizeCallbacks[0]?.([], {} as ResizeObserver);
+    vi.advanceTimersByTime(100);
+    pane.unmount();
+    vi.advanceTimersByTime(200);
+    expect(fixture.adapter.measureAndResize).toHaveBeenCalledTimes(1);
+  } finally {
+    pane.unmount();
+    vi.useRealTimers();
+  }
 });
 
 /** Verifies a committed launch refreshes Sessions once and stopped output remains readable. */
