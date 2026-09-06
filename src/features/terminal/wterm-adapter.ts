@@ -295,8 +295,11 @@ export function measureTerminalGrid(
   probe.textContent = "W";
   host.appendChild(probe);
   const cell = probe.getBoundingClientRect();
+  // DOM rectangles include ancestor zoom; clientWidth and computed padding use layout pixels.
+  probe.style.width = "100px";
+  const scale = probe.getBoundingClientRect().width / 100;
   probe.remove();
-  if (cell.width <= 0 || cell.height <= 0) return null;
+  if (cell.width <= 0 || cell.height <= 0 || scale <= 0) return null;
   const style = surface === undefined ? null : getComputedStyle(surface);
   const horizontalPadding =
     (Number.parseFloat(style?.paddingLeft ?? "") || 0) +
@@ -312,14 +315,17 @@ export function measureTerminalGrid(
   // clientWidth excludes the live scrollbar that otherwise feeds terminal width back into layout.
   const measuredWidth =
     surface !== undefined && surface.clientWidth > 0
-      ? surface.clientWidth - horizontalPadding
-      : bounds.width - horizontalPadding - horizontalBorder;
+      ? (surface.clientWidth - horizontalPadding) * scale
+      : bounds.width - (horizontalPadding + horizontalBorder) * scale;
+  // WTerm stores ceil(zoomed probe height) as CSS pixels, which the browser scales again.
+  // Once initialized, measure the actual row: its inline height survives later zoom changes.
+  const renderedRowHeight = surface?.querySelector(".term-row")?.getBoundingClientRect().height;
+  const rowHeight = renderedRowHeight || Math.ceil(cell.height) * scale;
   return {
     columns: Math.max(2, Math.min(500, Math.floor(measuredWidth / cell.width))),
-    // WTerm rounds its row height up before locking the surface height during initialization.
     rows: Math.max(
       1,
-      Math.min(300, Math.floor((bounds.height - verticalInset) / Math.ceil(cell.height))),
+      Math.min(300, Math.floor((bounds.height - verticalInset * scale) / rowHeight)),
     ),
   };
 }

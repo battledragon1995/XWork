@@ -147,6 +147,7 @@ it("measures a grid that fits fractional font metrics inside the pane", () => {
     .spyOn(HTMLElement.prototype, "getBoundingClientRect")
     // Supply deterministic layout because jsdom does not measure fonts or boxes.
     .mockImplementation(function (this: HTMLElement) {
+      if (this.style.width === "100px") return { width: 100 } as DOMRect;
       return { width: this === host ? 1030 : 7.14, height: this === host ? 672 : 17.55 } as DOMRect;
     });
   try {
@@ -156,6 +157,93 @@ it("measures a grid that fits fractional font metrics inside the pane", () => {
     host.remove();
   }
 });
+
+/** Keeps the rightmost column inside one cell of the available width at every interface scale. */
+it.each([0.8571, 1, 1.0714, 1.1429, 1.4286])(
+  "fills terminal width at interface scale %s with and without a scrollbar",
+  (scale) => {
+    const host = document.createElement("div");
+    const surface = document.createElement("div");
+    surface.style.padding = "10px";
+    surface.style.border = "1px solid";
+    host.appendChild(surface);
+    document.body.appendChild(host);
+    let clientWidth = 0;
+    Object.defineProperty(surface, "clientWidth", { get: () => clientWidth });
+    const bounds = vi
+      .spyOn(HTMLElement.prototype, "getBoundingClientRect")
+      /** Models CSS zoom: DOM rectangles scale, but clientWidth and CSS padding do not. */
+      .mockImplementation(function (this: HTMLElement) {
+        const width = this === host ? 1030 : this.style.width === "100px" ? 100 : 7.14;
+        return { width: width * scale, height: (this === host ? 672 : 17.55) * scale } as DOMRect;
+      });
+    try {
+      // The first measurement precedes initialization; later measurements include the scrollbar.
+      for (const width of [0, 1028, 1013]) {
+        clientWidth = width;
+        const available = (width || 1028) - 20;
+        const columns = measureTerminalGrid(host, surface)?.columns ?? 0;
+        expect(columns * 7.14).toBeLessThanOrEqual(available);
+        expect(available - columns * 7.14).toBeLessThan(7.14);
+      }
+    } finally {
+      bounds.mockRestore();
+      host.remove();
+    }
+  },
+);
+
+/** Checks the last row against WTerm's real initialized row-height rule, including later zoom changes. */
+it.each([0.8571, 1, 1.0714, 1.1429, 1.4286])(
+  "fits the full terminal height before and after initialization at scale %s",
+  async (initialScale) => {
+    const wasm = readFileSync("node_modules/@wterm/ghostty/wasm/ghostty-vt.wasm");
+    const fetch = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(wasm));
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    const adapter = new WTermAdapter({ onData: vi.fn(), onResize: vi.fn() });
+    adapter.element.style.padding = "10px";
+    adapter.element.style.border = "1px solid";
+    let scale = initialScale;
+    let height = 672;
+    const bounds = vi
+      .spyOn(HTMLElement.prototype, "getBoundingClientRect")
+      /** Models actual CSS row layout while letting the real WTerm set its rounded row-height token. */
+      .mockImplementation(function (this: HTMLElement) {
+        const rowHeight =
+          Number.parseFloat(adapter.element.style.getPropertyValue("--term-row-height")) || 17.55;
+        const width = this === host ? 1030 : this.style.width === "100px" ? 100 : 7.14;
+        const elementHeight =
+          this === host ? height : this.classList.contains("term-row") ? rowHeight : 17.55;
+        return { width: width * scale, height: elementHeight * scale } as DOMRect;
+      });
+    /** Requires the last row to fit and the remaining bottom gap to be smaller than one row. */
+    const expectFullHeight = (): void => {
+      const rowHeight = Number.parseFloat(
+        adapter.element.style.getPropertyValue("--term-row-height"),
+      );
+      const used = (adapter.size?.rows ?? 0) * rowHeight;
+      expect(used).toBeLessThanOrEqual(height - 22);
+      expect(height - 22 - used).toBeLessThan(rowHeight);
+    };
+    try {
+      await adapter.initialize(host);
+      expectFullHeight();
+      adapter.measureAndResize();
+      expectFullHeight();
+      // Existing surfaces retain WTerm's inline row height when the pane or interface scale changes.
+      scale = 1.25;
+      height = 513;
+      adapter.measureAndResize();
+      expectFullHeight();
+    } finally {
+      adapter.destroy();
+      bounds.mockRestore();
+      fetch.mockRestore();
+      host.remove();
+    }
+  },
+);
 
 /** Allows WTerm's dynamic cell colors in release without permitting inline scripts or style elements. */
 it("allows terminal cell style attributes in the release CSP", () => {

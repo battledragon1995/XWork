@@ -190,12 +190,21 @@ function Highlight<T extends React.ElementType = "div">({ ref, ...props }: Highl
       if (!localRef.current) return;
 
       const containerRect = localRef.current.getBoundingClientRect();
+      // Rectangles include CSS zoom; absolute positions and sizes use the container's layout pixels.
+      const scaleX =
+        localRef.current.offsetWidth > 0
+          ? containerRect.width / localRef.current.offsetWidth || 1
+          : 1;
+      const scaleY =
+        localRef.current.offsetHeight > 0
+          ? containerRect.height / localRef.current.offsetHeight || 1
+          : 1;
       const offset = boundsOffsetRef.current;
       const newBounds: Bounds = {
-        top: bounds.top - containerRect.top + offset.top,
-        left: bounds.left - containerRect.left + offset.left,
-        width: bounds.width + offset.width,
-        height: bounds.height + offset.height,
+        top: (bounds.top - containerRect.top) / scaleY + offset.top,
+        left: (bounds.left - containerRect.left) / scaleX + offset.left,
+        width: bounds.width / scaleX + offset.width,
+        height: bounds.height / scaleY + offset.height,
       };
 
       setBoundsState((prev) => {
