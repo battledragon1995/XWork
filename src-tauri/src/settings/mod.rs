@@ -1,4 +1,7 @@
+pub mod data;
+pub mod data_participant;
 mod keyboard_shortcuts;
+pub use data::*;
 pub(crate) use keyboard_shortcuts::*;
 pub use keyboard_shortcuts::{
     KeyboardShortcutActionDto, KeyboardShortcutsCommittedProjection, KeyboardShortcutsDto,
@@ -302,11 +305,24 @@ impl SettingsSnapshot {
 }
 
 /// Carries the settings-owned section of a future coordinator snapshot.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SettingsBackupSection {
     pub appearance: AppearanceSettingsDto,
     pub sidebar: SidebarSettingsDto,
     pub notification_settings: Option<()>,
+}
+
+impl SettingsBackupSection {
+    /// Returns the persisted Phase 1 defaults without General invariants.
+    pub fn defaults() -> Self {
+        let snapshot = SettingsSnapshot::defaults();
+        Self {
+            appearance: snapshot.appearance,
+            sidebar: snapshot.sidebar,
+            notification_settings: None,
+        }
+    }
 }
 
 /// Owns a fully validated settings restore operation and its committed projection.
@@ -332,6 +348,7 @@ struct SettingsServiceInner {
     gate: DataMaintenanceGate,
     write_gate: Mutex<()>,
     cache: RwLock<SettingsSnapshot>,
+    revisions: tokio::sync::watch::Sender<u64>,
     shutting_down: AtomicBool,
 }
 
@@ -339,12 +356,15 @@ impl SettingsService {
     /// Hydrates and validates the singleton row before exposing the service.
     pub fn new(storage: Storage, gate: DataMaintenanceGate) -> Result<Self, SettingsError> {
         let snapshot = storage.with_connection(read_snapshot)?;
+        let revision = snapshot.revision;
+        let (revisions, _) = tokio::sync::watch::channel(revision);
         Ok(Self {
             inner: Arc::new(SettingsServiceInner {
                 storage,
                 gate,
                 write_gate: Mutex::new(()),
                 cache: RwLock::new(snapshot),
+                revisions,
                 shutting_down: AtomicBool::new(false),
             }),
         })
@@ -354,6 +374,11 @@ impl SettingsService {
     pub fn snapshot(&self) -> Result<SettingsSnapshot, SettingsError> {
         self.ensure_available()?;
         self.clone_cache()
+    }
+
+    /// Subscribes internal consumers to committed settings invalidations.
+    pub fn subscribe(&self) -> tokio::sync::watch::Receiver<u64> {
+        self.inner.revisions.subscribe()
     }
 
     /// Applies one atomic update while acquiring its own maintenance admission.
@@ -468,16 +493,26 @@ impl SettingsService {
     pub fn reset_settings_in(
         tx: &Transaction<'_>,
     ) -> Result<SettingsCommittedProjection, SettingsError> {
-        let snapshot = SettingsSnapshot::defaults();
+        let current = read_snapshot(tx)?;
+        let mut snapshot = SettingsSnapshot::defaults();
+        snapshot.revision = current
+            .revision
+            .checked_add(1)
+            .ok_or(SettingsError::PersistenceFailed)?;
         write_snapshot(tx, &snapshot)?;
         Ok(SettingsCommittedProjection { snapshot })
     }
 
     /// Publishes one coordinator projection after its transaction commits.
     pub fn publish_data_change(&self, projection: SettingsCommittedProjection) {
-        if let Ok(mut cache) = self.inner.cache.write() {
-            *cache = projection.snapshot;
-        }
+        let revision = projection.snapshot.revision;
+        let mut cache = self
+            .inner
+            .cache
+            .write()
+            .unwrap_or_else(|poison| poison.into_inner());
+        *cache = projection.snapshot;
+        let _ = self.inner.revisions.send(revision);
     }
 
     /// Persists a complete snapshot and publishes it only after commit.
@@ -494,6 +529,7 @@ impl SettingsService {
             .write()
             .map_err(|_| SettingsError::Unavailable)?;
         *cache = snapshot.clone();
+        let _ = self.inner.revisions.send(snapshot.revision);
         Ok(snapshot)
     }
 

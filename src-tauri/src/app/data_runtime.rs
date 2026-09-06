@@ -3,7 +3,9 @@
 
 use std::{
     collections::HashMap,
+    future::Future,
     path::PathBuf,
+    pin::Pin,
     sync::{Arc, Mutex, OnceLock, Weak},
 };
 
@@ -755,6 +757,84 @@ impl AppRuntime for SessionsAppRuntime {
                 Ok(())
             }
         })
+    }
+}
+
+/// Boxes reset lifecycle futures behind the Data Management consumer port.
+pub type DataRuntimeFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
+
+/// Reports the live runtime work a reset will stop.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct DataRuntimeImpact {
+    pub sessions: u32,
+    pub running_processes: u32,
+    pub unsaved_documents: u32,
+}
+
+/// Identifies whether reset persistence committed after runtime cleanup.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DataResetCompletion {
+    Committed,
+    Aborted,
+}
+
+/// Controls reset-specific runtime cleanup without closing application lifetime state.
+pub trait DataRuntimeControl: Send + Sync {
+    /// Reads current reset impact without changing admission.
+    fn impact<'a>(&'a self) -> DataRuntimeFuture<'a, Result<DataRuntimeImpact, ()>>;
+    /// Pauses notification intake and closes all runtime content.
+    fn shutdown_for_reset<'a>(&'a self) -> DataRuntimeFuture<'a, Result<(), ()>>;
+    /// Reopens owner admission after commit or rollback.
+    fn resume_after_reset(&self, completion: DataResetCompletion);
+}
+
+/// Connects Data Management to the real Sessions and Notifications owners.
+pub struct AppDataRuntime {
+    sessions: Arc<SessionManager>,
+    notifications: NotificationService,
+}
+
+impl AppDataRuntime {
+    /// Creates the production reset adapter from managed owner handles.
+    pub fn new(sessions: Arc<SessionManager>, notifications: NotificationService) -> Self {
+        Self {
+            sessions,
+            notifications,
+        }
+    }
+}
+
+impl DataRuntimeControl for AppDataRuntime {
+    /// Maps the Sessions impact into the Data Management count contract.
+    fn impact<'a>(&'a self) -> DataRuntimeFuture<'a, Result<DataRuntimeImpact, ()>> {
+        Box::pin(async move {
+            let impact = self.sessions.shutdown_impact().await.map_err(|_| ())?;
+            Ok(DataRuntimeImpact {
+                sessions: impact.session_count,
+                running_processes: impact.running_process_count,
+                unsaved_documents: impact.unsaved_file_count,
+            })
+        })
+    }
+
+    /// Drains notification work before stopping every session-owned resource.
+    fn shutdown_for_reset<'a>(&'a self) -> DataRuntimeFuture<'a, Result<(), ()>> {
+        Box::pin(async move {
+            self.notifications.pause_for_reset().await.map_err(|_| ())?;
+            if self.sessions.shutdown_all().await.is_err() {
+                self.notifications.resume_after_reset(false);
+                self.sessions.resume_after_reset(false);
+                return Err(());
+            }
+            Ok(())
+        })
+    }
+
+    /// Reopens both reset-aware owners after the durable outcome is known.
+    fn resume_after_reset(&self, completion: DataResetCompletion) {
+        let committed = completion == DataResetCompletion::Committed;
+        self.sessions.resume_after_reset(committed);
+        self.notifications.resume_after_reset(committed);
     }
 }
 

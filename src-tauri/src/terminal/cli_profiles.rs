@@ -1407,6 +1407,21 @@ impl CliProfilesService {
         )?
     }
 
+    /// Counts durable credential cleanup work without reading any secret value.
+    pub async fn pending_credential_cleanup_count(&self) -> Result<u32, CliProfilesError> {
+        let _permit = self.inner.gate.read_permit().await;
+        let storage = self.inner.storage.clone();
+        tauri::async_runtime::spawn_blocking(move || {
+            storage
+                .with_connection(select_cleanup_accounts)
+                .and_then(|accounts| {
+                    u32::try_from(accounts.len()).map_err(|_| CliProfilesError::PersistenceFailed)
+                })
+        })
+        .await
+        .map_err(|_| CliProfilesError::PersistenceFailed)?
+    }
+
     /// Validates, stages secrets, commits, and publishes one profile change.
     async fn persist_profile(
         &self,

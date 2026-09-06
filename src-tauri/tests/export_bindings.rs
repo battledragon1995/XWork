@@ -233,6 +233,46 @@ fn generated_search_binding() -> String {
     .join("\n")
 }
 
+/// Generates the complete Phase 1 Data Management binding in dependency order.
+fn generated_data_management_binding() -> String {
+    use xwork_lib::settings::data::*;
+    let config = Config::default();
+    [
+        DataLocationDto::export_to_string(&config).unwrap(),
+        BackupContentCountsDto::export_to_string(&config).unwrap(),
+        BackupExportOutcomeDto::export_to_string(&config).unwrap(),
+        BackupMergeCountsDto::export_to_string(&config).unwrap(),
+        BackupImportPreviewDto::export_to_string(&config).unwrap(),
+        PrepareBackupImportOutcomeDto::export_to_string(&config).unwrap(),
+        BackupImportResultDto::export_to_string(&config).unwrap(),
+        ResetImpactDto::export_to_string(&config).unwrap(),
+        ResetResultDto::export_to_string(&config).unwrap(),
+        DataChangeKindDto::export_to_string(&config).unwrap(),
+        DataChangedEventDto::export_to_string(&config).unwrap(),
+        BackupDomainDto::export_to_string(&config).unwrap(),
+        DataManagementError::export_to_string(&config).unwrap(),
+    ]
+    .join("\n")
+}
+
+/// Regenerates the aggregate backup/reset binding and checks casing and redaction.
+#[test]
+fn data_management_binding_matches_rust_contract() {
+    let generated = generated_data_management_binding();
+    for field in [
+        "fileName",
+        "schemaVersion",
+        "requestId",
+        "credentialCleanupPending",
+    ] {
+        assert!(generated.contains(field));
+    }
+    for secret in ["rootPath:", "credentialAccount:", "confirmation:"] {
+        assert!(!generated.contains(secret));
+    }
+    assert_binding_is_current(binding_path(&["data-management.ts"]), generated);
+}
+
 /// Regenerates Search once on drift and verifies Phase 1 target field casing.
 #[test]
 fn search_binding_matches_rust_contract() {

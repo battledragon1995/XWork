@@ -64,6 +64,7 @@ struct Inner {
     dependencies: Arc<dyn NotificationDependencies>,
     collaborators: NotificationCollaborators,
     shutdown: AtomicBool,
+    paused: AtomicBool,
     stopped: AtomicBool,
     delivery: Mutex<()>,
     source: mpsc::UnboundedSender<Source>,
@@ -133,6 +134,7 @@ impl NotificationService {
                 collaborators,
                 gate: Arc::new(AsyncMutex::new(0)),
                 shutdown: AtomicBool::new(false),
+                paused: AtomicBool::new(false),
                 stopped: AtomicBool::new(false),
                 delivery: Mutex::new(()),
                 source,
@@ -203,7 +205,21 @@ impl NotificationService {
         mutation: Mutation,
     ) -> Result<(NotificationCenterStateDto, bool), NotificationError> {
         self.ready()?;
-        let permit = self.inner.maintenance.read_permit().await;
+        let permit = loop {
+            if self.inner.paused.load(Ordering::Acquire) {
+                return Err(NotificationError::Unavailable);
+            }
+            match tokio::time::timeout(
+                std::time::Duration::from_millis(25),
+                self.inner.maintenance.read_permit(),
+            )
+            .await
+            {
+                Ok(permit) => break permit,
+                // Recreating the permit future is cancellation-safe and observes reset pause.
+                Err(_) => continue,
+            }
+        };
         let gate = self.inner.gate.clone().lock_owned().await;
         self.ready()?;
         let inner = self.inner.clone();
@@ -296,13 +312,16 @@ impl NotificationService {
     }
     /// Enqueues a committed terminal snapshot without waiting for database work.
     pub fn observe_terminal_state(&self, event: TerminalStateChangedDto) {
-        if self.ready().is_ok() {
+        if self.ready().is_ok() && !self.inner.paused.load(Ordering::Acquire) {
             let _ = self.inner.source.send(Source::Terminal(event));
         }
     }
     /// Enqueues only deletion events relevant to stale runtime targets.
     pub fn observe_session_runtime(&self, event: SessionRuntimeEventDto) {
-        if self.ready().is_ok() && event.change == SessionChangeKindDto::Deleted {
+        if self.ready().is_ok()
+            && !self.inner.paused.load(Ordering::Acquire)
+            && event.change == SessionChangeKindDto::Deleted
+        {
             let _ = self.inner.source.send(Source::Session(event));
         }
     }
@@ -335,6 +354,49 @@ impl NotificationService {
             .map_err(|_| NotificationError::Unavailable)?;
         // Maps the failure to a sanitized boundary error.
         receive.await.map_err(|_| NotificationError::Unavailable)
+    }
+
+    /// Pauses new runtime intake and drains work admitted before the pause boundary.
+    pub async fn pause_for_reset(&self) -> Result<(), NotificationError> {
+        self.ready()?;
+        self.inner.paused.store(true, Ordering::Release);
+        if let Err(error) = self.flush().await {
+            self.inner.paused.store(false, Ordering::Release);
+            return Err(error);
+        }
+        Ok(())
+    }
+
+    /// Reopens runtime intake after reset without reviving discarded candidates.
+    pub fn resume_after_reset(&self, _committed: bool) {
+        self.inner.paused.store(false, Ordering::Release);
+    }
+
+    /// Deletes the notification inbox inside the coordinator transaction.
+    pub fn reset_notifications_in(
+        &self,
+        tx: &rusqlite::Transaction<'_>,
+    ) -> Result<NotificationCommittedProjection, NotificationError> {
+        let affected = tx.execute("DELETE FROM notifications", [])?;
+        Ok(NotificationCommittedProjection {
+            affected_count: u32::try_from(affected)
+                .map_err(|_| NotificationError::PersistenceFailed)?,
+        })
+    }
+
+    /// Publishes the committed zero-unread projection after coordinator commit.
+    pub async fn publish_notification_reset(&self, projection: NotificationCommittedProjection) {
+        let mut revision = self.inner.gate.lock().await;
+        if projection.affected_count > 0 {
+            *revision = revision.wrapping_add(1);
+            let _ = self
+                .inner
+                .effects
+                .send(Effect::Changed(NotificationCenterChangedDto {
+                    revision: revision.to_string(),
+                    unread_count: 0,
+                }));
+        }
     }
     /// Purges terminal rows after owner cleanup, allowing a failed SQL attempt to be retried.
     pub async fn shutdown_runtime_sources(&self) -> Result<(), NotificationError> {

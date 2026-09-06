@@ -22,7 +22,7 @@ use xwork_lib::projects::{
 };
 use xwork_lib::search::SearchService;
 use xwork_lib::sessions::SessionManager;
-use xwork_lib::settings::SettingsService;
+use xwork_lib::settings::{DataManagementService, SettingsService};
 use xwork_lib::shared::DataMaintenanceGate;
 use xwork_lib::storage::{Storage, StorageError};
 use xwork_lib::terminal::{CliProfilesService, TerminalInteractions};
@@ -161,6 +161,52 @@ fn composition_root_builds_and_manages_storage() {
         app.try_state::<xwork_lib::notifications::NotificationService>()
             .is_some()
     );
+    assert!(app.try_state::<DataManagementService>().is_some());
+}
+
+/// Verifies all nine Data Management commands route and reject non-main windows first.
+#[test]
+fn data_management_commands_are_registered_and_main_only() {
+    let directory = tempfile::TempDir::new().expect("temporary directory should exist");
+    let mut app = build_isolated_app(directory.path().to_path_buf());
+    run_setup(&mut app);
+    let main = window(&app, "main");
+    tauri::test::assert_ipc_response(
+        &main,
+        invoke_request("get_data_location"),
+        Ok(serde_json::json!({
+            "directory": directory.path().to_string_lossy(),
+            "databaseFileName": "xwork.sqlite3",
+            "logsDirectoryName": "logs"
+        })),
+    );
+
+    let foreign = window(&app, "quick-note");
+    for (command, body) in [
+        ("get_data_location", serde_json::json!({})),
+        ("open_data_location", serde_json::json!({})),
+        ("copy_data_location", serde_json::json!({})),
+        ("export_backup", serde_json::json!({})),
+        ("prepare_import_backup", serde_json::json!({})),
+        (
+            "confirm_import_backup",
+            serde_json::json!({ "requestId": 1 }),
+        ),
+        ("prepare_reset_xwork", serde_json::json!({})),
+        (
+            "confirm_reset_xwork",
+            serde_json::json!({ "requestId": 1, "confirmation": "RESET" }),
+        ),
+        (
+            "cancel_data_operation",
+            serde_json::json!({ "requestId": 1 }),
+        ),
+    ] {
+        let error =
+            tauri::test::get_ipc_response(&foreign, invoke_request_with_body(command, body))
+                .expect_err("non-main caller should be rejected");
+        assert!(error.to_string().contains("unauthorized_window"));
+    }
 }
 
 /// Verifies notification startup failure prevents publication of ready service and lifecycle state.

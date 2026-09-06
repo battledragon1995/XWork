@@ -99,6 +99,12 @@ pub struct NotificationCenterChangedDto {
     pub revision: String,
     pub unread_count: u32,
 }
+
+/// Carries the reset count until the shared transaction has committed.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct NotificationCommittedProjection {
+    pub affected_count: u32,
+}
 /// Exposes stable error categories without database or user content.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, TS)]
 #[serde(tag = "code", rename_all = "snake_case")]

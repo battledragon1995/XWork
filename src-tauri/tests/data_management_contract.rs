@@ -143,6 +143,7 @@ fn shortcuts_coordinator_rollback_publishes_nothing() {
 #[test]
 fn shortcuts_commit_publishes_prepared_projection() {
     let h = ShortcutsHarness::new();
+    let subscription = h.service.subscribe();
     let before = h.service.snapshot().unwrap();
     let _permit = tauri::async_runtime::block_on(h.gate.write_permit());
     let projection = h
@@ -163,6 +164,11 @@ fn shortcuts_commit_publishes_prepared_projection() {
         .unwrap();
     assert_eq!(h.service.snapshot().unwrap(), before);
     h.participant.publish_after_commit(projection);
+    assert!(
+        subscription
+            .has_changed()
+            .expect("sender should remain open")
+    );
     let after = h.service.snapshot().unwrap();
     assert_eq!(after.actions[7].conflicts_with, ["tabs.close"]);
     assert!(!after.actions[8].is_dispatchable);
@@ -1112,6 +1118,7 @@ fn settings_coordinator_rollback_publishes_nothing() {
 #[test]
 fn settings_commit_publishes_prepared_projection() {
     let harness = SettingsHarness::new();
+    let subscription = harness.service.subscribe();
     let incoming = harness.incoming();
     let before = harness
         .service
@@ -1131,6 +1138,11 @@ fn settings_commit_publishes_prepared_projection() {
         .expect("the restore transaction should commit");
     assert_eq!(harness.service.snapshot(), Ok(before));
     harness.participant.publish_after_commit(projection);
+    assert!(
+        subscription
+            .has_changed()
+            .expect("sender should remain open")
+    );
     let published = harness
         .service
         .snapshot()
@@ -1152,7 +1164,9 @@ fn settings_reset_writes_default_row() {
         )
         .expect("the settings reset should commit");
     harness.participant.publish_after_commit(projection);
-    assert_eq!(harness.service.snapshot(), Ok(SettingsSnapshot::defaults()));
+    let mut expected = SettingsSnapshot::defaults();
+    expected.revision = 2;
+    assert_eq!(harness.service.snapshot(), Ok(expected));
     let exported = harness
         .storage
         .with_transaction(
@@ -1971,4 +1985,368 @@ fn sessions_create_and_reset_share_maintenance_gate() {
             1
         );
     });
+}
+
+/// Provides picker paths and file I/O only inside one temporary test directory.
+struct DataTestPlatform {
+    app_data: PathBuf,
+    import_path: PathBuf,
+    export_path: PathBuf,
+}
+
+impl xwork_lib::platform::data::DataPlatform for DataTestPlatform {
+    /// Returns the isolated import fixture selected by the test.
+    fn pick_import<'a>(
+        &'a self,
+    ) -> xwork_lib::platform::data::DataPlatformFuture<
+        'a,
+        Result<Option<PathBuf>, xwork_lib::settings::DataManagementError>,
+    > {
+        let path = self.import_path.clone();
+        Box::pin(async move { Ok(Some(path)) })
+    }
+
+    /// Returns the isolated export destination selected by the test.
+    fn pick_export<'a>(
+        &'a self,
+        _suggested_name: &'a str,
+    ) -> xwork_lib::platform::data::DataPlatformFuture<
+        'a,
+        Result<Option<PathBuf>, xwork_lib::settings::DataManagementError>,
+    > {
+        let path = self.export_path.clone();
+        Box::pin(async move { Ok(Some(path)) })
+    }
+
+    /// Reads only the configured temporary fixture.
+    fn read_backup<'a>(
+        &'a self,
+        path: &'a Path,
+    ) -> xwork_lib::platform::data::DataPlatformFuture<
+        'a,
+        Result<Vec<u8>, xwork_lib::settings::DataManagementError>,
+    > {
+        let path = path.to_path_buf();
+        Box::pin(async move {
+            std::fs::read(path)
+                .map_err(|_| xwork_lib::settings::DataManagementError::FileReadFailed)
+        })
+    }
+
+    /// Writes only the configured temporary destination.
+    fn write_backup<'a>(
+        &'a self,
+        path: &'a Path,
+        bytes: &'a [u8],
+    ) -> xwork_lib::platform::data::DataPlatformFuture<
+        'a,
+        Result<(), xwork_lib::settings::DataManagementError>,
+    > {
+        let path = path.to_path_buf();
+        let bytes = bytes.to_vec();
+        Box::pin(async move {
+            std::fs::write(path, bytes)
+                .map_err(|_| xwork_lib::settings::DataManagementError::FileWriteFailed)
+        })
+    }
+
+    /// Returns the isolated application data directory.
+    fn data_location<'a>(
+        &'a self,
+    ) -> xwork_lib::platform::data::DataPlatformFuture<
+        'a,
+        Result<PathBuf, xwork_lib::settings::DataManagementError>,
+    > {
+        let path = self.app_data.clone();
+        Box::pin(async move { Ok(path) })
+    }
+
+    /// Accepts an opener request without touching the operating system.
+    fn open_data_location<'a>(
+        &'a self,
+    ) -> xwork_lib::platform::data::DataPlatformFuture<
+        'a,
+        Result<(), xwork_lib::settings::DataManagementError>,
+    > {
+        Box::pin(async { Ok(()) })
+    }
+
+    /// Accepts a clipboard request without touching the operating system.
+    fn copy_data_location<'a>(
+        &'a self,
+    ) -> xwork_lib::platform::data::DataPlatformFuture<
+        'a,
+        Result<(), xwork_lib::settings::DataManagementError>,
+    > {
+        Box::pin(async { Ok(()) })
+    }
+}
+
+/// Supplies deterministic request and package times.
+struct DataTestClock;
+impl xwork_lib::settings::DataClock for DataTestClock {
+    /// Keeps all requests inside their TTL.
+    fn monotonic(&self) -> Duration {
+        Duration::from_secs(1)
+    }
+    /// Uses one stable nonnegative package timestamp.
+    fn epoch_ms(&self) -> Result<i64, xwork_lib::settings::DataManagementError> {
+        Ok(1_700_000_000_000)
+    }
+}
+
+/// Supplies an empty reset runtime and records no external process work.
+struct EmptyDataRuntime;
+impl xwork_lib::app::data_runtime::DataRuntimeControl for EmptyDataRuntime {
+    /// Reports no runtime-owned data in this isolated service fixture.
+    fn impact<'a>(
+        &'a self,
+    ) -> xwork_lib::app::data_runtime::DataRuntimeFuture<
+        'a,
+        Result<xwork_lib::app::data_runtime::DataRuntimeImpact, ()>,
+    > {
+        Box::pin(async { Ok(Default::default()) })
+    }
+    /// Completes cleanup because the fixture owns no process or file resource.
+    fn shutdown_for_reset<'a>(
+        &'a self,
+    ) -> xwork_lib::app::data_runtime::DataRuntimeFuture<'a, Result<(), ()>> {
+        Box::pin(async { Ok(()) })
+    }
+    /// Records no side effect after the empty runtime resumes.
+    fn resume_after_reset(&self, _completion: xwork_lib::app::data_runtime::DataResetCompletion) {}
+}
+
+/// Discards aggregate events while keeping the post-commit boundary observable.
+struct EmptyDataEvents;
+impl xwork_lib::settings::DataEventSink for EmptyDataEvents {
+    /// Accepts one content-free invalidation event.
+    fn publish(
+        &self,
+        _event: xwork_lib::settings::DataChangedEventDto,
+    ) -> Result<(), xwork_lib::settings::DataEventError> {
+        Ok(())
+    }
+}
+
+/// Verifies a strict v1 package imports, exports, and resets only isolated owner data.
+#[test]
+fn phase_one_service_round_trips_and_resets_temp_storage() {
+    use tauri::Manager;
+    use xwork_lib::app::data_participants::{
+        CliProfilesDataParticipant, ProjectsDataParticipant, SettingsDataParticipant,
+    };
+    use xwork_lib::notifications::NotificationService;
+    use xwork_lib::settings::{
+        BackupDataV1, BackupEnvelope, BackupExportOutcomeDto, DataManagementService,
+        PrepareBackupImportOutcomeDto, data_participant::DataParticipants,
+    };
+
+    let directory = TempDir::new().expect("temporary root should exist");
+    let app_data = directory.path().join("app-data");
+    let project_root = directory.path().join("Project Ω");
+    std::fs::create_dir_all(&project_root).expect("temporary project should exist");
+    std::fs::write(project_root.join("source-canary.txt"), b"SOURCE_CANARY")
+        .expect("source canary should exist");
+    let import_path = directory.path().join("import.json");
+    let export_path = directory.path().join("export.json");
+    let defaults = SettingsBackupSection::defaults();
+    let package = BackupEnvelope {
+        format: "xwork-backup".to_owned(),
+        schema_version: 1,
+        created_at_ms: 1_700_000_000_000,
+        app_version: "0.0.0-test".to_owned(),
+        data: BackupDataV1 {
+            projects: vec![ProjectBackupRecordV1 {
+                id: "10000000-0000-4000-8000-000000000001".to_owned(),
+                display_name: "Imported".to_owned(),
+                root_path: project_root.to_string_lossy().into_owned(),
+                is_pinned: true,
+                added_at_ms: 1,
+                last_opened_at_ms: 2,
+            }],
+            cli_profiles: CliProfilesBackupV1 {
+                default_shell_id: "system".to_owned(),
+                custom_profiles: Vec::new(),
+            },
+            appearance: defaults.appearance,
+            sidebar: defaults.sidebar,
+            keyboard_shortcut_overrides: vec![shortcut_override("tabs.create", "KeyY")],
+        },
+    };
+    std::fs::write(
+        &import_path,
+        serde_json::to_vec(&package).expect("package should serialize"),
+    )
+    .expect("import fixture should write");
+
+    let mut app = xwork_lib::app::configure_with_projects_for_tests(
+        tauri::test::mock_builder(),
+        app_data.clone(),
+        // Keeps every project native operation inside this test fixture.
+        |_app| {
+            (
+                Arc::new(UnusedProjectPlatform),
+                Arc::new(UnusedProjectEvents),
+            )
+        },
+    )
+    .build(tauri::test::mock_context(tauri::test::noop_assets()))
+    .expect("mock application should build");
+    #[allow(deprecated)]
+    app.run_iteration(|_, _| {});
+
+    let participants = DataParticipants {
+        projects: app.state::<ProjectsDataParticipant>().inner().clone(),
+        settings: app.state::<SettingsDataParticipant>().inner().clone(),
+        cli_profiles: app.state::<CliProfilesDataParticipant>().inner().clone(),
+        keyboard_shortcuts: app
+            .state::<KeyboardShortcutsDataParticipant>()
+            .inner()
+            .clone(),
+        notifications: app.state::<NotificationService>().inner().clone(),
+    };
+    let service = DataManagementService::with_seams(
+        app.state::<Storage>().inner().clone(),
+        app.state::<DataMaintenanceGate>().inner().clone(),
+        participants,
+        Arc::new(EmptyDataRuntime),
+        Arc::new(DataTestPlatform {
+            app_data: app_data.clone(),
+            import_path,
+            export_path: export_path.clone(),
+        }),
+        Arc::new(DataTestClock),
+        Arc::new(EmptyDataEvents),
+    );
+    let settings_service = app.state::<SettingsService>().inner().clone();
+
+    tauri::async_runtime::block_on(async {
+        let PrepareBackupImportOutcomeDto::Ready { preview } = service
+            .prepare_import_backup()
+            .await
+            .expect("preview should succeed")
+        else {
+            panic!("fixture picker must select a file");
+        };
+        assert_eq!(preview.counts.projects, 1);
+        tauri::async_runtime::spawn_blocking(move || {
+            settings_service.update(&UpdateSettingsDto {
+                appearance: None,
+                sidebar: Some(SidebarSettingsPatchDto {
+                    width_px: None,
+                    collapsed: Some(true),
+                }),
+            })
+        })
+        .await
+        .expect("settings worker should complete")
+        .expect("same-count owner mutation should commit");
+        assert!(matches!(
+            service.confirm_import_backup(preview.request_id).await,
+            Err(xwork_lib::settings::DataManagementError::ImportPreviewChanged { .. })
+        ));
+        service
+            .confirm_import_backup(preview.request_id)
+            .await
+            .expect("import should commit");
+        assert_eq!(
+            app.state::<ProjectService>()
+                .list_projects(None)
+                .await
+                .expect("projects should list")
+                .len(),
+            1
+        );
+
+        let outcome = service
+            .export_backup()
+            .await
+            .expect("export should succeed");
+        assert!(matches!(
+            outcome,
+            BackupExportOutcomeDto::Exported {
+                schema_version: 1,
+                ..
+            }
+        ));
+        let bytes = std::fs::read(&export_path).expect("export should exist");
+        assert!(
+            !bytes
+                .windows(b"SOURCE_CANARY".len())
+                .any(|window| window == b"SOURCE_CANARY")
+        );
+        assert_eq!(
+            xwork_lib::settings::parse_backup(&bytes)
+                .expect("export should parse")
+                .data
+                .projects
+                .len(),
+            1
+        );
+
+        let impact = service
+            .prepare_reset_xwork()
+            .await
+            .expect("reset preview should succeed");
+        assert_eq!(impact.projects, 1);
+        assert_eq!(
+            service
+                .confirm_reset_xwork(impact.request_id, "reset")
+                .await,
+            Err(xwork_lib::settings::DataManagementError::InvalidResetConfirmation)
+        );
+        assert_eq!(
+            app.state::<ProjectService>()
+                .list_projects(None)
+                .await
+                .expect("projects should list")
+                .len(),
+            1
+        );
+        service
+            .confirm_reset_xwork(impact.request_id, "RESET")
+            .await
+            .expect("reset should commit");
+        assert_eq!(
+            service
+                .confirm_reset_xwork(impact.request_id, "RESET")
+                .await,
+            Err(xwork_lib::settings::DataManagementError::NoPendingOperation)
+        );
+        assert!(
+            app.state::<ProjectService>()
+                .list_projects(None)
+                .await
+                .expect("projects should list")
+                .is_empty()
+        );
+        assert_eq!(
+            std::fs::read(project_root.join("source-canary.txt")).expect("source should remain"),
+            b"SOURCE_CANARY"
+        );
+        assert!(app_data.join(Storage::DATABASE_FILE_NAME).is_file());
+    });
+}
+
+/// Rejects native project operations in the aggregate service fixture.
+struct UnusedProjectPlatform;
+impl ProjectPlatform for UnusedProjectPlatform {
+    /// Rejects folder selection because import uses owner maintenance records.
+    fn select_folder<'a>(&'a self) -> ProjectFuture<'a, Result<Option<PathBuf>, ProjectsError>> {
+        Box::pin(async { Err(ProjectsError::FolderPickerFailed) })
+    }
+    /// Rejects opening a real file manager from the automated test.
+    fn open_folder<'a>(&'a self, _path: &'a Path) -> ProjectFuture<'a, Result<(), ProjectsError>> {
+        Box::pin(async { Err(ProjectsError::OpenFolderFailed) })
+    }
+}
+
+/// Discards project invalidations in the aggregate service fixture.
+struct UnusedProjectEvents;
+impl ProjectEventSink for UnusedProjectEvents {
+    /// Accepts one committed owner invalidation.
+    fn publish(&self, _event: ProjectChangedEventDto) -> Result<(), ProjectsError> {
+        Ok(())
+    }
 }

@@ -6,6 +6,7 @@ use std::{
 use crate::notifications::{
     NOTIFICATIONS_CHANGED_EVENT, NotificationCollaborators, NotificationService,
 };
+use crate::platform::data::TauriDataPlatform;
 use crate::platform::notification::{NativeNotification, UnavailableNotification};
 use notification_dependencies::{AppNotificationDependencies, NotificationVisibility};
 use tauri::{App, AppHandle, Builder, Emitter, Manager, Runtime, WebviewWindow, WindowEvent};
@@ -24,7 +25,10 @@ use crate::{
     },
     search::SearchService,
     sessions::{SessionManager, commands as session_commands},
-    settings::{KeyboardShortcutsService, SettingsService},
+    settings::{
+        DataManagementService, KeyboardShortcutsService, SettingsService, SystemDataClock,
+        TauriDataEventSink, data_participant::DataParticipants,
+    },
     shared::DataMaintenanceGate,
     storage::Storage,
     terminal::{
@@ -47,7 +51,7 @@ use data_participants::{
     SettingsDataParticipant,
 };
 use data_runtime::{
-    AppTerminalDependencies, DeferredProjectRuntimeGuard, PaneContentRuntimeRouter,
+    AppDataRuntime, AppTerminalDependencies, DeferredProjectRuntimeGuard, PaneContentRuntimeRouter,
     SessionsAppRuntime, SessionsCliProfileLookup, SessionsProjectAccess, TauriSessionEventSink,
     TauriTerminalEventSink,
 };
@@ -400,7 +404,16 @@ fn app_invoke_handler<R: Runtime>() -> impl Fn(tauri::ipc::Invoke<R>) -> bool + 
         crate::notifications::commands::delete_notification,
         crate::notifications::commands::clear_read_notifications,
         crate::notifications::commands::open_notification,
-        crate::search::search_unified
+        crate::search::search_unified,
+        crate::settings::data::get_data_location,
+        crate::settings::data::open_data_location,
+        crate::settings::data::copy_data_location,
+        crate::settings::data::export_backup,
+        crate::settings::data::prepare_import_backup,
+        crate::settings::data::confirm_import_backup,
+        crate::settings::data::prepare_reset_xwork,
+        crate::settings::data::confirm_reset_xwork,
+        crate::settings::data::cancel_data_operation
     ]
 }
 
@@ -435,13 +448,14 @@ where
                     Some(path) => path,
                     None => app.path().app_data_dir()?,
                 };
+                let data_location = app_data_dir.clone();
                 let storage = setup_storage(app, app_data_dir)?;
                 let project_guard = setup_projects(app, storage.clone(), project_collaborators);
                 setup_settings(app, storage.clone())?;
                 setup_keyboard_shortcuts(app, storage.clone())?;
                 setup_cli_profiles(
                     app,
-                    storage,
+                    storage.clone(),
                     cli_profile_collaborators,
                     start_background_work,
                 );
@@ -478,6 +492,13 @@ where
                     ),
                 ))?;
                 app.manage(notifications.clone());
+                setup_data_management(
+                    app,
+                    storage.clone(),
+                    data_location,
+                    sessions.clone(),
+                    notifications.clone(),
+                );
                 let runtime = runtime_override.unwrap_or_else(
                     // Normal composition uses Sessions; focused lifecycle tests may inject a fake.
                     || {
@@ -524,6 +545,36 @@ where
                 }
             },
         )
+}
+
+/// Composes Data Management only after all Phase 1 owners are ready.
+fn setup_data_management<R: Runtime>(
+    app: &mut App<R>,
+    storage: Storage,
+    app_data_dir: PathBuf,
+    sessions: Arc<SessionManager>,
+    notifications: NotificationService,
+) {
+    let participants = DataParticipants {
+        projects: app.state::<ProjectsDataParticipant>().inner().clone(),
+        settings: app.state::<SettingsDataParticipant>().inner().clone(),
+        cli_profiles: app.state::<CliProfilesDataParticipant>().inner().clone(),
+        keyboard_shortcuts: app
+            .state::<KeyboardShortcutsDataParticipant>()
+            .inner()
+            .clone(),
+        notifications: notifications.clone(),
+    };
+    let service = DataManagementService::with_seams(
+        storage,
+        app.state::<DataMaintenanceGate>().inner().clone(),
+        participants,
+        Arc::new(AppDataRuntime::new(sessions, notifications)),
+        Arc::new(TauriDataPlatform::new(app.handle().clone(), app_data_dir)),
+        Arc::new(SystemDataClock::new()),
+        Arc::new(TauriDataEventSink(app.handle().clone())),
+    );
+    app.manage(service);
 }
 
 /// Constructs and manages Search from public owner-query adapters.

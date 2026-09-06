@@ -5,6 +5,7 @@ use crate::settings::{
 use rusqlite::Transaction;
 
 /// Adapts shortcuts to the coordinator without exposing owner persistence.
+#[derive(Clone)]
 pub struct KeyboardShortcutsDataParticipant {
     service: KeyboardShortcutsService,
 }
@@ -66,6 +67,7 @@ use crate::terminal::{
 ///
 /// The adapter calls only public owner methods, so the Data Management
 /// coordinator never reaches the Projects repository, path key, or schema.
+#[derive(Clone)]
 pub struct ProjectsDataParticipant {
     service: ProjectService,
 }
@@ -128,6 +130,7 @@ impl ProjectsDataParticipant {
 }
 
 /// Adapts Settings to the typed backup participant contract of `BE-012`.
+#[derive(Clone)]
 pub struct SettingsDataParticipant {
     service: SettingsService,
 }
@@ -179,6 +182,7 @@ impl SettingsDataParticipant {
 ///
 /// The adapter calls only public owner methods, so the Data Management
 /// coordinator never reaches the CLI profile tables, cache, or credentials.
+#[derive(Clone)]
 pub struct CliProfilesDataParticipant {
     service: CliProfilesService,
 }
@@ -228,5 +232,10 @@ impl CliProfilesDataParticipant {
     /// Retries queued credential deletion after the coordinator released its permit.
     pub async fn retry_credential_cleanup(&self) -> Result<(), CliProfilesError> {
         self.service.retry_credential_cleanup().await
+    }
+
+    /// Counts queued credential deletion without reading any secret value.
+    pub async fn pending_credential_cleanup_count(&self) -> Result<u32, CliProfilesError> {
+        self.service.pending_credential_cleanup_count().await
     }
 }

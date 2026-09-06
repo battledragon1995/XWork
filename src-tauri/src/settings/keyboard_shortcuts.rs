@@ -395,7 +395,8 @@ fn validate_assignment(id: &str, chord: &ShortcutChordDto) -> Result<(), Keyboar
 }
 
 /// Owns one persisted non-default override for the maintenance coordinator.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ShortcutOverride {
     pub action_id: String,
     pub chord: ShortcutChordDto,
@@ -521,6 +522,7 @@ struct KeyboardShortcutsServiceInner {
     gate: DataMaintenanceGate,
     write_gate: Mutex<()>,
     cache: RwLock<KeyboardShortcutsCommittedProjection>,
+    revisions: tokio::sync::watch::Sender<u64>,
     shutting_down: AtomicBool,
 }
 
@@ -531,12 +533,14 @@ impl KeyboardShortcutsService {
         gate: DataMaintenanceGate,
     ) -> Result<Self, KeyboardShortcutsError> {
         let cache = storage.with_connection(read_projection)?;
+        let (revisions, _) = tokio::sync::watch::channel(0);
         Ok(Self {
             inner: Arc::new(KeyboardShortcutsServiceInner {
                 storage,
                 gate,
                 write_gate: Mutex::new(()),
                 cache: RwLock::new(cache),
+                revisions,
                 shutting_down: AtomicBool::new(false),
             }),
         })
@@ -545,6 +549,10 @@ impl KeyboardShortcutsService {
     pub fn snapshot(&self) -> Result<KeyboardShortcutsDto, KeyboardShortcutsError> {
         self.ensure_available()?;
         Ok(self.clone_cache()?.snapshot)
+    }
+    /// Subscribes internal consumers to committed shortcut invalidations.
+    pub fn subscribe(&self) -> tokio::sync::watch::Receiver<u64> {
+        self.inner.revisions.subscribe()
     }
     /// Rejects new work after shutdown begins.
     pub fn begin_shutdown(&self) {
@@ -780,6 +788,8 @@ impl KeyboardShortcutsService {
             |poison| poison.into_inner(),
         );
         *cache = projection;
+        let next = self.inner.revisions.borrow().wrapping_add(1);
+        let _ = self.inner.revisions.send(next);
     }
 }
 
