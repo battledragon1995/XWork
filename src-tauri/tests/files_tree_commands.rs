@@ -148,7 +148,11 @@ impl TestApplication {
             .as_str()
             .expect("the project id should be text")
             .to_owned();
-        (id, root)
+        // Registration expands Windows short paths and removes verbatim prefixes.
+        let registered_root = response["project"]["rootPath"]
+            .as_str()
+            .expect("the registered root should be text");
+        (id, PathBuf::from(registered_root))
     }
 }
 
