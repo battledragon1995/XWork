@@ -165,7 +165,8 @@ export function SourceView(props: SourceViewProps): React.JSX.Element {
   ].filter((note): note is string => note !== null);
 
   return (
-    <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-[var(--terminal-background)] text-[var(--terminal-foreground)]">
+    // FilePane's content wrapper is a block: explicit height keeps the absolute code host from collapsing.
+    <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-[var(--terminal-background)] text-[var(--terminal-foreground)]">
       <div className="relative min-h-0 min-w-0 flex-1">
         {/* A named section maps to an ARIA region, so the code surface has an accessible name. */}
         <section

@@ -106,6 +106,12 @@ afterEach(() => {
 });
 
 describe("source surface", () => {
+  /** FilePane uses a block parent, so flex growth alone leaves the absolute code host at zero height. */
+  it("fills the pane height even inside a non-flex content container", () => {
+    const { container } = renderSource();
+    expect(container.firstElementChild).toHaveClass("h-full");
+  });
+
   /** The code region is reachable by its accessible name. */
   it("labels the code region with the file name", () => {
     renderSource({ name: "pty.rs" });
