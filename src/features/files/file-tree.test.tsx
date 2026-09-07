@@ -31,14 +31,14 @@ function props() {
     expanded: new Set(["src"]),
     matches: null,
     selectedPath: null,
-    descriptionId: "limitation",
+    openingPath: null,
     disabled: false,
     onSelect: vi.fn(),
     onToggle: vi.fn(),
     onLoadMore: vi.fn(),
     onRetry: vi.fn(),
     onMenu: vi.fn(),
-    onAnnounce: vi.fn(),
+    onActivate: vi.fn(),
   };
 }
 // Arrow navigation changes focus separately from selection and Right enters loaded children.
@@ -125,14 +125,50 @@ it("repairs focus after collapse and refresh removal", () => {
   view.rerender(<FileTree {...options} branches={new Map()} expanded={new Set()} />);
   expect(screen.getByRole("tree")).toHaveFocus();
 });
-// Context menus share one handler and leaves expose the viewing limitation to assistive technology.
+// Context menus share one handler and never activate the entry they were opened on.
 it("offers right-click and Shift+F10 menus without leaf expansion", () => {
   const options = props();
   render(<FileTree {...options} />);
   const row = screen.getByRole("treeitem", { name: "z.ts" });
-  expect(row).toHaveAttribute("aria-describedby", "limitation");
   fireEvent.contextMenu(row);
   fireEvent.keyDown(row, { key: "F10", shiftKey: true });
   expect(options.onMenu).toHaveBeenCalledTimes(2);
   expect(options.onToggle).not.toHaveBeenCalled();
+  expect(options.onActivate).not.toHaveBeenCalled();
+});
+// A file opens from a click or Enter; Space, directories and links never open anything.
+it("separates file activation from selection", () => {
+  const options = props();
+  render(<FileTree {...options} />);
+  const file = screen.getByRole("treeitem", { name: "z.ts" });
+
+  fireEvent.click(file, { detail: 1 });
+  expect(options.onActivate).toHaveBeenCalledExactlyOnceWith(entry("z.ts"));
+  // The second click of a double-click carries the same intent and must not reopen.
+  fireEvent.click(file, { detail: 2 });
+  fireEvent.keyDown(file, { key: "Enter" });
+  expect(options.onActivate).toHaveBeenCalledTimes(2);
+
+  fireEvent.keyDown(file, { key: " " });
+  expect(options.onSelect).toHaveBeenLastCalledWith("z.ts");
+  expect(options.onActivate).toHaveBeenCalledTimes(2);
+
+  const directory = screen.getByRole("treeitem", { name: "src" });
+  fireEvent.click(directory, { detail: 1 });
+  fireEvent.keyDown(directory, { key: "Enter" });
+  const link = screen.getByRole("treeitem", { name: "link" });
+  fireEvent.click(link, { detail: 1 });
+  fireEvent.keyDown(link, { key: "Enter" });
+  expect(options.onActivate).toHaveBeenCalledTimes(2);
+});
+// A locked tree reports the entry being opened and refuses every further activation.
+it("locks activation while one file is opening", () => {
+  const options = props();
+  render(<FileTree {...options} openingPath="z.ts" disabled />);
+  const file = screen.getByRole("treeitem", { name: "z.ts" });
+
+  expect(file).toHaveAttribute("aria-busy", "true");
+  fireEvent.click(file, { detail: 1 });
+  fireEvent.keyDown(file, { key: "Enter" });
+  expect(options.onActivate).not.toHaveBeenCalled();
 });

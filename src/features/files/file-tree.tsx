@@ -10,14 +10,16 @@ export function FileTree(props: {
   expanded: Set<string>;
   matches: FileTreeEntryDto[] | null;
   selectedPath: string | null;
-  descriptionId: string;
+  /** Entry currently being opened, which locks activation without unmounting rows. */
+  openingPath: string | null;
   disabled: boolean;
   onSelect(path: string): void;
   onToggle(path: string): void;
   onLoadMore(path: string): void;
   onRetry(path: string): void;
   onMenu(entry: FileTreeEntryDto): void;
-  onAnnounce(): void;
+  /** Open one file entry; selection alone never raises this. */
+  onActivate(entry: FileTreeEntryDto): void;
 }) {
   const container = useRef<HTMLDivElement>(null);
   const groupPrefix = useId();
@@ -74,9 +76,10 @@ export function FileTree(props: {
     else if (event.key === "Home") focus(rows[0]?.entry.relativePath);
     else if (event.key === "End") focus(rows.at(-1)?.entry.relativePath);
     else if (event.key === " " || event.key === "Enter") {
+      // Space is selection only, so keyboard navigation never creates a tab by accident.
       props.onSelect(path);
       if (event.key === "Enter" && entry.kind === "directory" && !search) props.onToggle(path);
-      else if (event.key === "Enter" && entry.kind === "file") props.onAnnounce();
+      else if (event.key === "Enter" && entry.kind === "file") props.onActivate(entry);
     } else if (!search && event.key === "ArrowRight" && entry.kind === "directory") {
       if (!props.expanded.has(path)) props.onToggle(path);
       else if (rows[index + 1]?.level > rows[index].level)
@@ -104,7 +107,7 @@ export function FileTree(props: {
             aria-selected={props.selectedPath === path}
             aria-expanded={expanded}
             aria-owns={expanded ? `${groupPrefix}-${encodeURIComponent(path)}` : undefined}
-            aria-describedby={entry.kind === "file" ? props.descriptionId : undefined}
+            aria-busy={props.openingPath === path || undefined}
             aria-disabled={props.disabled}
             data-file-path={path}
             tabIndex={!props.disabled && tabPath === path ? 0 : -1}
@@ -126,18 +129,15 @@ export function FileTree(props: {
               /** Navigate this row within the local visible projection. */ (event) =>
                 keyDown(event, entry)
             }
-            // A click toggles only directories; double-click never opens a file.
+            // Only the first click of a gesture acts: the second click of a double-click
+            // carries the same intent and must not open a file twice.
             onClick={(event) => {
               if (props.disabled || event.detail > 1) return;
               props.onSelect(path);
               focus(path);
               if (expanded !== undefined) props.onToggle(path);
+              else if (entry.kind === "file") props.onActivate(entry);
             }}
-            onDoubleClick={
-              /** Explain stage15 file activation without creating content. */ () => {
-                if (!props.disabled && entry.kind === "file") props.onAnnounce();
-              }
-            }
             onContextMenu={
               /** Select the pointer target before opening the shared menu. */ (event) => {
                 event.preventDefault();
@@ -181,8 +181,12 @@ export function FileTree(props: {
           size="sm"
           disabled={props.disabled}
           onClick={
-            /** Offer the same menu through a Tab-accessible control. */ () =>
-              props.onMenu(selected)
+            /** Offer the same menu without letting the click reach a row underneath. */ (
+              event,
+            ) => {
+              event.stopPropagation();
+              props.onMenu(selected);
+            }
           }
         >
           Actions for {selected.name}

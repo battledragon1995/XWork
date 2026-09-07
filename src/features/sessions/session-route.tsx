@@ -9,10 +9,15 @@ import type { ShortcutPlatform } from "@/lib/utils/keyboard-shortcuts";
 import { DeleteSessionDialog } from "./delete-session-dialog";
 import { RenameSessionDialog } from "./rename-session-dialog";
 import { SessionActionsMenu } from "./session-actions-menu";
+import type { SessionFilePlacement, SessionFileTarget } from "./session-layout";
 import { SessionToolPicker } from "./session-tool-picker";
 import { SessionWorkspace } from "./session-workspace";
 import { useSessionDetail } from "./use-session-detail";
 import { useSessionLifecycle } from "./use-session-lifecycle";
+import { useToolCatalog } from "./use-tool-catalog";
+import { useWorkspaceMutations } from "./use-workspace-mutations";
+
+export type { SessionFilePlacement, SessionFileTarget } from "./session-layout";
 
 /** Copy for a session that could not be opened for any reason other than being gone. */
 export const SESSION_OPEN_FAILED_MESSAGE = "XWork couldn't open this session.";
@@ -42,11 +47,35 @@ export interface SessionFileExplorerSlotProps {
   projectId: string;
   isVisible: boolean;
   regionId: string;
+  /** Which openings the current session snapshot can satisfy right now. */
+  placements: Record<SessionFilePlacement, boolean>;
   /** Close through the same toggle owner used by the tab strip. */
   onClose(): void;
+  /** Prepare one empty pane, or refuse with `null` when Sessions cannot satisfy it. */
+  prepareFileTarget(placement: SessionFilePlacement): Promise<SessionFileTarget | null>;
+  /** Re-read the session snapshot once a file has been attached by the backend. */
+  onFileAttached(): void;
 }
 /** Compose Files at the application boundary without a feature dependency. */
 export type SessionFileExplorerRenderer = (props: SessionFileExplorerSlotProps) => React.ReactNode;
+
+/** Region of a pane the file renderer is asked to fill. */
+export type SessionPaneRegion = "header" | "body";
+
+/** Minimal context Sessions gives file content, with no Files type in the signature. */
+export interface SessionFilePaneSlotProps {
+  region: SessionPaneRegion;
+  sessionId: string;
+  tabId: string;
+  paneId: string;
+  content: Extract<PaneContentDto, { kind: "file" }>;
+  isActive: boolean;
+  isVisible: boolean;
+  onActivate(): void;
+  onRefreshSession(): void;
+}
+/** Optional app composition surface for file content. */
+export type SessionFilePaneRenderer = (props: SessionFilePaneSlotProps) => React.ReactNode;
 
 /** Render the non-interactive route shape while the first read is pending. */
 function SessionRouteSkeleton() {
@@ -137,6 +166,7 @@ export function SessionRoute(props: {
   shortcutPlatform?: ShortcutPlatform | null;
   renderTerminal?: SessionTerminalRenderer;
   renderFileExplorer?: SessionFileExplorerRenderer;
+  renderFilePane?: SessionFilePaneRenderer;
 }) {
   const { sessionId = "" } = useParams();
   const navigate = useNavigate();
@@ -369,65 +399,150 @@ export function SessionRoute(props: {
 
   return (
     <div ref={workspaceRef} className="@container/session h-full min-h-0 overflow-hidden">
-      <div className="flex h-full min-h-0 flex-col @min-[600px]/session:flex-row">
-        <div
-          hidden={!explorerVisible}
-          className="max-h-[40%] min-h-0 shrink-0 overflow-auto border-b border-hairline @min-[600px]/session:max-h-full @min-[600px]/session:w-[240px] @min-[600px]/session:border-r @min-[600px]/session:border-b-0"
-        >
-          {summary.id === sessionId &&
-            props.renderFileExplorer?.({
-              sessionId,
-              projectId: summary.projectId,
-              isVisible: explorerVisible,
-              regionId: explorerRegionId,
-              // Restore only the still-mounted, enabled toggle after an explicit panel close.
-              onClose: () => {
-                setExplorerSession(null);
-                if (explorerToggle.current?.isConnected && !explorerToggle.current.disabled)
-                  explorerToggle.current.focus();
-              },
-            })}
-        </div>
-        <div className="min-h-0 min-w-0 flex-1 overflow-hidden">
-          {detail.detail.tabs.length > 0 ? (
-            <SessionWorkspace
-              shortcutSnapshot={props.shortcutSnapshot}
-              shortcutPlatform={props.shortcutPlatform}
-              detail={detail.detail}
-              rootPath={detail.project?.rootPath ?? null}
-              onApplyDetail={detail.applyDetail}
-              onRefresh={detail.refresh}
-              onRenameSession={() => openRename("menu")}
-              onDeleteSession={() => void openDelete()}
-              renderTerminal={props.renderTerminal}
-              fileExplorerToggle={explorerControl}
-            />
-          ) : (
-            <div className="@container h-full overflow-y-auto overflow-x-hidden px-8 py-7">
-              <div className="grid min-w-0 gap-6">
-                {explorerControl}
-                <SessionHeader
-                  name={summary.name}
-                  rootPath={detail.project?.rootPath ?? null}
-                  isBusy={isBusy}
-                  renameRef={renameButtonRef}
-                  menuRef={menuButtonRef}
-                  onRenameFromButton={() => openRename("rename")}
-                  onRenameFromMenu={() => openRename("menu")}
-                  onDelete={() => void openDelete()}
-                />
-
-                <SessionToolPicker
-                  sessionId={summary.id}
-                  onSelected={detail.applyDetail}
-                  onRefresh={detail.refresh}
-                />
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
+      <SessionRouteReady
+        // Session identity retires the mutation owner instead of reusing it for another route.
+        key={summary.id}
+        sessionId={sessionId}
+        detail={detail.detail}
+        rootPath={detail.project?.rootPath ?? null}
+        shortcutSnapshot={props.shortcutSnapshot}
+        shortcutPlatform={props.shortcutPlatform}
+        isLifecycleBusy={isBusy}
+        explorerControl={explorerControl}
+        explorerVisible={explorerVisible}
+        explorerRegionId={explorerRegionId}
+        renameRef={renameButtonRef}
+        menuRef={menuButtonRef}
+        onApplyDetail={detail.applyDetail}
+        onRefresh={detail.refresh}
+        onCloseExplorer={() => {
+          setExplorerSession(null);
+          // Restore only the still-mounted, enabled toggle after an explicit panel close.
+          if (explorerToggle.current?.isConnected && !explorerToggle.current.disabled)
+            explorerToggle.current.focus();
+        }}
+        onRenameFromButton={() => openRename("rename")}
+        onRenameFromMenu={() => openRename("menu")}
+        onDelete={() => void openDelete()}
+        renderTerminal={props.renderTerminal}
+        renderFileExplorer={props.renderFileExplorer}
+        renderFilePane={props.renderFilePane}
+      />
       {dialogs}
+    </div>
+  );
+}
+
+/**
+ * Own the catalog subscription and the one mutation slot of a ready session.
+ *
+ * File Explorer sits outside `SessionWorkspace` but has to prepare tabs and panes through the
+ * same slot the tab strip uses, and a session with no tab at all must still be able to create
+ * its first one. Both branches therefore render inside this one owner, which stays mounted
+ * while a session gains or loses its last tab.
+ */
+function SessionRouteReady(props: {
+  sessionId: string;
+  detail: SessionDetailDto;
+  rootPath: string | null;
+  shortcutSnapshot?: KeyboardShortcutsDto | null;
+  shortcutPlatform?: ShortcutPlatform | null;
+  isLifecycleBusy: boolean;
+  explorerControl: React.ReactNode;
+  explorerVisible: boolean;
+  explorerRegionId: string;
+  renameRef: React.Ref<HTMLButtonElement>;
+  menuRef: React.Ref<HTMLButtonElement>;
+  onApplyDetail(detail: SessionDetailDto): void;
+  onRefresh(): void;
+  onCloseExplorer(): void;
+  onRenameFromButton(): void;
+  onRenameFromMenu(): void;
+  onDelete(): void;
+  renderTerminal?: SessionTerminalRenderer;
+  renderFileExplorer?: SessionFileExplorerRenderer;
+  renderFilePane?: SessionFilePaneRenderer;
+}) {
+  const catalog = useToolCatalog();
+  const mutations = useWorkspaceMutations({
+    detail: props.detail,
+    onApplyDetail: props.onApplyDetail,
+    onRefresh: props.onRefresh,
+    onProfileUnavailable: catalog.markUnavailable,
+    onCatalogRefresh: catalog.refresh,
+    onProfileCheck: (profileId) => void catalog.check(profileId),
+  });
+  const summary = props.detail.summary;
+
+  return (
+    <div className="flex h-full min-h-0 flex-col @min-[600px]/session:flex-row">
+      <div
+        hidden={!props.explorerVisible}
+        className="max-h-[40%] min-h-0 shrink-0 overflow-auto border-b border-hairline @min-[600px]/session:max-h-full @min-[600px]/session:w-[240px] @min-[600px]/session:border-r @min-[600px]/session:border-b-0"
+      >
+        {summary.id === props.sessionId &&
+          props.renderFileExplorer?.({
+            sessionId: props.sessionId,
+            projectId: summary.projectId,
+            isVisible: props.explorerVisible,
+            regionId: props.explorerRegionId,
+            placements: mutations.filePlacements,
+            onClose: props.onCloseExplorer,
+            prepareFileTarget: mutations.prepareFileTarget,
+            // Only the session owner can read the snapshot the attachment produced.
+            onFileAttached: props.onRefresh,
+          })}
+      </div>
+      <div className="min-h-0 min-w-0 flex-1 overflow-hidden">
+        {props.detail.tabs.length > 0 ? (
+          <SessionWorkspace
+            shortcutSnapshot={props.shortcutSnapshot}
+            shortcutPlatform={props.shortcutPlatform}
+            detail={props.detail}
+            rootPath={props.rootPath}
+            catalog={catalog}
+            mutations={mutations}
+            onApplyDetail={props.onApplyDetail}
+            onRefresh={props.onRefresh}
+            onRenameSession={props.onRenameFromMenu}
+            onDeleteSession={props.onDelete}
+            renderTerminal={props.renderTerminal}
+            renderFilePane={props.renderFilePane}
+            fileExplorerToggle={props.explorerControl}
+          />
+        ) : (
+          <div className="@container h-full overflow-y-auto overflow-x-hidden px-8 py-7">
+            <div className="grid min-w-0 gap-6">
+              {props.explorerControl}
+              <SessionHeader
+                name={summary.name}
+                rootPath={props.rootPath}
+                isBusy={props.isLifecycleBusy}
+                renameRef={props.renameRef}
+                menuRef={props.menuRef}
+                onRenameFromButton={props.onRenameFromButton}
+                onRenameFromMenu={props.onRenameFromMenu}
+                onDelete={props.onDelete}
+              />
+
+              {/* The empty branch keeps reporting preparation failures, which is the only
+                  place a first-tab opening can fail before the workspace exists. */}
+              {mutations.failure !== null && (
+                <p role="alert" className="text-[13px] text-error">
+                  {mutations.failure.message}
+                </p>
+              )}
+
+              <SessionToolPicker
+                sessionId={summary.id}
+                catalog={catalog}
+                onSelected={props.onApplyDetail}
+                onRefresh={props.onRefresh}
+              />
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

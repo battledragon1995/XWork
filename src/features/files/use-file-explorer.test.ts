@@ -5,7 +5,15 @@ import type { ProjectChangedEventDto } from "@/bindings/projects/projects";
 import * as files from "@/lib/ipc/files";
 import { IpcCallError } from "@/lib/ipc/ipc-error";
 import * as projects from "@/lib/ipc/projects";
-import { deferred, entry, explorerProps, page, project, searchResult } from "./files-test-fixture";
+import {
+  deferred,
+  entry,
+  explorerProps,
+  openResult,
+  page,
+  project,
+  searchResult,
+} from "./files-test-fixture";
 import { useFileExplorer } from "./use-file-explorer";
 
 // All filesystem, project-event, and native action boundaries are replaced with pure spies.
@@ -464,4 +472,204 @@ it("removes stale search results before recovering a failed path action", async 
   await act(async () => recovery.resolve(searchResult("match", [])));
   expect(hook.result.current.state.search?.matches).toEqual([]);
   expect(files.searchFileTree).toHaveBeenCalledTimes(2);
+});
+
+// One accepted activation prepares exactly one target and attaches exactly once.
+it("opens one file through the prepared target", async () => {
+  const prepareTarget = vi.fn(async () => ({ tabId: "tab-1", paneId: "pane-1" }));
+  const onFileOpened = vi.fn();
+  vi.mocked(files.openFileInPane).mockResolvedValue(openResult());
+  const hook = await open(explorerProps({ prepareTarget, onFileOpened }));
+
+  await act(async () => hook.result.current.owner.open(entry("readme.md"), "newTab"));
+
+  expect(prepareTarget).toHaveBeenCalledExactlyOnceWith("newTab");
+  expect(files.openFileInPane).toHaveBeenCalledExactlyOnceWith({
+    sessionId: explorerProps().sessionId,
+    tabId: "tab-1",
+    paneId: "pane-1",
+    relativePath: "readme.md",
+  });
+  expect(onFileOpened).toHaveBeenCalledOnce();
+  expect(hook.result.current.state.openFeedback).toBe("Opened readme.md in a new tab.");
+  expect(hook.result.current.state.openingPath).toBeNull();
+});
+
+// A warning is reported without turning a completed attachment into a failure.
+it("reports the recent-files warning as a successful opening", async () => {
+  vi.mocked(files.openFileInPane).mockResolvedValue(openResult({}, ["recentFileNotRecorded"]));
+  const hook = await open(
+    explorerProps({ prepareTarget: async () => ({ tabId: "tab-1", paneId: "pane-1" }) }),
+  );
+
+  await act(async () => hook.result.current.owner.open(entry("readme.md"), "newTab"));
+
+  expect(hook.result.current.state.openFeedback).toBe(
+    "Opened readme.md. Recent files couldn't be updated.",
+  );
+  expect(hook.result.current.state.openError).toBe("");
+});
+
+// Two rapid activations of the same entry produce exactly one preparation and one attach.
+it("drops a second activation while one opening is in flight", async () => {
+  const pending = deferred<{ tabId: string; paneId: string } | null>();
+  const prepareTarget = vi.fn(() => pending.promise);
+  vi.mocked(files.openFileInPane).mockResolvedValue(openResult());
+  const hook = await open(explorerProps({ prepareTarget }));
+
+  let first!: Promise<void>;
+  await act(async () => {
+    first = hook.result.current.owner.open(entry("readme.md"), "newTab");
+    await hook.result.current.owner.open(entry("readme.md"), "newTab");
+    // A different entry is refused by the same guard while the first is unresolved.
+    await hook.result.current.owner.open(entry("src/other.ts"), "splitRight");
+  });
+  expect(prepareTarget).toHaveBeenCalledOnce();
+
+  await act(async () => {
+    pending.resolve({ tabId: "tab-1", paneId: "pane-1" });
+    await first;
+  });
+  expect(files.openFileInPane).toHaveBeenCalledOnce();
+});
+
+// A refused preparation stops silently: the host already explained its own refusal.
+it("stops without a message when the host refuses", async () => {
+  const hook = await open(explorerProps({ prepareTarget: async () => null }));
+
+  await act(async () => hook.result.current.owner.open(entry("readme.md"), "emptyPane"));
+
+  expect(files.openFileInPane).not.toHaveBeenCalled();
+  expect(hook.result.current.state.openError).toBe("");
+  expect(hook.result.current.state.openFeedback).toBe("");
+});
+
+// A disabled placement never reaches the host, so no tab or split can be created.
+it("refuses a placement the host reports as unavailable", async () => {
+  const prepareTarget = vi.fn(async () => ({ tabId: "tab-1", paneId: "pane-1" }));
+  const hook = await open(
+    explorerProps({
+      prepareTarget,
+      placements: { newTab: true, emptyPane: false, splitRight: false, splitDown: false },
+    }),
+  );
+
+  await act(async () => hook.result.current.owner.open(entry("readme.md"), "splitDown"));
+
+  expect(prepareTarget).not.toHaveBeenCalled();
+});
+
+// Only file entries open; directories, symbolic links and other kinds never activate.
+it.each(["directory", "symbolicLink", "other"] as const)("never opens a %s entry", async (kind) => {
+  const prepareTarget = vi.fn(async () => ({ tabId: "tab-1", paneId: "pane-1" }));
+  const hook = await open(explorerProps({ prepareTarget }));
+
+  await act(async () => hook.result.current.owner.open(entry("src", kind), "newTab"));
+
+  expect(prepareTarget).not.toHaveBeenCalled();
+});
+
+// Each documented command failure uses exactly the recovery FE-017 assigns to it.
+it.each([
+  {
+    failure: { code: "paneNotEmpty", pane_id: "pane-1" },
+    message: "This pane already contains something.",
+    refreshesSession: true,
+    canRetry: false,
+  },
+  {
+    failure: { code: "sessionAttachFailed" },
+    message: "Could not open the file in this pane.",
+    refreshesSession: true,
+    canRetry: false,
+  },
+  {
+    failure: { code: "notRegularFile", relative_path: "readme.md" },
+    message: "This entry is not a regular file.",
+    refreshesSession: false,
+    canRetry: false,
+  },
+  {
+    failure: { code: "fileMemoryLimitReached" },
+    message: "Close another file and try again.",
+    refreshesSession: false,
+    canRetry: false,
+  },
+  {
+    failure: { code: "fileReadFailed" },
+    message: "Could not read this file.",
+    refreshesSession: false,
+    canRetry: true,
+  },
+])("recovers from $failure.code", async ({ failure, message, refreshesSession, canRetry }) => {
+  const onFileOpened = vi.fn();
+  vi.mocked(files.openFileInPane).mockRejectedValue(new IpcCallError("open_file_in_pane", failure));
+  const hook = await open(
+    explorerProps({
+      onFileOpened,
+      prepareTarget: async () => ({ tabId: "tab-1", paneId: "pane-1" }),
+    }),
+  );
+
+  await act(async () => hook.result.current.owner.open(entry("readme.md"), "newTab"));
+
+  expect(hook.result.current.state.openError).toBe(message);
+  expect(hook.result.current.state.canRetryOpen).toBe(canRetry);
+  expect(onFileOpened).toHaveBeenCalledTimes(refreshesSession ? 1 : 0);
+  // The prepared pane is never closed as a rollback; only the host owns that decision.
+  expect(hook.result.current.state.blocked).toBe(false);
+});
+
+// A vanished entry refreshes the tree instead of retrying the same relative path.
+it("refreshes the tree after entryNotFound", async () => {
+  vi.mocked(files.openFileInPane).mockRejectedValue(
+    new IpcCallError("open_file_in_pane", { code: "entryNotFound", relative_path: "readme.md" }),
+  );
+  const hook = await open(
+    explorerProps({ prepareTarget: async () => ({ tabId: "tab-1", paneId: "pane-1" }) }),
+  );
+  const listsBefore = vi.mocked(files.listFileChildren).mock.calls.length;
+
+  await act(async () => hook.result.current.owner.open(entry("readme.md"), "newTab"));
+
+  expect(hook.result.current.state.openError).toBe("This entry is no longer available.");
+  await waitFor(() =>
+    expect(vi.mocked(files.listFileChildren).mock.calls.length).toBeGreaterThan(listsBefore),
+  );
+});
+
+// A project barrier reuses the existing Explorer recovery instead of an opening-only message.
+it("routes project failures into existing recovery", async () => {
+  vi.mocked(files.openFileInPane).mockRejectedValue(
+    new IpcCallError("open_file_in_pane", { code: "projectUnavailable", project_id: project.id }),
+  );
+  const hook = await open(
+    explorerProps({ prepareTarget: async () => ({ tabId: "tab-1", paneId: "pane-1" }) }),
+  );
+
+  await act(async () => hook.result.current.owner.open(entry("readme.md"), "newTab"));
+
+  expect(hook.result.current.state.blocked).toBe(true);
+  expect(hook.result.current.state.error).toBe("Project folder is unavailable.");
+});
+
+// A result that belongs to a retired intent cannot attach, announce, or refresh a session.
+it("suppresses a result whose session changed while it was pending", async () => {
+  const pending = deferred<{ tabId: string; paneId: string } | null>();
+  const onFileOpened = vi.fn();
+  const props = explorerProps({ prepareTarget: () => pending.promise, onFileOpened });
+  const hook = await open(props);
+
+  let opening!: Promise<void>;
+  act(() => {
+    opening = hook.result.current.owner.open(entry("readme.md"), "newTab");
+  });
+  hook.rerender({ ...props, sessionId: "another-session" });
+  await act(async () => {
+    pending.resolve({ tabId: "tab-1", paneId: "pane-1" });
+    await opening;
+  });
+
+  expect(files.openFileInPane).not.toHaveBeenCalled();
+  expect(onFileOpened).not.toHaveBeenCalled();
 });

@@ -7,7 +7,7 @@ import type { ShortcutPlatform } from "@/lib/utils/keyboard-shortcuts";
 import { PaneSplitHandle, ratioFromGroupLayout } from "./pane-split-handle";
 import { countPanes, paneIndex, ratioToPercent } from "./session-layout";
 import { SessionPane } from "./session-pane";
-import type { SessionTerminalRenderer } from "./session-route";
+import type { SessionFilePaneRenderer, SessionTerminalRenderer } from "./session-route";
 import type { ToolCatalogData } from "./use-tool-catalog";
 
 /** Callbacks shared by every recursive pane node. */
@@ -29,6 +29,7 @@ export interface PaneLayoutProps {
   onClosePane(paneId: string): void;
   onSelectProfile(paneId: string, profile: CliProfileDto): void;
   renderTerminal?: SessionTerminalRenderer;
+  renderFilePane?: SessionFilePaneRenderer;
   onRefreshSession?(): void;
   onCheckProfile?(profileId: string): void;
 }
@@ -137,6 +138,7 @@ function LayoutNode(props: PaneLayoutProps & { node: PaneLayoutNodeDto }) {
       onSelectProfile={(profile) => props.onSelectProfile(node.pane.id, profile)}
       sessionId={props.sessionId}
       renderTerminal={props.renderTerminal}
+      renderFilePane={props.renderFilePane}
       onRefreshSession={props.onRefreshSession}
       onCheckProfile={props.onCheckProfile}
     />

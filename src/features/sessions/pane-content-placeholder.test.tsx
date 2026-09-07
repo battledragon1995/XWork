@@ -33,6 +33,8 @@ describe("PaneContentPlaceholder", () => {
         profiles={[]}
       />,
     );
-    expect(screen.getByText("File panes arrive with FE-017.")).toBeInTheDocument();
+    // The file branch no longer names a feature: it only reports unavailable content.
+    expect(screen.getByText("This content is not available here.")).toBeInTheDocument();
+    expect(screen.queryByText(/FE-017/)).not.toBeInTheDocument();
   });
 });

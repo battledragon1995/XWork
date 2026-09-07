@@ -109,7 +109,7 @@ export function PaneContentPicker(props: {
           <section className="grid content-start gap-2">
             <h3 className="text-[11px] font-medium tracking-[1.2px] text-muted uppercase">File</h3>
             <div className="rounded-lg border border-dashed border-hairline px-4 py-5 text-[13px] text-muted-soft">
-              Files arrive with FE-016.
+              Open a file from the File Explorer.
             </div>
           </section>
         </div>

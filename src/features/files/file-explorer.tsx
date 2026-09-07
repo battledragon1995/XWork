@@ -10,7 +10,13 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { truncationCopy, VIEWING_LIMITATION, warningCopy } from "./file-error-copy";
+import {
+  openingFileCopy,
+  PANE_LIMIT_EXPLANATION,
+  PLACEMENT_LABELS,
+  truncationCopy,
+  warningCopy,
+} from "./file-error-copy";
 import { FileTree } from "./file-tree";
 import { useFileExplorer } from "./use-file-explorer";
 
@@ -18,6 +24,13 @@ import { useFileExplorer } from "./use-file-explorer";
 export interface FileExplorerBoundary {
   epoch: number;
   suspended: boolean;
+}
+/** Pane position Explorer asks its Sessions host to prepare before attaching a file. */
+export type FilePlacement = "newTab" | "emptyPane" | "splitRight" | "splitDown";
+/** One empty pane the host prepared for this opening. */
+export interface FileTarget {
+  tabId: string;
+  paneId: string;
 }
 /** Supply only route identity and application-owned recovery callbacks. */
 export interface FileExplorerProps {
@@ -27,8 +40,14 @@ export interface FileExplorerProps {
   regionId: string;
   platform: "windows" | "macos" | null;
   boundary: FileExplorerBoundary;
+  /** Which openings the host can satisfy; Explorer never inspects session layout itself. */
+  placements: Record<FilePlacement, boolean>;
   /** Read live owners before dispatch and completion. */
   readBoundary(): FileExplorerBoundary;
+  /** Prepare one empty pane, or answer `null` when the host refuses. */
+  prepareTarget(placement: FilePlacement): Promise<FileTarget | null>;
+  /** Ask the host to re-read its session snapshot after a successful attachment. */
+  onFileOpened(): void;
   /** Close through the owning toggle. */
   onClose(): void;
   /** Navigate to project recovery. */
@@ -57,20 +76,24 @@ function Warnings(props: { page: FileTreePageDto | FileTreeSearchDto; scope: str
     </details>
   );
 }
-/** Render the stage15 project Explorer without creating file panes. */
+/** The four openings in the exact order FE-017 lists them above the copy group. */
+const PLACEMENTS: FilePlacement[] = ["newTab", "emptyPane", "splitRight", "splitDown"];
+
+/** Render the project Explorer, including the four ways to open one file into a pane. */
 export function FileExplorer(props: FileExplorerProps): React.JSX.Element {
   const { state, owner, current } = useFileExplorer(props);
   const filter = useRef<HTMLInputElement>(null);
   const focusOnOpen = useRef(false);
   const [menu, setMenu] = useState<{ entry: FileTreeEntryDto; generation: number } | null>(null);
-  const [announcement, setAnnouncement] = useState(0);
   const menuReturn = useRef<HTMLElement | null>(null);
   const disabled = !current || state.blocked;
+  const opening = state.openingPath !== null;
+  // The backend's own basename convention, so the announcement names the file being opened.
+  const openingName = state.openingPath?.split("/").at(-1) ?? null;
   const canRetry = !["windowNotAllowed", "invalidProjectId", "traversalLimitExceeded"].includes(
     state.errorCode ?? "",
   );
   const searching = !!state.query.trim() && !state.validation;
-  const descriptionId = `${props.regionId}-viewing`;
   const selectedMenu =
     menu && menu.generation === state.generation && !disabled ? menu.entry : null;
   // Remember only an explicit opening, not a later maintenance-resume transition.
@@ -97,8 +120,6 @@ export function FileExplorer(props: FileExplorerProps): React.JSX.Element {
       document.activeElement instanceof HTMLElement ? document.activeElement : null;
     setMenu({ entry, generation: state.generation });
   };
-  /** Announce the intentional stage15 limitation again on explicit activation. */
-  const announce = () => setAnnouncement((value) => value + 1);
   if (!props.isVisible) return <span id={props.regionId} hidden />;
   return (
     <aside
@@ -240,8 +261,8 @@ export function FileExplorer(props: FileExplorerProps): React.JSX.Element {
           expanded={state.expanded}
           matches={searching ? (state.search?.matches ?? []) : null}
           selectedPath={state.selectedPath}
-          descriptionId={descriptionId}
-          disabled={disabled}
+          openingPath={state.openingPath}
+          disabled={disabled || opening}
           onSelect={owner.select}
           onToggle={owner.toggleDirectory}
           onLoadMore={owner.loadMore}
@@ -250,7 +271,10 @@ export function FileExplorer(props: FileExplorerProps): React.JSX.Element {
               owner.list(path, null, true)
           }
           onMenu={openMenu}
-          onAnnounce={announce}
+          onActivate={
+            /** A plain activation always opens in a new tab, per FE-017. */ (entry) =>
+              void owner.open(entry, "newTab")
+          }
         />
       </div>
       {searching && state.search && (
@@ -279,17 +303,30 @@ export function FileExplorer(props: FileExplorerProps): React.JSX.Element {
           Explorer display limit reached. Collapse folders or use Filter files.
         </p>
       )}
-      <p id={descriptionId} className="text-xs text-muted">
-        {VIEWING_LIMITATION}
-      </p>
       <div role="status" aria-live="polite" className="text-xs">
         {state.feedback}
-        {announcement > 0 && <span key={announcement}>{VIEWING_LIMITATION}</span>}
+        {state.openFeedback}
+        {openingName !== null && openingFileCopy(openingName)}
       </div>
       {state.actionError && (
         <p role="alert" className="text-xs">
           {state.actionError}
         </p>
+      )}
+      {state.openError && (
+        <div role="alert" className="text-xs">
+          <p>{state.openError}</p>
+          {state.canRetryOpen && (
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={disabled || opening}
+              onClick={owner.retryOpen}
+            >
+              Try again
+            </Button>
+          )}
+        </div>
       )}
       <DropdownMenu
         open={selectedMenu !== null}
@@ -311,6 +348,24 @@ export function FileExplorer(props: FileExplorerProps): React.JSX.Element {
               }
             }
           >
+            {selectedMenu.kind === "file" &&
+              PLACEMENTS.map((placement) => (
+                <DropdownMenuItem
+                  key={placement}
+                  disabled={!props.placements[placement] || opening || state.pendingAction}
+                  onSelect={
+                    /** Ask the host for this exact placement, then attach once. */ () =>
+                      void owner.open(selectedMenu, placement)
+                  }
+                >
+                  {PLACEMENT_LABELS[placement]}
+                </DropdownMenuItem>
+              ))}
+            {selectedMenu.kind === "file" &&
+              !props.placements.splitRight &&
+              !props.placements.splitDown && (
+                <p className="px-2 text-xs text-muted">{PANE_LIMIT_EXPLANATION}</p>
+              )}
             <DropdownMenuItem
               disabled={state.pendingAction}
               onSelect={

@@ -2,7 +2,8 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-libra
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { DataChangedEventDto } from "@/bindings/data-management";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { FileExplorer } from "@/features/files";
+import { FileExplorer, FileHandleProvider } from "@/features/files";
+import { FileHandleRegistry } from "@/features/files/file-handle-registry";
 import { deferred, entry, explorerProps, page, project } from "@/features/files/files-test-fixture";
 import { resetProjectsStore, useProjectsStore } from "@/features/projects/projects-store";
 import { resetSessionsStore, useSessionsStore } from "@/features/sessions/sessions-store";
@@ -24,6 +25,8 @@ const fake = vi.hoisted(() => ({
   navigate: vi.fn(),
   clear: vi.fn(),
   reconcile: vi.fn(async () => {}),
+  clearFiles: vi.fn(),
+  reconcileFiles: vi.fn(),
   shortcutRefresh: vi.fn(async () => {}),
   settle: vi.fn(async () => {}),
   release: vi.fn(),
@@ -121,13 +124,37 @@ afterEach(() => {
   resetSessionsStore();
   resetCliProfilesStore();
 });
+/** Build one registry whose two maintenance actions are observable, with no native calls. */
+function spiedRegistry(): FileHandleRegistry {
+  const registry = new FileHandleRegistry({
+    getOpenFile: async () => {
+      throw new Error("no handle is opened in these composition tests");
+    },
+    reloadOpenFile: async () => {
+      throw new Error("no handle is opened in these composition tests");
+    },
+    openFileWithDefaultApp: async () => {},
+    onFileHandleChanged: async () => () => {},
+    getFileEntryPaths: async () => ({ relativePath: "", absolutePath: "" }),
+    writeText: async () => {},
+  });
+  vi.spyOn(registry, "clearAfterReset").mockImplementation(fake.clearFiles);
+  vi.spyOn(registry, "reconcileAfterResetFailure").mockImplementation(fake.reconcileFiles);
+  return registry;
+}
+
+/** Compose the host below the one Files provider the application mounts. */
+function host(children: React.ReactNode) {
+  return (
+    <FileHandleProvider createRegistry={spiedRegistry}>
+      <DataManagementHost>{children}</DataManagementHost>
+    </FileHandleProvider>
+  );
+}
+
 /** Render only the app bridge with its explicit owner mocks. */
 async function mount() {
-  const view = render(
-    <DataManagementHost>
-      <Probe />
-    </DataManagementHost>,
-  );
+  const view = render(host(<Probe />));
   await waitFor(() => expect(data.listenerStatus).toBe("ready"));
   return view;
 }
@@ -165,11 +192,13 @@ it("retires Files path responses during reset even when a project refresh fails"
   vi.mocked(files.getFileEntryPaths).mockReturnValue(paths.promise);
   try {
     render(
-      <DataManagementHost>
-        <Probe />
-        <FilesProbe />
-        <div data-testid="durable-shell" />
-      </DataManagementHost>,
+      host(
+        <>
+          <Probe />
+          <FilesProbe />
+          <div data-testid="durable-shell" />
+        </>,
+      ),
     );
     const row = await screen.findByRole("treeitem", { name: "old.ts" });
     const shell = screen.getByTestId("durable-shell");
@@ -246,11 +275,7 @@ it("accepts repeated resets without permanent kind dedupe", async () => {
 /** Listener failure exposes a retry and explicit result-based operation fallback. */
 it("offers listener retry without replaying commands", async () => {
   vi.mocked(ipc.onDataChanged).mockRejectedValueOnce(new Error("native unavailable"));
-  render(
-    <DataManagementHost>
-      <Probe />
-    </DataManagementHost>,
-  );
+  render(host(<Probe />));
   await screen.findByRole("button", { name: "Retry live updates" });
   expect(data.listenerStatus).toBe("error");
   fireEvent.click(screen.getByRole("button", { name: "Retry live updates" }));
@@ -266,11 +291,7 @@ it("unlistens a registration resolved after unmount", async () => {
       resolve = yes;
     }),
   );
-  const view = render(
-    <DataManagementHost>
-      <Probe />
-    </DataManagementHost>,
-  );
+  const view = render(host(<Probe />));
   view.unmount();
   await act(async () => resolve(remove));
   expect(remove).toHaveBeenCalledOnce();
@@ -328,4 +349,36 @@ it("retires preview while hidden and keeps reset focus pending until visible", a
   fireEvent(document, new Event("visibilitychange"));
   expect(screen.getByRole("heading", { name: "Home" })).toHaveFocus();
   hidden.mockRestore();
+});
+
+/** A committed reset drops file handles; an uncertain one only re-reads them. */
+it("clears Files on a committed reset and only reconciles on an uncertain one", async () => {
+  await mount();
+
+  await act(async () => emit({ kind: "app_reset" }));
+  await waitFor(() => expect(data.busy).toBe(false));
+  expect(fake.clearFiles).toHaveBeenCalledOnce();
+  expect(fake.reconcileFiles).not.toHaveBeenCalled();
+  // Files are dropped in the same turn as terminals, before the route reaches Home.
+  expect(fake.clear).toHaveBeenCalledOnce();
+  expect(fake.navigate).toHaveBeenCalledWith("/", { replace: true });
+
+  await act(async () => emit({ kind: "backup_imported" }));
+  await waitFor(() => expect(data.busy).toBe(false));
+  // Importing a backup never invalidates a live handle.
+  expect(fake.clearFiles).toHaveBeenCalledOnce();
+});
+
+/** An uncertain reset reconciles both registries without deleting anything. */
+it("reconciles Files after an uncertain reset", async () => {
+  await mount();
+  vi.mocked(ipc.confirmResetXwork).mockRejectedValueOnce(new Error("uncertain outcome"));
+
+  await act(() => data.prepare("reset"));
+  act(() => data.setConfirmation("RESET"));
+  await act(async () => data.confirm());
+  await waitFor(() => expect(data.busy).toBe(false));
+
+  expect(fake.clearFiles).not.toHaveBeenCalled();
+  expect(fake.reconcileFiles).toHaveBeenCalled();
 });

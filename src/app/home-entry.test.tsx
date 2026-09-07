@@ -5,6 +5,11 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { ProjectDto } from "@/bindings/projects/projects";
 import type { SessionSummaryDto } from "@/bindings/sessions/sessions";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { FileHandleProvider } from "@/features/files";
+import {
+  FileHandleRegistry,
+  type FileHandleRegistryDependencies,
+} from "@/features/files/file-handle-registry";
 import { resetProjectsStore } from "@/features/projects/projects-store";
 import { resetSessionsStore } from "@/features/sessions/sessions-store";
 import { resetCliProfilesStore } from "@/features/settings/cli-profiles-store";
@@ -117,13 +122,30 @@ function Probe() {
     </>
   );
 }
+/** Files transport that reaches nothing: Home never opens a handle in these cases. */
+const inertFileTransport: FileHandleRegistryDependencies = {
+  getOpenFile: async () => {
+    throw new Error("no file handle is opened from Home");
+  },
+  reloadOpenFile: async () => {
+    throw new Error("no file handle is opened from Home");
+  },
+  openFileWithDefaultApp: async () => {},
+  onFileHandleChanged: async () => () => {},
+  getFileEntryPaths: async () => ({ relativePath: "", absolutePath: "" }),
+  writeText: async () => {},
+};
+
 /** Compose one real host above route children as the application shell does. */
 function Host() {
   return (
     <TooltipProvider>
-      <DataManagementHost>
-        <Probe />
-      </DataManagementHost>
+      {/* The application mounts this registry once, above every Data owner. */}
+      <FileHandleProvider createRegistry={() => new FileHandleRegistry(inertFileTransport)}>
+        <DataManagementHost>
+          <Probe />
+        </DataManagementHost>
+      </FileHandleProvider>
     </TooltipProvider>
   );
 }

@@ -18,7 +18,7 @@ import type { ShortcutPlatform } from "@/lib/utils/keyboard-shortcuts";
 import { PaneContentPicker } from "./pane-content-picker";
 import { PaneContentPlaceholder } from "./pane-content-placeholder";
 import { PANE_LIMIT } from "./session-layout";
-import type { SessionTerminalRenderer } from "./session-route";
+import type { SessionFilePaneRenderer, SessionTerminalRenderer } from "./session-route";
 import type { ToolCatalogData } from "./use-tool-catalog";
 import {
   shortcutLabel,
@@ -55,6 +55,7 @@ export function SessionPane(props: {
   onSelectProfile(profile: CliProfileDto): void;
   sessionId?: string;
   renderTerminal?: SessionTerminalRenderer;
+  renderFilePane?: SessionFilePaneRenderer;
   onRefreshSession?(): void;
   onCheckProfile?(profileId: string): void;
 }) {
@@ -71,6 +72,23 @@ export function SessionPane(props: {
     splitDisabled && props.paneCount >= PANE_LIMIT ? "A tab can hold up to 4 panes." : null;
   const profileId = "profileId" in props.pane.content ? props.pane.content.profileId : null;
   const profile = props.profiles.find((candidate) => candidate.id === profileId);
+  const fileContent = props.pane.content.kind === "file" ? props.pane.content : null;
+  /** Ask the app to fill one region of a file pane with the shared handle snapshot. */
+  const renderFileRegion = (region: "header" | "body"): React.ReactNode =>
+    fileContent === null || props.renderFilePane === undefined
+      ? null
+      : props.renderFilePane({
+          region,
+          sessionId: props.sessionId ?? "",
+          tabId: props.tabId,
+          paneId: props.pane.id,
+          content: fileContent,
+          isActive: props.isActive,
+          isVisible: !props.isHiddenByMaximize,
+          onActivate: props.onActivate,
+          onRefreshSession: props.onRefreshSession ?? (() => undefined),
+        });
+  const fileHeader = renderFileRegion("header");
 
   /** Activate the pane before executing one of its header actions. */
   const act = (action: () => void): void => {
@@ -149,13 +167,17 @@ export function SessionPane(props: {
         <span className="min-w-0 shrink truncate font-medium" title={paneTitle(props.pane)}>
           {paneTitle(props.pane)}
         </span>
-        {props.rootPath !== null && (
-          <span
-            className="min-w-0 flex-1 truncate font-mono text-muted-soft"
-            title={props.rootPath}
-          >
-            {props.rootPath}
-          </span>
+        {fileHeader !== null ? (
+          <span className="flex min-w-0 flex-1 items-center gap-2">{fileHeader}</span>
+        ) : (
+          props.rootPath !== null && (
+            <span
+              className="min-w-0 flex-1 truncate font-mono text-muted-soft"
+              title={props.rootPath}
+            >
+              {props.rootPath}
+            </span>
+          )
         )}
         <span className="ml-auto flex shrink-0 items-center">
           {actionButton(
@@ -195,6 +217,8 @@ export function SessionPane(props: {
             isLocked={props.isBusy}
             onSelect={props.onSelectProfile}
           />
+        ) : fileContent !== null && props.renderFilePane !== undefined ? (
+          renderFileRegion("body")
         ) : (props.pane.content.kind === "toolSelection" ||
             props.pane.content.kind === "terminal") &&
           props.renderTerminal !== undefined ? (

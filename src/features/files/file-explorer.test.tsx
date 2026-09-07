@@ -6,7 +6,15 @@ import * as files from "@/lib/ipc/files";
 import { IpcCallError } from "@/lib/ipc/ipc-error";
 import * as projects from "@/lib/ipc/projects";
 import { FileExplorer, type FileExplorerProps } from "./file-explorer";
-import { deferred, entry, explorerProps, page, project, searchResult } from "./files-test-fixture";
+import {
+  deferred,
+  entry,
+  explorerProps,
+  openResult,
+  page,
+  project,
+  searchResult,
+} from "./files-test-fixture";
 
 // Native Files, Projects, and clipboard are replaced for every component test.
 vi.mock("@/lib/ipc/files");
@@ -58,27 +66,16 @@ function menu(name = "readme.md") {
   fireEvent.contextMenu(screen.getByRole("treeitem", { name }));
 }
 
-// Stage15 renders honest affordances and activation never invokes file opening.
-it("renders the accessible panel and file activation only selects and announces", async () => {
+// The panel keeps its accessible shape and a plain activation opens exactly one file.
+it("renders the accessible panel without the stage15 limitation", async () => {
   await open();
   expect(screen.getByRole("textbox", { name: "Filter files" })).toHaveFocus();
   expect(screen.getByRole("complementary", { name: "File Explorer" })).toBeInTheDocument();
-  const row = screen.getByRole("treeitem", { name: "readme.md" });
-  fireEvent.click(row);
-  fireEvent.doubleClick(row);
-  fireEvent.keyDown(row, { key: "Enter" });
-  fireEvent.keyDown(row, { key: "Enter", ctrlKey: true });
-  expect(row).toHaveAttribute("aria-selected", "true");
-  expect(
-    screen.getAllByText("File viewing is not available yet. You can copy paths or reveal files.")
-      .length,
-  ).toBeGreaterThan(0);
+  expect(screen.queryByText(/File viewing is not available yet/)).not.toBeInTheDocument();
   expect(files.getFileEntryPaths).not.toHaveBeenCalled();
   expect(files.revealFileEntry).not.toHaveBeenCalled();
-  menu();
-  expect(screen.queryByRole("menuitem", { name: /^Open/ })).not.toBeInTheDocument();
-  expect(screen.getByRole("menuitem", { name: "Copy path" })).toBeInTheDocument();
 });
+
 // Copy must use the freshly returned backend field and wait for actual clipboard success.
 it.each([
   ["Copy path", "X:/freshly-validated/readme.md", "Path copied."],
@@ -228,4 +225,102 @@ it("opens via Shift+F10 and restores row focus after Escape", async () => {
   await screen.findByRole("menuitem", { name: "Copy path" });
   await user.keyboard("{Escape}");
   await waitFor(() => expect(row).toHaveFocus());
+});
+
+// Clicking a file opens it in a new tab; Space only moves the selection.
+it("opens a file on click and never on Space", async () => {
+  const prepareTarget = vi.fn(async () => ({ tabId: "tab-1", paneId: "pane-1" }));
+  const onFileOpened = vi.fn();
+  vi.mocked(files.openFileInPane).mockResolvedValue(openResult());
+  await open(explorerProps({ prepareTarget, onFileOpened }));
+  const row = screen.getByRole("treeitem", { name: "readme.md" });
+
+  fireEvent.keyDown(row, { key: " " });
+  expect(prepareTarget).not.toHaveBeenCalled();
+  expect(row).toHaveAttribute("aria-selected", "true");
+
+  fireEvent.click(row, { detail: 1 });
+  await waitFor(() => expect(files.openFileInPane).toHaveBeenCalledOnce());
+  expect(prepareTarget).toHaveBeenCalledExactlyOnceWith("newTab");
+  expect(await screen.findByText("Opened readme.md in a new tab.")).toBeInTheDocument();
+  expect(onFileOpened).toHaveBeenCalledOnce();
+  // The stage15 limitation copy is gone for good.
+  expect(screen.queryByText(/File viewing is not available yet/)).not.toBeInTheDocument();
+});
+
+// The four openings sit above the copy group and follow the placements the host reports.
+it("offers four placements and disables the ones the host refuses", async () => {
+  const prepareTarget = vi.fn(async () => ({ tabId: "tab-1", paneId: "pane-2" }));
+  vi.mocked(files.openFileInPane).mockResolvedValue(openResult());
+  await open(
+    explorerProps({
+      prepareTarget,
+      placements: { newTab: true, emptyPane: false, splitRight: false, splitDown: false },
+    }),
+  );
+  menu();
+
+  const items = screen.getAllByRole("menuitem").map((item) => item.textContent);
+  expect(items.slice(0, 4)).toEqual([
+    "Open in new tab",
+    "Open in empty pane",
+    "Split right and open",
+    "Split down and open",
+  ]);
+  expect(items[4]).toBe("Copy path");
+  expect(screen.getByRole("menuitem", { name: "Open in empty pane" })).toHaveAttribute(
+    "aria-disabled",
+    "true",
+  );
+  expect(screen.getByRole("menuitem", { name: "Split right and open" })).toHaveAttribute(
+    "aria-disabled",
+    "true",
+  );
+  expect(screen.getByText("A tab can hold up to 4 panes.")).toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole("menuitem", { name: "Open in new tab" }));
+  await waitFor(() => expect(prepareTarget).toHaveBeenCalledExactlyOnceWith("newTab"));
+});
+
+// A directory menu keeps its existing entries and never offers an opening.
+it("keeps opening entries out of a directory menu", async () => {
+  await open();
+  menu("src");
+
+  expect(screen.queryByRole("menuitem", { name: /^Open in/ })).not.toBeInTheDocument();
+  expect(screen.getByRole("menuitem", { name: "Copy path" })).toBeInTheDocument();
+});
+
+// A pending opening locks activation and states which file is being opened.
+it("locks the tree while an opening is pending", async () => {
+  const pending = deferred<{ tabId: string; paneId: string } | null>();
+  const prepareTarget = vi.fn(() => pending.promise);
+  vi.mocked(files.openFileInPane).mockResolvedValue(openResult());
+  await open(explorerProps({ prepareTarget }));
+  const row = screen.getByRole("treeitem", { name: "readme.md" });
+
+  fireEvent.click(row, { detail: 1 });
+  expect(await screen.findByText("Opening readme.md…")).toBeInTheDocument();
+  fireEvent.click(row, { detail: 1 });
+  fireEvent.keyDown(row, { key: "Enter" });
+  expect(prepareTarget).toHaveBeenCalledOnce();
+
+  await act(async () => pending.resolve({ tabId: "tab-1", paneId: "pane-1" }));
+  await waitFor(() => expect(files.openFileInPane).toHaveBeenCalledOnce());
+});
+
+// A retryable failure keeps the tree intact and offers exactly one more attempt.
+it("offers one retry after a retryable open failure", async () => {
+  vi.mocked(files.openFileInPane)
+    .mockRejectedValueOnce(new IpcCallError("open_file_in_pane", { code: "fileReadFailed" }))
+    .mockResolvedValueOnce(openResult());
+  await open(explorerProps({ prepareTarget: async () => ({ tabId: "tab-1", paneId: "pane-1" }) }));
+
+  fireEvent.click(screen.getByRole("treeitem", { name: "readme.md" }), { detail: 1 });
+  expect(await screen.findByText("Could not read this file.")).toBeInTheDocument();
+  expect(screen.getByRole("treeitem", { name: "readme.md" })).toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+  await waitFor(() => expect(files.openFileInPane).toHaveBeenCalledTimes(2));
+  expect(await screen.findByText("Opened readme.md in a new tab.")).toBeInTheDocument();
 });

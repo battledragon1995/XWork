@@ -8,7 +8,7 @@ import { selectSessionTool } from "@/lib/ipc/sessions";
 import { classifySessionsFailure, type SessionsFailure } from "@/lib/utils/session-copy";
 import { formatUsedAt, readRecentTools, recordToolUse } from "./recent-tools-store";
 import { isProfileUnavailable, SessionToolCard } from "./session-tool-card";
-import { useToolCatalog } from "./use-tool-catalog";
+import type { ToolCatalogData } from "./use-tool-catalog";
 
 /** Route of the existing Settings page this picker only ever navigates to. */
 const CLI_PROFILES_ROUTE = "/settings/terminal-profiles";
@@ -32,6 +32,8 @@ const TEXT_ENTRY_SELECTOR = "input, textarea, select, [contenteditable='true'], 
 /** What the route hands the picker. */
 export interface SessionToolPickerProps {
   sessionId: string;
+  /** The route owns the one catalog subscription this session shares. */
+  catalog: ToolCatalogData;
   /** Adopt the post-commit snapshot the selection answered with. */
   onSelected(detail: SessionDetailDto): void;
   /** Re-read the route's own session, for the two outcomes only it can resolve. */
@@ -70,8 +72,7 @@ function CatalogSkeleton() {
  * called from here.
  */
 export function SessionToolPicker(props: SessionToolPickerProps) {
-  const { sessionId, onSelected, onRefresh } = props;
-  const catalog = useToolCatalog();
+  const { sessionId, catalog, onSelected, onRefresh } = props;
   const navigate = useNavigate();
 
   /** Profile whose selection is running, which locks every card while it is set. */

@@ -23,7 +23,10 @@ describe("PaneContentPicker", () => {
       </MemoryRouter>,
     );
     expect(screen.getByRole("heading", { name: "What goes here?" })).toBeInTheDocument();
-    expect(screen.getByText("Files arrive with FE-016.")).toBeInTheDocument();
+    // The File column points at the only place files can be opened from.
+    const fileColumn = screen.getByText("Open a file from the File Explorer.");
+    expect(fileColumn).toBeInTheDocument();
+    expect(fileColumn.closest("button")).toBeNull();
     await user.click(screen.getByRole("button", { name: /Codex/ }));
     expect(onSelect).toHaveBeenCalledOnce();
   });

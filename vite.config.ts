@@ -15,6 +15,10 @@ export default defineConfig({
   test: {
     environment: "jsdom",
     setupFiles: ["./src/test-setup.ts"],
+    // The CodeMirror-backed viewer suites transform several megabytes of grammar packages,
+    // which starves the parallel jsdom workers running userEvent-driven cases. Every suite
+    // still settles well inside this budget; only the default 5s ceiling was too tight.
+    testTimeout: 15_000,
   },
   server: {
     port: 5173,

@@ -3,6 +3,15 @@ import type { PaneDto, PaneLayoutNodeDto } from "@/bindings/sessions/sessions";
 /** Maximum pane count BE-005 accepts for one tab. */
 export const PANE_LIMIT = 4;
 
+/** Pane position Sessions can prepare for file content on behalf of File Explorer. */
+export type SessionFilePlacement = "newTab" | "emptyPane" | "splitRight" | "splitDown";
+
+/** One empty pane Sessions has prepared and can be attached to exactly once. */
+export interface SessionFileTarget {
+  tabId: string;
+  paneId: string;
+}
+
 /** Smallest committed first-panel ratio. */
 export const MIN_RATIO_BASIS_POINTS = 1000;
 
@@ -19,6 +28,15 @@ export function flattenPanes(layout: PaneLayoutNodeDto): readonly PaneDto[] {
 /** Count all pane leaves in one binary layout tree. */
 export function countPanes(layout: PaneLayoutNodeDto): number {
   return flattenPanes(layout).length;
+}
+
+/**
+ * Find the first pane a file can attach to, in the same first-then-second order the layout
+ * renders. Only a leaf the backend still reports as `empty` qualifies, so the caller never
+ * asks BE-014 to attach over content that is already there.
+ */
+export function findFirstEmptyPane(layout: PaneLayoutNodeDto): PaneDto | null {
+  return flattenPanes(layout).find((pane) => pane.content.kind === "empty") ?? null;
 }
 
 /** Find one pane by opaque id without modifying its tree. */

@@ -1,8 +1,9 @@
 import { useCallback } from "react";
 import { useLocation, useNavigate } from "react-router";
-import { FileExplorer } from "@/features/files";
+import { FileExplorer, FilePane } from "@/features/files";
 import {
   type SessionFileExplorerSlotProps,
+  type SessionFilePaneSlotProps,
   SessionRoute,
   type SessionTerminalSlotProps,
 } from "@/features/sessions/session-route";
@@ -56,6 +57,21 @@ export function SessionTerminalRoute() {
         platform={shortcuts.platform}
         boundary={{ epoch: invalidationEpoch, suspended }}
         readBoundary={readBoundary}
+        prepareTarget={
+          /** Prepare a pane only while the live application still accepts mutations. */ async (
+            placement,
+          ) => {
+            const live = readBoundary();
+            if (live.suspended || live.epoch !== invalidationEpoch) return null;
+            return props.prepareFileTarget(placement);
+          }
+        }
+        onFileOpened={
+          /** Let Sessions re-read its snapshot, but never across a reset boundary. */ () => {
+            const live = readBoundary();
+            if (!live.suspended && live.epoch === invalidationEpoch) props.onFileAttached();
+          }
+        }
         onClose={
           /** Avoid restoring focus across a reset or active Quit flow. */ () => {
             const live = readBoundary();
@@ -81,6 +97,28 @@ export function SessionTerminalRoute() {
     [shortcuts.platform, invalidationEpoch, suspended, readBoundary, navigate],
   );
 
+  /** Renders one file region without making Sessions import Files implementation. */
+  const renderFilePane = useCallback(
+    (props: SessionFilePaneSlotProps): React.ReactNode => (
+      <FilePane
+        region={props.region}
+        fileHandleId={props.content.fileHandleId}
+        paneTitle={props.content.title}
+        isVisible={props.isVisible}
+        onRefreshSession={props.onRefreshSession}
+        onOpenProject={
+          /** Recovery navigates through the app, never through a Files-owned route. */ () => {
+            const live = readBoundary();
+            if (live.suspended || live.epoch !== invalidationEpoch) return;
+            const projectId = readSessionCrumb(props.sessionId)?.projectId;
+            void navigate(projectId === undefined ? "/projects" : `/projects/${projectId}`);
+          }
+        }
+      />
+    ),
+    [invalidationEpoch, navigate, readBoundary],
+  );
+
   /** Renders one terminal without making Sessions import Terminal implementation. */
   const renderTerminal = (props: SessionTerminalSlotProps): React.ReactNode => (
     <TerminalPane
@@ -102,6 +140,7 @@ export function SessionTerminalRoute() {
       focusRequest={focusRequest}
       renderTerminal={renderTerminal}
       renderFileExplorer={renderFileExplorer}
+      renderFilePane={renderFilePane}
       shortcutSnapshot={
         shortcuts.status === "ready" && shortcuts.pending === null ? shortcuts.snapshot : null
       }

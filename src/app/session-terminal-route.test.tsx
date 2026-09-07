@@ -43,8 +43,11 @@ vi.mock("@/features/terminal", () => ({
   ),
 }));
 
-import type { FileExplorerProps } from "@/features/files";
-import type { SessionFileExplorerSlotProps } from "@/features/sessions/session-route";
+import type { FileExplorerProps, FilePaneProps } from "@/features/files";
+import type {
+  SessionFileExplorerSlotProps,
+  SessionFilePaneSlotProps,
+} from "@/features/sessions/session-route";
 import { useQuitStore } from "./quit-store";
 import { SessionTerminalRoute } from "./session-terminal-route";
 
@@ -57,11 +60,18 @@ vi.mock("@/features/settings/data-management-provider", () => ({
 
 /** Keep the Files public props observable without fetching a native tree. */
 const explorer = vi.hoisted(() => ({ received: vi.fn() }));
+/** Keep the file pane props observable without retaining a real handle. */
+const filePane = vi.hoisted(() => ({ received: vi.fn() }));
 vi.mock("@/features/files", () => ({
   /** Capture the exact app-owned identity, boundary and navigation contract. */
   FileExplorer: (props: FileExplorerProps) => {
     explorer.received(props);
     return <p>Files slot</p>;
+  },
+  /** Capture the region, handle and recovery contract of one file pane. */
+  FilePane: (props: FilePaneProps) => {
+    filePane.received(props);
+    return <p>{`File ${props.region}`}</p>;
   },
 }));
 
@@ -76,12 +86,15 @@ it("composes Files with summary identity, current platform and synchronous Data/
     renderFileExplorer(props: SessionFileExplorerSlotProps): React.ReactNode;
   };
   const onClose = vi.fn();
-  const slot = {
+  const slot: SessionFileExplorerSlotProps = {
     sessionId: "session",
     projectId: "summary-project",
     isVisible: true,
     regionId: "files",
+    placements: { newTab: true, emptyPane: false, splitRight: true, splitDown: true },
     onClose,
+    prepareFileTarget: async () => null,
+    onFileAttached: vi.fn(),
   };
   render(received.renderFileExplorer(slot));
   const props = explorer.received.mock.calls.at(-1)?.[0] as FileExplorerProps;
@@ -138,7 +151,10 @@ it("routes Files recovery through its project identity and suppresses stale navi
     projectId: "summary-project",
     isVisible: true,
     regionId: "files",
+    placements: { newTab: true, emptyPane: false, splitRight: false, splitDown: false },
     onClose: vi.fn(),
+    prepareFileTarget: async () => null,
+    onFileAttached: vi.fn(),
   });
   act(() => element.props.onOpenProject());
   expect(screen.getByTestId("location")).toHaveTextContent("PUSH:/projects/summary-project");
@@ -223,4 +239,125 @@ it.each([
       renderTerminal: expect.any(Function),
     }),
   );
+});
+
+/** Both pane regions must reach Files with the handle the session snapshot names. */
+it("composes both file pane regions from the session content", () => {
+  render(
+    <MemoryRouter initialEntries={["/sessions/fixture"]}>
+      <SessionTerminalRoute />
+    </MemoryRouter>,
+  );
+  const received = bridge.received.mock.calls.at(-1)?.[0] as {
+    renderFilePane(props: SessionFilePaneSlotProps): React.ReactNode;
+  };
+  const onRefreshSession = vi.fn();
+  /** Build one file slot exactly as SessionPane does for each region. */
+  const slot = (region: "header" | "body"): SessionFilePaneSlotProps => ({
+    region,
+    sessionId: "fixture",
+    tabId: "tab-2",
+    paneId: "pane-3",
+    content: { kind: "file", fileHandleId: "handle-7", title: "main.rs" },
+    isActive: true,
+    isVisible: true,
+    onActivate: vi.fn(),
+    onRefreshSession,
+  });
+
+  render(received.renderFilePane(slot("header")));
+  render(received.renderFilePane(slot("body")));
+
+  const calls = filePane.received.mock.calls.map(([props]) => props as FilePaneProps);
+  expect(calls.map((props) => props.region)).toEqual(["header", "body"]);
+  for (const props of calls) {
+    expect(props.fileHandleId).toBe("handle-7");
+    expect(props.paneTitle).toBe("main.rs");
+    expect(props.isVisible).toBe(true);
+  }
+  calls[0]?.onRefreshSession();
+  expect(onRefreshSession).toHaveBeenCalledOnce();
+});
+
+/** A stale generation must not navigate, and a live one recovers through the app router. */
+it("guards file pane recovery with the live data boundary", () => {
+  render(
+    <MemoryRouter initialEntries={["/sessions/fixture"]}>
+      <SessionTerminalRoute />
+      <LocationProbe />
+    </MemoryRouter>,
+  );
+  const received = bridge.received.mock.calls.at(-1)?.[0] as {
+    renderFilePane(props: SessionFilePaneSlotProps): React.ReactNode;
+  };
+  render(
+    received.renderFilePane({
+      region: "body",
+      sessionId: "fixture",
+      tabId: "tab-2",
+      paneId: "pane-3",
+      content: { kind: "file", fileHandleId: "handle-7", title: "main.rs" },
+      isActive: true,
+      isVisible: true,
+      onActivate: vi.fn(),
+      onRefreshSession: vi.fn(),
+    }),
+  );
+  const props = filePane.received.mock.calls.at(-1)?.[0] as FilePaneProps;
+
+  maintenance.busy = true;
+  act(() => props.onOpenProject());
+  expect(screen.getByTestId("location")).toHaveTextContent("POP:/sessions/fixture");
+
+  maintenance.busy = false;
+  act(() => props.onOpenProject());
+  // With no known crumb the app still lands on a real destination rather than nowhere.
+  expect(screen.getByTestId("location")).toHaveTextContent("PUSH:/projects");
+});
+
+/** Explorer preparation and attachment must cross the same synchronous boundary checks. */
+it("guards Explorer preparation and attachment at the app boundary", async () => {
+  const prepareFileTarget = vi.fn(async () => ({ tabId: "tab-2", paneId: "pane-3" }));
+  const onFileAttached = vi.fn();
+  render(
+    <MemoryRouter initialEntries={["/sessions/fixture"]}>
+      <SessionTerminalRoute />
+    </MemoryRouter>,
+  );
+  const received = bridge.received.mock.calls.at(-1)?.[0] as {
+    renderFileExplorer(props: SessionFileExplorerSlotProps): React.ReactNode;
+  };
+  render(
+    received.renderFileExplorer({
+      sessionId: "fixture",
+      projectId: "summary-project",
+      isVisible: true,
+      regionId: "files",
+      placements: { newTab: true, emptyPane: false, splitRight: true, splitDown: true },
+      onClose: vi.fn(),
+      prepareFileTarget,
+      onFileAttached,
+    }),
+  );
+  const props = explorer.received.mock.calls.at(-1)?.[0] as FileExplorerProps;
+
+  // The host placements are passed through untouched: Files never derives them itself.
+  expect(props.placements).toEqual({
+    newTab: true,
+    emptyPane: false,
+    splitRight: true,
+    splitDown: true,
+  });
+
+  maintenance.busy = true;
+  expect(await props.prepareTarget("newTab")).toBeNull();
+  props.onFileOpened();
+  expect(prepareFileTarget).not.toHaveBeenCalled();
+  expect(onFileAttached).not.toHaveBeenCalled();
+
+  maintenance.busy = false;
+  expect(await props.prepareTarget("newTab")).toEqual({ tabId: "tab-2", paneId: "pane-3" });
+  props.onFileOpened();
+  expect(prepareFileTarget).toHaveBeenCalledExactlyOnceWith("newTab");
+  expect(onFileAttached).toHaveBeenCalledOnce();
 });

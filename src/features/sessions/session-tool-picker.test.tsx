@@ -11,6 +11,7 @@ import { IpcCallError } from "@/lib/ipc/ipc-error";
 import * as sessionsIpc from "@/lib/ipc/sessions";
 import { recordToolUse, resetRecentTools } from "./recent-tools-store";
 import { SessionToolPicker } from "./session-tool-picker";
+import { useToolCatalog } from "./use-tool-catalog";
 import { createNonEmptySessionDetail, FIXTURE_SESSION_ID } from "./sessions-test-fixture";
 
 // Replace both boundaries so no case reaches Tauri or a real CLI installation.
@@ -81,15 +82,24 @@ function PathProbe() {
   return <span data-testid="path">{useLocation().pathname}</span>;
 }
 
+/** Own the one catalog subscription the route owns, so the picker only receives its data. */
+function PickerHost() {
+  const catalog = useToolCatalog();
+  return (
+    <SessionToolPicker
+      sessionId={FIXTURE_SESSION_ID}
+      catalog={catalog}
+      onSelected={onSelected}
+      onRefresh={onRefresh}
+    />
+  );
+}
+
 /** Render the picker at a session route with a Settings destination it can reach. */
 function renderPicker() {
   return render(
     <MemoryRouter initialEntries={[`/sessions/${FIXTURE_SESSION_ID}`]}>
-      <SessionToolPicker
-        sessionId={FIXTURE_SESSION_ID}
-        onSelected={onSelected}
-        onRefresh={onRefresh}
-      />
+      <PickerHost />
       <Routes>
         <Route path="*" element={<PathProbe />} />
       </Routes>

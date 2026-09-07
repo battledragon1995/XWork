@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router";
 import type { DataChangeKindDto } from "@/bindings/data-management";
 import { Button } from "@/components/ui/button";
+import { useFileDataBoundary } from "@/features/files";
 import { useProjectsStore } from "@/features/projects/projects-store";
 import { useSessionsStore } from "@/features/sessions/sessions-store";
 import { useCliProfilesStore } from "@/features/settings/cli-profiles-store";
@@ -22,6 +23,7 @@ import { useShellStore } from "./shell-store";
 export function DataManagementHost(props: { children: React.ReactNode }) {
   const shortcuts = useKeyboardShortcuts();
   const terminal = useTerminalDataBoundary();
+  const fileData = useFileDataBoundary();
   const navigate = useNavigate();
   const failedReads = useRef<Array<() => Promise<void>>>([]);
   /** Try every owner even if an earlier read fails; retain only failed reads for Retry. */
@@ -75,7 +77,11 @@ export function DataManagementHost(props: { children: React.ReactNode }) {
   /** Reset clears metadata immediately; import preserves active terminal identity. */
   async function onCommitted(kind: DataChangeKindDto) {
     const reset = kind === "app_reset";
-    if (reset) terminal.clearAfterReset();
+    if (reset) {
+      terminal.clearAfterReset();
+      // Handles are dropped before navigation so no query for a deleted handle survives Home.
+      fileData.clearAfterReset();
+    }
     // Invoke these APIs before navigation so Home cannot render deleted rows even on query failure.
     const projects = useProjectsStore.getState().refreshAfterDataChange(reset);
     const sessions = useSessionsStore.getState().refreshAfterDataChange(reset);
@@ -108,6 +114,8 @@ export function DataManagementHost(props: { children: React.ReactNode }) {
       /** Preserve metadata until commit is known. */ () =>
         useSessionsStore.getState().refreshAfterDataChange(false),
       terminal.reconcileAfterResetFailure,
+      /** An uncertain reset only re-reads retained handles; nothing is deleted here. */
+      async () => fileData.reconcileAfterResetFailure(),
     ]);
   }
   /** Retry only failed reads, or reconcile all owners for an unknown command outcome. */
@@ -125,6 +133,8 @@ export function DataManagementHost(props: { children: React.ReactNode }) {
             /** Query sessions without clearing unconfirmed state. */ () =>
               useSessionsStore.getState().refreshAfterDataChange(false),
             terminal.reconcileAfterResetFailure,
+            /** Re-read retained handles for an unknown command outcome. */
+            async () => fileData.reconcileAfterResetFailure(),
           ],
     );
   }

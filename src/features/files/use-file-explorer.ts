@@ -4,12 +4,29 @@ import type { ProjectDto } from "@/bindings/projects/projects";
 import {
   getFileEntryPaths,
   listFileChildren,
+  openFileInPane,
   revealFileEntry,
   searchFileTree,
 } from "@/lib/ipc/files";
 import { getProject, onProjectsChanged, type UnlistenFn } from "@/lib/ipc/projects";
-import { fileErrorCode, fileErrorCopy, INVALID_FILTER, validFilter } from "./file-error-copy";
-import type { FileExplorerProps } from "./file-explorer";
+import {
+  fileErrorCode,
+  fileErrorCopy,
+  INVALID_FILTER,
+  openedFileCopy,
+  recentNotRecordedCopy,
+  validFilter,
+} from "./file-error-copy";
+import type { FileExplorerProps, FilePlacement } from "./file-explorer";
+
+/** Command failures whose recovery is retrying the very same opening. */
+const RETRYABLE_OPEN_CODES = ["fileChangedDuringRead", "fileReadFailed", "clockFailed"];
+
+/** Command failures that mean the prepared session target is already stale. */
+const STALE_TARGET_CODES = ["paneNotEmpty", "invalidSessionTarget", "sessionAttachFailed"];
+
+/** Command failures that mean the tree row itself no longer describes a visible entry. */
+const STALE_ENTRY_CODES = ["entryNotFound", "entryNotVisible"];
 
 /** Retain one directory and only its latest page diagnostics. */
 export interface FileBranchState {
@@ -30,6 +47,10 @@ interface ExplorerState {
   search: FileTreeSearchDto | null;
   searchStatus: "idle" | "loading" | "ready" | "error";
   selectedPath: string | null;
+  openingPath: string | null;
+  openFeedback: string;
+  openError: string;
+  canRetryOpen: boolean;
   pendingAction: boolean;
   feedback: string;
   actionError: string;
@@ -50,6 +71,10 @@ function initialState(): ExplorerState {
     search: null,
     searchStatus: "idle",
     selectedPath: null,
+    openingPath: null,
+    openFeedback: "",
+    openError: "",
+    canRetryOpen: false,
     pendingAction: false,
     feedback: "",
     actionError: "",
@@ -93,6 +118,10 @@ class ExplorerController {
   subscription = 0;
   subscribed = false;
   actionRunning = false;
+  /** Synchronous single-flight guard: set before the first await of an opening. */
+  opening = false;
+  /** Last opening, replayed only when the user explicitly retries a retryable failure. */
+  lastOpen: { entry: FileTreeEntryDto; placement: FilePlacement } | null = null;
 
   /** Bind the React publisher and the synchronous owner reader. */
   constructor(props: FileExplorerProps, publish: (state: ExplorerState) => void) {
@@ -127,6 +156,8 @@ class ExplorerController {
     this.refreshPending = false;
     this.refreshAgain = false;
     this.bootstrapping = false;
+    // An opening whose route, project, or boundary changed can no longer be replayed.
+    this.lastOpen = null;
     const { query, expanded } = this.state;
     this.state = initialState();
     if (!clearIntent) {
@@ -567,6 +598,85 @@ class ExplorerController {
     }
     this.emit();
   }
+  /**
+   * Open one visible file into a pane the Sessions host prepares.
+   *
+   * The single-flight flag is claimed synchronously, before the first `await`, so a repeated
+   * `Enter` or the click/click/dblclick sequence of a fast double-click can never dispatch a
+   * second preparation. Two separate backend calls are involved, so identity and boundary are
+   * rechecked after each one; a target that was already created is never cleaned up, because
+   * closing it could enter BE-005's confirmation flow.
+   */
+  open = async (entry: FileTreeEntryDto, placement: FilePlacement) => {
+    if (
+      !this.current() ||
+      this.state.blocked ||
+      this.opening ||
+      this.actionRunning ||
+      entry.kind !== "file" ||
+      !this.props.placements[placement]
+    )
+      return;
+    const generation = this.generation;
+    this.opening = true;
+    this.lastOpen = { entry, placement };
+    this.state.openingPath = entry.relativePath;
+    this.state.openFeedback = "";
+    this.state.openError = "";
+    this.state.canRetryOpen = false;
+    this.emit();
+    try {
+      const target = await this.props.prepareTarget(placement);
+      // A retired intent must not attach, announce, or start any follow-up command.
+      if (!this.current(generation)) return;
+      // The host already showed why it refused; a second message would duplicate it.
+      if (target === null) return;
+      const result = await openFileInPane({
+        sessionId: this.props.sessionId,
+        tabId: target.tabId,
+        paneId: target.paneId,
+        relativePath: entry.relativePath,
+      });
+      if (!this.current(generation)) return;
+      // The result is not a session snapshot, so the host re-reads its own.
+      this.props.onFileOpened();
+      this.state.openFeedback = result.warnings.includes("recentFileNotRecorded")
+        ? recentNotRecordedCopy(entry.name)
+        : openedFileCopy(placement, entry.name);
+    } catch (error) {
+      if (!this.current(generation)) return;
+      const code = fileErrorCode(error);
+      this.state.openError = fileErrorCopy(error);
+      this.state.canRetryOpen = RETRYABLE_OPEN_CODES.includes(code ?? "");
+      if (STALE_TARGET_CODES.includes(code ?? "")) {
+        // The pane the host prepared is already gone or occupied; only it can resolve that.
+        this.props.onFileOpened();
+      } else if (STALE_ENTRY_CODES.includes(code ?? "")) {
+        this.removeEntry(entry.relativePath);
+        if (this.state.query.trim() && !this.state.validation)
+          this.search(this.state.query.trim(), this.queryToken, true);
+        else this.list(parentPath(entry.relativePath), null, true);
+      } else if (
+        !["notRegularFile", "linkTraversalDenied", "invalidRelativePath", "fileMemoryLimitReached"]
+          .concat(RETRYABLE_OPEN_CODES)
+          .includes(code ?? "")
+      ) {
+        // Everything left is a project-wide barrier with existing recovery.
+        this.handleError(error);
+      }
+    } finally {
+      this.opening = false;
+      if (this.current(generation)) {
+        this.state.openingPath = null;
+        this.emit();
+      }
+    }
+  };
+  /** Replay only the opening the user just retried, never an expired intent. */
+  retryOpen = () => {
+    const last = this.lastOpen;
+    if (last !== null && this.state.canRetryOpen) void this.open(last.entry, last.placement);
+  };
   /** Revalidate every action and check the live boundary again before clipboard writes. */
   action = async (kind: "copyAbsolute" | "copyRelative" | "reveal", entry: FileTreeEntryDto) => {
     if (

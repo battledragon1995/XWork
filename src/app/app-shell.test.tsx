@@ -12,6 +12,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { getKeyboardShortcuts } from "@/lib/ipc/keyboard-shortcuts";
 import * as notifications from "@/lib/ipc/notifications";
 import { searchUnified } from "@/lib/ipc/search";
+import { useFileHandleRegistry } from "@/features/files";
 import { AppProviders } from "./app-providers";
 import { createAppRouter } from "./app-router";
 import { resetQuitStore, useQuitStore } from "./quit-store";
@@ -363,4 +364,32 @@ it("keeps Data apply alive across route changes and obtains fresh Quit impact", 
   expect(screen.getByText("XWork has been reset.")).toBeInTheDocument();
   expect(screen.queryByRole("dialog", { name: "Reset XWork?" })).toBeNull();
   resetSettingsStore();
+});
+
+/** The real composition must expose exactly one Files registry to every consumer. */
+it("mounts one Files registry for the whole application", () => {
+  const seen: unknown[] = [];
+  /** Read the registry the way a file pane does, from two independent places. */
+  function RegistryProbe() {
+    seen.push(useFileHandleRegistry());
+    return null;
+  }
+  const view = render(
+    <AppProviders>
+      <RegistryProbe />
+      <RegistryProbe />
+    </AppProviders>,
+  );
+
+  expect(seen).toHaveLength(2);
+  expect(seen[0]).toBe(seen[1]);
+
+  // A rerender of the tree keeps the same registry, so cached handles survive navigation.
+  view.rerender(
+    <AppProviders>
+      <RegistryProbe />
+      <RegistryProbe />
+    </AppProviders>,
+  );
+  expect(seen[2]).toBe(seen[0]);
 });

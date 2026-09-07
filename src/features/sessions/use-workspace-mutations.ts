@@ -29,8 +29,13 @@ import { recordToolUse } from "./recent-tools-store";
 import {
   clampRatioBasisPoints,
   countPanes,
+  findFirstEmptyPane,
+  findPane,
+  flattenPanes,
   PANE_LIMIT,
   resolveMoveBeforeTabId,
+  type SessionFilePlacement,
+  type SessionFileTarget,
 } from "./session-layout";
 
 /** Structural operations that share the workspace's single mutation slot. */
@@ -43,6 +48,7 @@ export type WorkspaceOperation =
   | "selectPaneTool"
   | "reopenTab"
   | "inspectClose"
+  | "prepareFileTarget"
   | "close";
 
 /** One inspected close target waiting for explicit confirmation. */
@@ -68,6 +74,10 @@ export interface WorkspaceMutations {
   toggleMaximizedPane(tabId: string, paneId: string): Promise<void>;
   selectPaneTool(tabId: string, paneId: string, profileId: string): Promise<void>;
   reopenLastClosedTab(): Promise<void>;
+  /** Which file placements the current snapshot can satisfy right now. */
+  filePlacements: Record<SessionFilePlacement, boolean>;
+  /** Prepare one empty pane for file content, or refuse without creating anything. */
+  prepareFileTarget(placement: SessionFilePlacement): Promise<SessionFileTarget | null>;
   requestClose(target: CloseTargetDto): Promise<void>;
   confirmClose(): Promise<void>;
   cancelClose(): void;
@@ -84,6 +94,28 @@ export interface UseWorkspaceMutationsOptions {
   onCatalogRefresh?(): void;
   onProfileCheck?(profileId: string): void;
   now?: () => number;
+}
+
+/**
+ * Decide which file placements the current snapshot can satisfy. Availability is read from
+ * the active tab alone: File Explorer never inspects layout itself.
+ */
+function filePlacementsOf(
+  detail: SessionDetailDto,
+  isBusy: boolean,
+): Record<SessionFilePlacement, boolean> {
+  const activeTab = detail.tabs.find((candidate) => candidate.id === detail.activeTabId);
+  const canSplit =
+    !isBusy &&
+    activeTab !== undefined &&
+    findPane(activeTab.layout, activeTab.activePaneId) !== null &&
+    countPanes(activeTab.layout) < PANE_LIMIT;
+  return {
+    newTab: !isBusy,
+    emptyPane: !isBusy && activeTab !== undefined && findFirstEmptyPane(activeTab.layout) !== null,
+    splitRight: canSplit,
+    splitDown: canSplit,
+  };
 }
 
 /** Decide whether a pane target is the only pane in its current tab. */
@@ -162,9 +194,19 @@ export function useWorkspaceMutations(options: UseWorkspaceMutationsOptions): Wo
     [options],
   );
 
-  /** Run one structural operation unless another structural command is already pending. */
+  /**
+   * Run one structural operation unless another structural command is already pending.
+   *
+   * `canRetryLater` is false for work whose intent expires with the click that started it:
+   * repeating a file-target preparation would leave an orphan tab or split behind for an
+   * opening the user can no longer complete.
+   */
   const runStructural = useCallback(
-    async <T>(operation: WorkspaceOperation, action: () => Promise<T>): Promise<T | null> => {
+    async <T>(
+      operation: WorkspaceOperation,
+      action: () => Promise<T>,
+      canRetryLater = true,
+    ): Promise<T | null> => {
       if (structuralBusy.current || isSessionClosing) {
         return null;
       }
@@ -175,9 +217,14 @@ export function useWorkspaceMutations(options: UseWorkspaceMutationsOptions): Wo
       try {
         return await action();
       } catch (rejection: unknown) {
-        handleFailure(rejection, async () => {
-          await runStructural(operation, action);
-        });
+        handleFailure(
+          rejection,
+          canRetryLater
+            ? async () => {
+                await runStructural(operation, action);
+              }
+            : null,
+        );
         return null;
       } finally {
         structuralBusy.current = false;
@@ -331,6 +378,71 @@ export function useWorkspaceMutations(options: UseWorkspaceMutationsOptions): Wo
     [options, runStructural],
   );
 
+  const prepareFileTarget = useCallback(
+    async (placement: SessionFilePlacement): Promise<SessionFileTarget | null> => {
+      const before = detailRef.current;
+      const sessionId = before.summary.id;
+      const activeTab = before.tabs.find((candidate) => candidate.id === before.activeTabId);
+      /** Reject a result that outlived the session it was requested for. */
+      const isStillCurrent = (): boolean => detailRef.current.summary.id === sessionId;
+
+      if (placement === "newTab") {
+        const knownTabIds = new Set(before.tabs.map((tab) => tab.id));
+        const result = await runStructural("createTab", () => createTab(sessionId), false);
+        if (result === null || !isStillCurrent()) return null;
+        options.onApplyDetail(result);
+        // The created tab is identified by the command result, never by a guessed identifier.
+        const created = result.tabs.find((tab) => !knownTabIds.has(tab.id));
+        const pane = created === undefined ? null : findFirstEmptyPane(created.layout);
+        return created === undefined || pane === null
+          ? null
+          : { tabId: created.id, paneId: pane.id };
+      }
+
+      if (activeTab === undefined) return null;
+
+      if (placement === "emptyPane") {
+        const empty = findFirstEmptyPane(activeTab.layout);
+        if (empty === null) return null;
+        if (activeTab.activePaneId === empty.id) {
+          return { tabId: activeTab.id, paneId: empty.id };
+        }
+        const result = await runStructural(
+          "prepareFileTarget",
+          () => setActivePane(sessionId, activeTab.id, empty.id),
+          false,
+        );
+        if (result === null || !isStillCurrent()) return null;
+        options.onApplyDetail(result);
+        // The pane may have been filled or closed while the activation was in flight.
+        const applied = result.tabs.find((tab) => tab.id === activeTab.id);
+        const current = applied === undefined ? null : findPane(applied.layout, empty.id);
+        return current === null || current.content.kind !== "empty"
+          ? null
+          : { tabId: activeTab.id, paneId: empty.id };
+      }
+
+      if (countPanes(activeTab.layout) >= PANE_LIMIT) return null;
+      const knownPaneIds = new Set(flattenPanes(activeTab.layout).map((pane) => pane.id));
+      const direction: SplitDirectionDto = placement === "splitRight" ? "right" : "down";
+      const result = await runStructural(
+        "splitPane",
+        () => splitPane(sessionId, activeTab.id, activeTab.activePaneId, direction),
+        false,
+      );
+      if (result === null || !isStillCurrent()) return null;
+      options.onApplyDetail(result);
+      const applied = result.tabs.find((tab) => tab.id === activeTab.id);
+      if (applied === undefined) return null;
+      // The split's own new leaf is the only pane the file may attach to.
+      const created = flattenPanes(applied.layout).find(
+        (pane) => !knownPaneIds.has(pane.id) && pane.content.kind === "empty",
+      );
+      return created === undefined ? null : { tabId: applied.id, paneId: created.id };
+    },
+    [options, runStructural],
+  );
+
   const reopenAction = useCallback(async () => {
     if (!detailRef.current.canReopenLastClosedTab) return;
     const result = await runStructural("reopenTab", () =>
@@ -450,6 +562,11 @@ export function useWorkspaceMutations(options: UseWorkspaceMutationsOptions): Wo
     toggleMaximizedPane,
     selectPaneTool: selectPaneToolAction,
     reopenLastClosedTab: reopenAction,
+    filePlacements: filePlacementsOf(
+      options.detail,
+      pending !== null || isSessionClosing || pendingClose !== null,
+    ),
+    prepareFileTarget,
     requestClose,
     confirmClose,
     cancelClose,

@@ -4,10 +4,40 @@ import type {
   FileTreeWarningReasonDto,
 } from "@/bindings/files/files";
 import { IpcCallError } from "@/lib/ipc/ipc-error";
+import type { FilePlacement } from "./file-explorer";
 
 export const INVALID_FILTER = "Use 1–128 characters without control characters.";
-export const VIEWING_LIMITATION =
-  "File viewing is not available yet. You can copy paths or reveal files.";
+
+/** Menu labels for the four openings, in the order FE-017 lists them. */
+export const PLACEMENT_LABELS: Record<FilePlacement, string> = {
+  newTab: "Open in new tab",
+  emptyPane: "Open in empty pane",
+  splitRight: "Split right and open",
+  splitDown: "Split down and open",
+};
+
+/** Explain why both split openings are unavailable, using BE-005's own limit. */
+export const PANE_LIMIT_EXPLANATION = "A tab can hold up to 4 panes.";
+
+/** Confirm one completed attachment in the exact placement the user chose. */
+export function openedFileCopy(placement: FilePlacement, name: string): string {
+  return {
+    newTab: `Opened ${name} in a new tab.`,
+    emptyPane: `Opened ${name} in the empty pane.`,
+    splitRight: `Opened ${name} in a new pane on the right.`,
+    splitDown: `Opened ${name} in a new pane below.`,
+  }[placement];
+}
+
+/** Report a successful opening whose recent-files bookkeeping did not survive. */
+export function recentNotRecordedCopy(name: string): string {
+  return `Opened ${name}. Recent files couldn't be updated.`;
+}
+
+/** Announce an opening that has started but not finished. */
+export function openingFileCopy(name: string): string {
+  return `Opening ${name}…`;
+}
 const errors: Record<FilesError["code"], string> = {
   windowNotAllowed: "File Explorer is only available in the main window.",
   invalidProjectId: "Could not identify this project.",

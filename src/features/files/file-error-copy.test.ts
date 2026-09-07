@@ -1,7 +1,17 @@
 import { expect, it } from "vitest";
 import type { FilesError } from "@/bindings/files/files";
 import { IpcCallError } from "@/lib/ipc/ipc-error";
-import { fileErrorCopy, truncationCopy, validFilter, warningCopy } from "./file-error-copy";
+import {
+  fileErrorCopy,
+  openedFileCopy,
+  openingFileCopy,
+  PANE_LIMIT_EXPLANATION,
+  PLACEMENT_LABELS,
+  recentNotRecordedCopy,
+  truncationCopy,
+  validFilter,
+  warningCopy,
+} from "./file-error-copy";
 
 const codes: FilesError["code"][] = [
   "windowNotAllowed",
@@ -61,4 +71,34 @@ it("maps all warnings and truncation reasons", () => {
   for (const reason of ["resultLimit", "scanLimit", "depthLimit"] as const)
     expect(truncationCopy(reason).length).toBeGreaterThan(15);
   expect(validFilter("\ud800")).toBe(false);
+});
+
+// Each placement has its own menu label and its own completed-opening announcement.
+it.each([
+  { placement: "newTab" as const, label: "Open in new tab", copy: "Opened a.ts in a new tab." },
+  {
+    placement: "emptyPane" as const,
+    label: "Open in empty pane",
+    copy: "Opened a.ts in the empty pane.",
+  },
+  {
+    placement: "splitRight" as const,
+    label: "Split right and open",
+    copy: "Opened a.ts in a new pane on the right.",
+  },
+  {
+    placement: "splitDown" as const,
+    label: "Split down and open",
+    copy: "Opened a.ts in a new pane below.",
+  },
+])("describes the $placement placement", ({ placement, label, copy }) => {
+  expect(PLACEMENT_LABELS[placement]).toBe(label);
+  expect(openedFileCopy(placement, "a.ts")).toBe(copy);
+});
+
+// A recorded-recents failure and a pending opening keep their own distinct sentences.
+it("separates a pending opening from a warned success", () => {
+  expect(openingFileCopy("a.ts")).toBe("Opening a.ts…");
+  expect(recentNotRecordedCopy("a.ts")).toBe("Opened a.ts. Recent files couldn't be updated.");
+  expect(PANE_LIMIT_EXPLANATION).toBe("A tab can hold up to 4 panes.");
 });

@@ -8,10 +8,10 @@ import { CloseTargetDialog } from "./close-target-dialog";
 import { PaneLayout } from "./pane-layout";
 import { RenameTabDialog } from "./rename-tab-dialog";
 import { countPanes, PANE_LIMIT } from "./session-layout";
-import type { SessionTerminalRenderer } from "./session-route";
+import type { SessionFilePaneRenderer, SessionTerminalRenderer } from "./session-route";
 import { SessionTabStrip } from "./session-tab-strip";
-import { useToolCatalog } from "./use-tool-catalog";
-import { useWorkspaceMutations } from "./use-workspace-mutations";
+import type { ToolCatalogData } from "./use-tool-catalog";
+import type { WorkspaceMutations } from "./use-workspace-mutations";
 import { useWorkspaceShortcuts } from "./use-workspace-shortcuts";
 
 /** Render the complete backend-owned tab and pane workspace for a nonempty session. */
@@ -21,22 +21,18 @@ export function SessionWorkspace(props: {
 
   detail: SessionDetailDto;
   rootPath: string | null;
+  /** The route owns both, so File Explorer shares this session's one mutation slot. */
+  catalog: ToolCatalogData;
+  mutations: WorkspaceMutations;
   onApplyDetail(detail: SessionDetailDto): void;
   onRefresh(): void;
   onRenameSession(): void;
   onDeleteSession(): void;
   renderTerminal?: SessionTerminalRenderer;
+  renderFilePane?: SessionFilePaneRenderer;
   fileExplorerToggle?: React.ReactNode;
 }) {
-  const catalog = useToolCatalog();
-  const mutations = useWorkspaceMutations({
-    detail: props.detail,
-    onApplyDetail: props.onApplyDetail,
-    onRefresh: props.onRefresh,
-    onProfileUnavailable: catalog.markUnavailable,
-    onCatalogRefresh: catalog.refresh,
-    onProfileCheck: (profileId) => void catalog.check(profileId),
-  });
+  const { catalog, mutations } = props;
   const [renameTarget, setRenameTarget] = useState<TabDto | null>(null);
   const refreshRequested = useRef(false);
   const dialogTrigger = useRef<HTMLElement | null>(null);
@@ -205,6 +201,7 @@ export function SessionWorkspace(props: {
           }
           sessionId={props.detail.summary.id}
           renderTerminal={props.renderTerminal}
+          renderFilePane={props.renderFilePane}
           onRefreshSession={props.onRefresh}
           onCheckProfile={(profileId) => void catalog.check(profileId)}
         />

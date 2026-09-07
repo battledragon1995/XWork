@@ -261,3 +261,81 @@ it("updates pane labels and restore guidance from the same snapshot", () => {
   expect(screen.getByRole("button", { name: "Close pane" })).toBeEnabled();
   expect(screen.queryByText(/to restore/)).not.toBeInTheDocument();
 });
+
+// Verify a file pane hands both regions to the app renderer instead of showing the root path.
+it("renders file content through both renderer regions", () => {
+  const renderFilePane = vi.fn((props: { region: string }) => (
+    <span>{`file-${props.region}`}</span>
+  ));
+  render(
+    <TooltipProvider>
+      <MemoryRouter>
+        <SessionPane
+          pane={createPaneDto({
+            id: "pane-file",
+            content: { kind: "file", fileHandleId: "handle-1", title: "main.rs" },
+          })}
+          tabId="tab-1"
+          sessionId="session-1"
+          rootPath={FIXTURE_ROOT_PATH}
+          profiles={[]}
+          catalog={createToolCatalogData()}
+          paneCount={1}
+          paneIndex={1}
+          isActive
+          isMaximized={false}
+          isHiddenByMaximize={false}
+          isBusy={false}
+          selectingProfileId={null}
+          onActivate={vi.fn()}
+          onSplit={vi.fn()}
+          onToggleMaximize={vi.fn()}
+          onClose={vi.fn()}
+          onSelectProfile={vi.fn()}
+          renderFilePane={renderFilePane}
+        />
+      </MemoryRouter>
+    </TooltipProvider>,
+  );
+
+  expect(screen.getByText("file-header")).toBeInTheDocument();
+  expect(screen.getByText("file-body")).toBeInTheDocument();
+  // The project root belongs to other content: a file pane shows its own path instead.
+  expect(screen.queryByText(FIXTURE_ROOT_PATH)).not.toBeInTheDocument();
+  expect(renderFilePane).toHaveBeenCalledTimes(2);
+  expect(renderFilePane.mock.calls.map(([props]) => props.region)).toEqual(["header", "body"]);
+});
+
+// Verify a file pane without an app renderer keeps the existing root path and placeholder.
+it("falls back to the root path and placeholder without a file renderer", () => {
+  render(
+    <TooltipProvider>
+      <MemoryRouter>
+        <SessionPane
+          pane={createPaneDto({
+            id: "pane-file",
+            content: { kind: "file", fileHandleId: "handle-1", title: "main.rs" },
+          })}
+          tabId="tab-1"
+          rootPath={FIXTURE_ROOT_PATH}
+          profiles={[]}
+          catalog={createToolCatalogData()}
+          paneCount={1}
+          paneIndex={1}
+          isActive={false}
+          isMaximized={false}
+          isHiddenByMaximize={false}
+          isBusy={false}
+          selectingProfileId={null}
+          onActivate={vi.fn()}
+          onSplit={vi.fn()}
+          onToggleMaximize={vi.fn()}
+          onClose={vi.fn()}
+          onSelectProfile={vi.fn()}
+        />
+      </MemoryRouter>
+    </TooltipProvider>,
+  );
+
+  expect(screen.getByText(FIXTURE_ROOT_PATH)).toBeInTheDocument();
+});

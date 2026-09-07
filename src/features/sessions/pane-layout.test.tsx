@@ -3,7 +3,12 @@ import { MemoryRouter } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { PaneLayout } from "./pane-layout";
-import { createSplitLayout, createTabDto, createToolCatalogData } from "./sessions-test-fixture";
+import {
+  createPaneDto,
+  createSplitLayout,
+  createTabDto,
+  createToolCatalogData,
+} from "./sessions-test-fixture";
 
 afterEach(cleanup);
 
@@ -75,5 +80,68 @@ describe("PaneLayout", () => {
       "aria-disabled",
       "true",
     );
+  });
+
+  // Verify each renderer reaches only its own leaf and the terminal slot is untouched.
+  it("routes the file slot to the file leaf only", () => {
+    const tab = createTabDto({
+      layout: createSplitLayout({
+        first: {
+          kind: "pane",
+          pane: createPaneDto({
+            id: "pane-file",
+            content: { kind: "file", fileHandleId: "handle-1", title: "main.rs" },
+          }),
+        },
+        second: {
+          kind: "pane",
+          pane: createPaneDto({
+            id: "pane-terminal",
+            content: {
+              kind: "terminal",
+              terminalId: "terminal-1",
+              profileId: "builtin:codex",
+              title: "Codex",
+            },
+          }),
+        },
+      }),
+      activePaneId: "pane-file",
+    });
+    const renderFilePane = vi.fn((props: { region: string; paneId: string }) => (
+      <span data-testid={`file-${props.region}`}>{props.paneId}</span>
+    ));
+    const renderTerminal = vi.fn((props: { paneId: string }) => (
+      <span data-testid="terminal">{props.paneId}</span>
+    ));
+    render(
+      <TooltipProvider>
+        <MemoryRouter>
+          <PaneLayout
+            sessionId="session-1"
+            tab={tab}
+            rootPath="D:\Fixtures\alpha"
+            catalog={createToolCatalogData()}
+            isBusy={false}
+            selectingProfileId={null}
+            onActivatePane={vi.fn()}
+            onSplitPane={vi.fn()}
+            onCommitRatio={vi.fn()}
+            onToggleMaximize={vi.fn()}
+            onClosePane={vi.fn()}
+            onSelectProfile={vi.fn()}
+            renderFilePane={renderFilePane}
+            renderTerminal={renderTerminal}
+          />
+        </MemoryRouter>
+      </TooltipProvider>,
+    );
+
+    expect(screen.getByTestId("file-header")).toHaveTextContent("pane-file");
+    expect(screen.getByTestId("file-body")).toHaveTextContent("pane-file");
+    expect(screen.getByTestId("terminal")).toHaveTextContent("pane-terminal");
+    // Only the file leaf is asked for, and exactly once per region.
+    expect(renderFilePane).toHaveBeenCalledTimes(2);
+    expect(renderTerminal).toHaveBeenCalledTimes(1);
   });
 });

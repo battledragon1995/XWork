@@ -28,8 +28,11 @@ import {
 // Replace both boundaries so no case reaches Tauri.
 vi.mock("@/lib/ipc/sessions", () => ({
   closeRuntimeTarget: vi.fn(),
+  createTab: vi.fn(),
   getCloseImpact: vi.fn(),
   getSession: vi.fn(),
+  setActivePane: vi.fn(),
+  splitPane: vi.fn(),
   onSessionsRuntimeChanged: vi.fn(),
   renameSession: vi.fn(),
   selectSessionTool: vi.fn(),
@@ -916,5 +919,190 @@ describe("SessionRoute content branches", () => {
     await user.keyboard("1");
 
     expect(selectSessionToolMock).not.toHaveBeenCalled();
+  });
+});
+
+/** Capture the Explorer slot props so a case can drive placements and preparation itself. */
+function slotProbe(capture: (props: SessionFileExplorerSlotProps) => void) {
+  return (props: SessionFileExplorerSlotProps) => {
+    capture(props);
+    return <section data-testid="explorer-slot" hidden={!props.isVisible} />;
+  };
+}
+
+describe("SessionRoute file slots", () => {
+  // Verify a session with no tab can still create its first tab and return that pane.
+  it("prepares a first file tab from a session with no tabs", async () => {
+    const detail = createSessionDetail();
+    getSessionMock.mockResolvedValue(detail);
+    const created = createNonEmptySessionDetail({ revision: "20" });
+    const createdTab = created.tabs[0];
+    if (createdTab === undefined) throw new Error("fixture must have one tab");
+    const createTabMock = vi.mocked(sessionsIpc.createTab);
+    createTabMock.mockResolvedValue({
+      ...created,
+      tabs: [
+        {
+          ...createdTab,
+          layout: { kind: "pane", pane: { id: "pane-empty", content: { kind: "empty" } } },
+          activePaneId: "pane-empty",
+        },
+      ],
+    });
+    let slot: SessionFileExplorerSlotProps | null = null;
+    render(
+      <TooltipProvider>
+        <MemoryRouter initialEntries={[`/sessions/${FIXTURE_SESSION_ID}`]}>
+          <Routes>
+            <Route
+              path="/sessions/:sessionId"
+              element={
+                <SessionRoute
+                  renderFileExplorer={slotProbe((props) => {
+                    slot = props;
+                  })}
+                />
+              }
+            />
+          </Routes>
+        </MemoryRouter>
+      </TooltipProvider>,
+    );
+    await screen.findByTestId("explorer-slot");
+
+    const captured = slot as SessionFileExplorerSlotProps | null;
+    if (captured === null) throw new Error("the Explorer slot should have been rendered");
+    // A session with no tab can only create one; the other three placements stay disabled.
+    expect(captured.placements).toEqual({
+      newTab: true,
+      emptyPane: false,
+      splitRight: false,
+      splitDown: false,
+    });
+
+    let target: unknown;
+    await act(async () => {
+      target = await captured.prepareFileTarget("newTab");
+    });
+
+    expect(createTabMock).toHaveBeenCalledExactlyOnceWith(FIXTURE_SESSION_ID);
+    expect(target).toEqual({ tabId: createdTab.id, paneId: "pane-empty" });
+    // The applied snapshot switches the route to its workspace branch.
+    expect(await screen.findByRole("tab", { name: /Codex/ })).toBeInTheDocument();
+  });
+
+  // Verify a failed first-tab preparation is reported by the branch that owns it.
+  it("reports a first-tab preparation failure in the empty branch", async () => {
+    getSessionMock.mockResolvedValue(createSessionDetail());
+    vi.mocked(sessionsIpc.createTab).mockRejectedValue(
+      new IpcCallError("create_tab", { code: "projectLookupFailed" }),
+    );
+    let slot: SessionFileExplorerSlotProps | null = null;
+    render(
+      <TooltipProvider>
+        <MemoryRouter initialEntries={[`/sessions/${FIXTURE_SESSION_ID}`]}>
+          <Routes>
+            <Route
+              path="/sessions/:sessionId"
+              element={
+                <SessionRoute
+                  renderFileExplorer={slotProbe((props) => {
+                    slot = props;
+                  })}
+                />
+              }
+            />
+          </Routes>
+        </MemoryRouter>
+      </TooltipProvider>,
+    );
+    await screen.findByTestId("explorer-slot");
+    const captured = slot as SessionFileExplorerSlotProps | null;
+    if (captured === null) throw new Error("the Explorer slot should have been rendered");
+
+    let target: unknown = "unset";
+    await act(async () => {
+      target = await captured.prepareFileTarget("newTab");
+    });
+
+    expect(target).toBeNull();
+    expect(
+      await screen.findByText("XWork couldn't start a session for this project."),
+    ).toBeInTheDocument();
+  });
+
+  // Verify attaching a file makes the route re-read its own snapshot.
+  it("re-reads the session after a file is attached", async () => {
+    getSessionMock.mockResolvedValue(createNonEmptySessionDetail());
+    let slot: SessionFileExplorerSlotProps | null = null;
+    render(
+      <TooltipProvider>
+        <MemoryRouter initialEntries={[`/sessions/${FIXTURE_SESSION_ID}`]}>
+          <Routes>
+            <Route
+              path="/sessions/:sessionId"
+              element={
+                <SessionRoute
+                  renderFileExplorer={slotProbe((props) => {
+                    slot = props;
+                  })}
+                />
+              }
+            />
+          </Routes>
+        </MemoryRouter>
+      </TooltipProvider>,
+    );
+    await screen.findByTestId("explorer-slot");
+    const captured = slot as SessionFileExplorerSlotProps | null;
+    if (captured === null) throw new Error("the Explorer slot should have been rendered");
+    const readsBefore = getSessionMock.mock.calls.length;
+
+    await act(async () => {
+      captured.onFileAttached();
+    });
+
+    await waitFor(() => expect(getSessionMock.mock.calls.length).toBeGreaterThan(readsBefore));
+  });
+
+  // Verify a file pane reaches the app renderer through the workspace and its pane layout.
+  it("renders file panes through the route slot", async () => {
+    const fileTab = {
+      id: "tab-file",
+      name: "main.rs",
+      layout: {
+        kind: "pane" as const,
+        pane: {
+          id: "pane-file",
+          content: { kind: "file" as const, fileHandleId: "handle-1", title: "main.rs" },
+        },
+      },
+      activePaneId: "pane-file",
+      maximizedPaneId: null,
+    };
+    getSessionMock.mockResolvedValue(
+      createNonEmptySessionDetail({ tabs: [fileTab], activeTabId: fileTab.id }),
+    );
+    render(
+      <TooltipProvider>
+        <MemoryRouter initialEntries={[`/sessions/${FIXTURE_SESSION_ID}`]}>
+          <Routes>
+            <Route
+              path="/sessions/:sessionId"
+              element={
+                <SessionRoute
+                  renderFilePane={(props) => (
+                    <span data-testid={`file-${props.region}`}>{props.content.fileHandleId}</span>
+                  )}
+                />
+              }
+            />
+          </Routes>
+        </MemoryRouter>
+      </TooltipProvider>,
+    );
+
+    expect(await screen.findByTestId("file-header")).toHaveTextContent("handle-1");
+    expect(screen.getByTestId("file-body")).toHaveTextContent("handle-1");
   });
 });

@@ -23,9 +23,11 @@ export function PaneContentPlaceholder(props: {
       </div>
     );
   }
+  // Neutral copy: a file pane whose app renderer is absent says only that, with no
+  // feature code the user cannot act on.
   return (
     <div className="grid h-full place-content-center text-center text-sm text-muted-soft">
-      File panes arrive with FE-017.
+      This content is not available here.
     </div>
   );
 }

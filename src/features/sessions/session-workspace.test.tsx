@@ -27,10 +27,12 @@ const mutations = {
   cancelClose: vi.fn(),
   clearFailure: vi.fn(),
   retryFailure: vi.fn(),
+  filePlacements: { newTab: true, emptyPane: false, splitRight: true, splitDown: true },
+  prepareFileTarget: vi.fn(async () => null),
 };
 
-vi.mock("./use-tool-catalog", () => ({ useToolCatalog: () => createToolCatalogData() }));
-vi.mock("./use-workspace-mutations", () => ({ useWorkspaceMutations: () => mutations }));
+/** The route owns both seams now, so every case supplies them as props. */
+const catalog = createToolCatalogData();
 
 afterEach(cleanup);
 
@@ -46,6 +48,8 @@ it("preserves terminal DOM and disables Explorer at the workspace boundary", asy
         <SessionWorkspace
           detail={detail}
           rootPath={null}
+          catalog={catalog}
+          mutations={mutations}
           onApplyDetail={vi.fn()}
           onRefresh={vi.fn()}
           onRenameSession={vi.fn()}
@@ -84,6 +88,8 @@ describe("SessionWorkspace", () => {
             shortcutPlatform="windows"
             detail={createNonEmptySessionDetail()}
             rootPath={null}
+            catalog={catalog}
+            mutations={mutations}
             onApplyDetail={vi.fn()}
             onRefresh={vi.fn()}
             onRenameSession={onRenameSession}
@@ -198,6 +204,8 @@ it("dispatches overrides through the existing workspace callbacks", async () => 
           shortcutPlatform="windows"
           detail={createNonEmptySessionDetail()}
           rootPath={null}
+          catalog={catalog}
+          mutations={mutations}
           onApplyDetail={vi.fn()}
           onRefresh={vi.fn()}
           onRenameSession={vi.fn()}
