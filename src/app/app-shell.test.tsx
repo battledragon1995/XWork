@@ -1,3 +1,4 @@
+import { useNotesDataBoundary } from "@/features/notes";
 import * as dataIpc from "@/lib/ipc/data-management";
 import { onQuitRequested, requestQuit, cancelQuit } from "@/lib/ipc/app-lifecycle";
 import { getSettings } from "@/lib/ipc/settings";
@@ -394,4 +395,26 @@ it("mounts one Files registry for the whole application", () => {
     </AppProviders>,
   );
   expect(seen[2]).toBe(seen[0]);
+});
+
+/** Notes shares the same provider instance across ordinary route-owner rerenders. */
+it("retains one Notes maintenance owner across child replacement", () => {
+  const seen: unknown[] = [];
+  function Probe() {
+    seen.push(useNotesDataBoundary());
+    return null;
+  }
+  const view = render(
+    <AppProviders>
+      <Probe />
+    </AppProviders>,
+  );
+  view.rerender(
+    <AppProviders>
+      <div>
+        <Probe />
+      </div>
+    </AppProviders>,
+  );
+  expect(seen.at(-1)).toBe(seen[0]);
 });

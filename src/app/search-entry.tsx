@@ -1,3 +1,4 @@
+import { getNote } from "@/lib/ipc/notes";
 import { useOptionalDataManagement } from "@/features/settings/data-management-provider";
 import { Search } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -35,8 +36,6 @@ const UNAVAILABLE = new Set([
 
 /** Fail closed for catalog entries that have no public palette executor. */
 function availability(target: SearchTargetDto): SearchTargetAvailability {
-  if (target.kind === "note")
-    return { enabled: false, reason: "Note opening will be available in the next Notes update." };
   if (target.kind === "file")
     return {
       enabled: false,
@@ -234,7 +233,12 @@ export function SearchEntry() {
         if (detail.summary.id !== target.sessionId || detail.summary.projectId !== target.projectId)
           throw new IpcCallError("get_session", { code: "target_unavailable" });
         destination = `/sessions/${encodeURIComponent(detail.summary.id)}`;
-      } else if (target.kind === "file" || target.kind === "note") {
+      } else if (target.kind === "note") {
+        const note = await getNote(target.noteId);
+        if (note.id !== target.noteId || note.status === "trash")
+          throw new IpcCallError("get_note", { code: "target_unavailable" });
+        destination = `/notes?noteId=${encodeURIComponent(note.id)}&view=${note.status}`;
+      } else if (target.kind === "file") {
         return;
       } else if (
         target.actionId === "sessions.create_current_project" &&
@@ -257,9 +261,13 @@ export function SearchEntry() {
       if (!valid()) return;
       const code = cause instanceof IpcCallError ? (cause.payload?.code ?? null) : null;
       if (
-        ["target_unavailable", "projectNotFound", "project_not_found", "sessionNotFound"].includes(
-          code ?? "",
-        )
+        [
+          "target_unavailable",
+          "note_not_found",
+          "projectNotFound",
+          "project_not_found",
+          "sessionNotFound",
+        ].includes(code ?? "")
       ) {
         setError("This result is no longer available.");
         setRefreshKey((value) => value + 1);

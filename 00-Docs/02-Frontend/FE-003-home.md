@@ -280,3 +280,9 @@ FE-003 và extension FE-001 stage 14 đã triển khai; frontend 2.000 test / 11
 ## Câu hỏi mở
 
 Không có.
+
+## Mở rộng giai đoạn 18 — Notes
+
+Phần mở rộng này thay các giới hạn “chưa có Notes” của Phase 1 ở trên; contract đầy đủ và inventory implementation tại `FE-019-notes.md`. App `home-entry.tsx` compose public `HomeNoteSections` và `useNotesPresence`, truyền slot/presence vào HomeRoute/HomeScreen, không import Notes trong feature Home. Pinned query Active Only cap 2, Recent query Active Exclude cap 3; mỗi section có loading/empty/error riêng và Open Notes. Có note ở bất kỳ lifecycle nào thì Home không bị Welcome che dù không có project; presence lỗi không được coi là empty.
+
+HomeRouteProps bổ sung `notesSection?: React.ReactNode`, `quickNoteSlot?: React.ReactNode`, `notesPresence?: "loading" | "present" | "empty" | "error"`, `onRetryNotesPresence?(): void`. Cột viết đặt Quick Note slot (khi có) trước Notes, cột phụ giữ Sessions/Recent projects. FE-019 chỉ inject Notes; Quick Note nhúng do FE-020 cùng stage 18 cung cấp sau, không placeholder hay shortcut stage 19. Calendar vẫn chưa hiển thị. `src/app/home-entry.test.tsx`, `src/features/home/home-route.test.tsx`, `src/features/home/home-screen.test.tsx` kiểm thử Notes/presence/boundary cùng regression Sessions/Projects. Đây là extension đang hoạt động, không sửa evidence/plan lịch sử Phase 1.

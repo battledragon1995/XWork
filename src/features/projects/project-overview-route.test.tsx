@@ -441,3 +441,29 @@ describe("ProjectOverviewRoute sessions", () => {
     expect(screen.queryByRole("button", { name: "Try again" })).not.toBeInTheDocument();
   });
 });
+
+/** Slot invocation is deferred until the project owner has loaded its identity. */
+it("renders linked notes only after project load", async () => {
+  let resolve!: (value: ProjectDto) => void;
+  openProjectMock.mockReturnValueOnce(
+    new Promise((yes) => {
+      resolve = yes;
+    }),
+  );
+  const slot = vi.fn((id: string) => <p>Notes for {id}</p>);
+  render(
+    <TooltipProvider>
+      <MemoryRouter initialEntries={["/projects/3f2a"]}>
+        <Routes>
+          <Route
+            path="/projects/:projectId"
+            element={<ProjectOverviewRoute renderLinkedNotes={slot} />}
+          />
+        </Routes>
+      </MemoryRouter>
+    </TooltipProvider>,
+  );
+  expect(slot).not.toHaveBeenCalled();
+  await act(async () => resolve(PROJECT));
+  expect(await screen.findByText("Notes for 3f2a")).toBeVisible();
+});

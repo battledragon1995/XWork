@@ -1,6 +1,7 @@
 import { SettingsDataRoute } from "@/features/settings/settings-data-route";
 import { createMemoryRouter, Navigate, type Params } from "react-router";
-import { ProjectOverviewRoute } from "@/features/projects/project-overview-route";
+import { ProjectOverviewEntry } from "./project-overview-entry";
+import { NotesRoute } from "@/features/notes";
 import { ProjectsRoute } from "@/features/projects/projects-route";
 import { readProjectCrumbLabel } from "@/features/projects/projects-store";
 import { readSessionCrumb } from "@/features/sessions/sessions-store";
@@ -71,13 +72,13 @@ export function createAppRouter(initialEntries: string[] = ["/"]) {
           },
           {
             path: "projects/:projectId",
-            element: <ProjectOverviewRoute />,
+            element: <ProjectOverviewEntry />,
             errorElement: <AppErrorBoundary />,
             handle: crumbs((params) => ["Projects", readProjectCrumbLabel(params.projectId)]),
           },
           {
             path: "notes",
-            element: <AreaPlaceholder area="Notes" arrivesWith="FE-019" />,
+            element: <NotesRoute />,
             errorElement: <AppErrorBoundary />,
             handle: crumbs(() => ["Notes"]),
           },

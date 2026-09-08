@@ -1,3 +1,4 @@
+import { useNotesDataBoundary } from "@/features/notes";
 import { LoaderCircle } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router";
@@ -24,6 +25,7 @@ export function DataManagementHost(props: { children: React.ReactNode }) {
   const shortcuts = useKeyboardShortcuts();
   const terminal = useTerminalDataBoundary();
   const fileData = useFileDataBoundary();
+  const notesData = useNotesDataBoundary();
   const navigate = useNavigate();
   const failedReads = useRef<Array<() => Promise<void>>>([]);
   /** Try every owner even if an earlier read fails; retain only failed reads for Retry. */
@@ -56,6 +58,7 @@ export function DataManagementHost(props: { children: React.ReactNode }) {
       useCliProfilesStore.getState(),
       shortcuts,
       fileData,
+      notesData,
     ];
     const attempts = owners.map(
       /** Claim each barrier synchronously. */ (owner) => owner.settleBeforeDataChange(),
@@ -86,6 +89,7 @@ export function DataManagementHost(props: { children: React.ReactNode }) {
       terminal.clearAfterReset();
       // Handles are dropped before navigation so no query for a deleted handle survives Home.
       fileData.clearAfterReset();
+      notesData.clearAfterReset();
     }
     // Invoke these APIs before navigation so Home cannot render deleted rows even on query failure.
     const projects = useProjectsStore.getState().refreshAfterDataChange(reset);
@@ -98,6 +102,7 @@ export function DataManagementHost(props: { children: React.ReactNode }) {
       shortcuts.refreshAfterDataChange,
       /** Observe the already-started project read. */ () => projects,
       /** Observe the already-started runtime read. */ () => sessions,
+      notesData.refreshAfterDataChange,
     ];
     try {
       await readAll(reads);
@@ -121,6 +126,7 @@ export function DataManagementHost(props: { children: React.ReactNode }) {
       terminal.reconcileAfterResetFailure,
       /** An uncertain reset only re-reads retained handles; nothing is deleted here. */
       async () => fileData.reconcileAfterResetFailure(),
+      notesData.refreshAfterDataChange,
     ]);
   }
   /** Retry only failed reads, or reconcile all owners for an unknown command outcome. */
@@ -140,6 +146,7 @@ export function DataManagementHost(props: { children: React.ReactNode }) {
             terminal.reconcileAfterResetFailure,
             /** Re-read retained handles for an unknown command outcome. */
             async () => fileData.reconcileAfterResetFailure(),
+            notesData.refreshAfterDataChange,
           ],
     );
   }

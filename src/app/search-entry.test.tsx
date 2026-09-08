@@ -1,3 +1,7 @@
+import { getNote } from "@/lib/ipc/notes";
+import type { NoteDto } from "@/bindings/notes";
+/** Isolate note target revalidation. */
+vi.mock("@/lib/ipc/notes", () => ({ getNote: vi.fn() }));
 const maintenance = vi.hoisted(() => ({ value: null as DataManagementState | null }));
 /** Inject the public Data snapshot to exercise epochs before React rerenders. */
 vi.mock("@/features/settings/data-management-provider", () => ({
@@ -273,16 +277,15 @@ it("does not activate a file search result", async () => {
   expect(getSession).not.toHaveBeenCalled();
   expect(createSession).not.toHaveBeenCalled();
 });
-/** Notes results stay visible but cannot dispatch before the Notes UI implementation. */
-it("does not activate a note search result", async () => {
+/** Note results activate only after authoritative lifecycle revalidation. */
+it.each(["active", "archived"] as const)("opens a verified %s note", async (status) => {
   vi.mocked(searchUnified).mockResolvedValue(response({ kind: "note", noteId: "n" }));
+  vi.mocked(getNote).mockResolvedValue({ id: "n", status } as NoteDto);
   mount();
   await open();
-  expect(screen.getByRole("option")).toHaveAttribute("aria-disabled", "true");
   await activate();
-  expect(getProject).not.toHaveBeenCalled();
-  expect(getSession).not.toHaveBeenCalled();
-  expect(createSession).not.toHaveBeenCalled();
+  expect(getNote).toHaveBeenCalledWith("n");
+  await waitFor(() => expect(screen.getByTestId("route")).toHaveTextContent("/notes"));
 });
 /** Owner context is resolved before any search request. */
 it.each(["/projects/p", "/sessions/s"])("resolves %s context", async (path) => {
@@ -548,5 +551,33 @@ it("retires getSession activation on Data import", async () => {
   await activate();
   await owner.getSnapshot().acceptCommitted("backup_imported");
   await act(async () => resolve(detail()));
+  expect(screen.getByTestId("route").textContent).toBe("/");
+});
+
+/** A stale Trash target refreshes results and never navigates. */
+it("rejects a Note moved to Trash", async () => {
+  vi.mocked(searchUnified).mockResolvedValue(response({ kind: "note", noteId: "n" }));
+  vi.mocked(getNote).mockResolvedValue({ id: "n", status: "trash" } as NoteDto);
+  mount();
+  await open();
+  await activate();
+  expect(await screen.findByText("This result is no longer available.")).toBeVisible();
+  expect(screen.getByTestId("route")).toHaveTextContent("/");
+});
+/** A closed palette cannot navigate on a late Note revalidation. */
+it("ignores a Note response after palette dismissal", async () => {
+  let resolve!: (note: NoteDto) => void;
+  vi.mocked(getNote).mockReturnValue(
+    new Promise((yes) => {
+      resolve = yes;
+    }),
+  );
+  vi.mocked(searchUnified).mockResolvedValue(response({ kind: "note", noteId: "n" }));
+  mount();
+  await open();
+  fireEvent.keyDown(screen.getByRole("combobox"), { key: "Enter" });
+  await waitFor(() => expect(getNote).toHaveBeenCalled());
+  await userEvent.click(screen.getByRole("button", { name: "Close search" }));
+  await act(async () => resolve({ id: "n", status: "active" } as NoteDto));
   expect(screen.getByTestId("route").textContent).toBe("/");
 });

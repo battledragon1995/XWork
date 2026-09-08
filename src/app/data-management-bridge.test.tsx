@@ -1,3 +1,12 @@
+/** Observe only the public Notes maintenance API at the app composition boundary. */
+const noteBoundary = vi.hoisted(() => ({
+  settleBeforeDataChange: vi.fn(async () => {}),
+  releaseDataChangeBarrier: vi.fn(),
+  clearAfterReset: vi.fn(),
+  refreshAfterDataChange: vi.fn(async () => {}),
+  reconcileAfterResetFailure: vi.fn(async () => {}),
+}));
+vi.mock("@/features/notes", () => ({ useNotesDataBoundary: () => noteBoundary }));
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { DataChangedEventDto } from "@/bindings/data-management";
@@ -382,4 +391,30 @@ it("reconciles Files after an uncertain reset", async () => {
 
   expect(fake.clearFiles).not.toHaveBeenCalled();
   expect(fake.reconcileFiles).toHaveBeenCalled();
+});
+
+/** An unresolved Notes producer prevents the destructive command and releases every owner. */
+it("blocks confirmation when Notes cannot settle", async () => {
+  await mount();
+  noteBoundary.settleBeforeDataChange.mockRejectedValueOnce(new Error("Unknown create"));
+  await act(() => data.prepare("reset"));
+  act(() => data.setConfirmation("RESET"));
+  await act(() => data.confirm());
+  expect(noteBoundary.settleBeforeDataChange).toHaveBeenCalledOnce();
+  expect(ipc.confirmResetXwork).not.toHaveBeenCalled();
+  expect(noteBoundary.releaseDataChangeBarrier).toHaveBeenCalledOnce();
+  expect(fake.release).toHaveBeenCalledOnce();
+});
+/** Reset retires the Notes draft before Home navigation and re-reads without another mutation. */
+it("clears Notes before reset navigation and refreshes after import", async () => {
+  await mount();
+  await act(async () => emit({ kind: "app_reset" }));
+  expect(noteBoundary.clearAfterReset).toHaveBeenCalledOnce();
+  expect(noteBoundary.clearAfterReset.mock.invocationCallOrder[0]).toBeLessThan(
+    fake.navigate.mock.invocationCallOrder[0] ?? 0,
+  );
+  expect(noteBoundary.refreshAfterDataChange).toHaveBeenCalledOnce();
+  await act(async () => emit({ kind: "backup_imported" }));
+  expect(noteBoundary.clearAfterReset).toHaveBeenCalledOnce();
+  expect(noteBoundary.refreshAfterDataChange).toHaveBeenCalledTimes(2);
 });

@@ -1,3 +1,14 @@
+import * as notesIpc from "@/lib/ipc/notes";
+/** Isolate Notes presence and projection reads. */
+vi.mock("@/lib/ipc/notes", () => ({
+  listNotes: vi.fn(async () => ({
+    items: [],
+    offset: 0,
+    totalMatches: 0,
+    hasMore: false,
+    counts: { active: 0, archived: 0, trash: 0 },
+  })),
+}));
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { useEffect } from "react";
 import { createMemoryRouter, Link, Outlet, RouterProvider } from "react-router";
@@ -349,4 +360,19 @@ it("does not query sessions for Welcome", async () => {
   await screen.findByRole("button", { name: "Add Project" });
   expect(listSessions).not.toHaveBeenCalled();
   expect(onProjectsChanged).toHaveBeenCalledOnce();
+});
+
+/** Notes across all lifecycle counts keep a projectless Home out of Welcome. */
+it("shows Notes-only Home for archived records", async () => {
+  vi.mocked(listProjects).mockResolvedValue([]);
+  vi.mocked(notesIpc.listNotes).mockResolvedValue({
+    items: [],
+    offset: 0,
+    totalMatches: 0,
+    hasMore: false,
+    counts: { active: 0, archived: 1, trash: 0 },
+  });
+  await mount();
+  expect(await screen.findByRole("link", { name: "Open Notes" })).toBeVisible();
+  expect(screen.queryByRole("button", { name: "Add Project" })).toBeNull();
 });

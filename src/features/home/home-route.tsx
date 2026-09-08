@@ -9,6 +9,10 @@ export interface HomeBoundarySnapshot {
   epoch: number;
 }
 export interface HomeRouteProps {
+  notesSection?: React.ReactNode;
+  quickNoteSlot?: React.ReactNode;
+  notesPresence?: "loading" | "present" | "empty" | "error";
+  onRetryNotesPresence?(): void;
   boundary?: HomeBoundarySnapshot;
   readBoundary?(): HomeBoundarySnapshot;
 }
@@ -49,7 +53,14 @@ export function HomeRoute(props: HomeRouteProps = {}) {
         <div role="status" aria-busy="true" className="h-full">
           <span className="sr-only">Checking your projects…</span>
         </div>
-      ) : presence.status === "empty" ? (
+      ) : presence.status === "empty" && props.notesPresence === "loading" ? (
+        <p role="status">Checking your notes…</p>
+      ) : presence.status === "empty" && props.notesPresence === "error" ? (
+        <div role="alert">
+          <p>Could not load your notes.</p>
+          <Button onClick={props.onRetryNotesPresence}>Retry Notes</Button>
+        </div>
+      ) : presence.status === "empty" && props.notesPresence !== "present" ? (
         <>
           {(projects.failure || projects.subscriptionFailed) && (
             <div className="px-8 pt-4">
@@ -62,7 +73,8 @@ export function HomeRoute(props: HomeRouteProps = {}) {
           )}
           <WelcomeScreen />
         </>
-      ) : presence.status === "present" ? (
+      ) : presence.status === "present" ||
+        (presence.status === "empty" && props.notesPresence === "present") ? (
         <HomeScreen {...props} projects={projects} />
       ) : (
         <div
@@ -70,11 +82,11 @@ export function HomeRoute(props: HomeRouteProps = {}) {
           className="flex h-full flex-col items-start justify-center gap-3 px-8 py-7 text-[15px] text-body"
         >
           <p>
-            {presence.kind === "retryable"
+            {presence.status === "failed" && presence.kind === "retryable"
               ? "XWork couldn't load your projects."
               : "XWork ran into a problem it cannot recover from. Restart XWork."}
           </p>
-          {presence.kind === "retryable" && (
+          {presence.status === "failed" && presence.kind === "retryable" && (
             <Button
               disabled={projects.refreshing || props.boundary?.suspended}
               onClick={projects.refresh}

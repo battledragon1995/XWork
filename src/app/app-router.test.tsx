@@ -172,15 +172,15 @@ function readBreadcrumb(): string[] {
 
 describe("createAppRouter", () => {
   // Verify each primary area route renders its own placeholder with the owning feature.
-  it.each([
-    ["/notes", "Notes", "FE-019"],
-    ["/calendar", "Calendar", "FE-021"],
-  ])("renders the %s route as the %s area placeholder", (path, area, arrivesWith) => {
-    renderAt(path);
+  it.each([["/calendar", "Calendar", "FE-021"]])(
+    "renders the %s route as the %s area placeholder",
+    (path, area, arrivesWith) => {
+      renderAt(path);
 
-    expect(screen.getByRole("heading", { level: 1, name: area })).toBeInTheDocument();
-    expect(screen.getByText(`This area arrives with ${arrivesWith}.`)).toBeInTheDocument();
-  });
+      expect(screen.getByRole("heading", { level: 1, name: area })).toBeInTheDocument();
+      expect(screen.getByText(`This area arrives with ${arrivesWith}.`)).toBeInTheDocument();
+    },
+  );
 
   // Verify the Settings index is replaced by General with matching shell and sub-nav state.
   it("redirects /settings to the real General route", async () => {
@@ -402,7 +402,7 @@ describe("createAppRouter", () => {
     renderAt("/notes");
 
     expect(screen.getAllByRole("banner")).toHaveLength(1);
-    expect(screen.getAllByRole("navigation")).toHaveLength(1);
+    expect(screen.getAllByRole("navigation")).toHaveLength(2);
     expect(screen.getAllByRole("main")).toHaveLength(1);
     expect(screen.getByRole("main")).toContainElement(
       screen.getByRole("heading", { level: 1, name: "Notes" }),
@@ -554,3 +554,11 @@ vi.mock("@/lib/ipc/notifications", () => ({
   clearReadNotifications: vi.fn(),
   openNotification: vi.fn(),
 }));
+
+/** Notes now renders its real two-pane route inside the persistent shell. */
+it("renders the real Notes route", async () => {
+  renderAt("/notes");
+  expect(screen.getByRole("button", { name: "New note" })).toBeVisible();
+  expect(screen.getByLabelText("Search notes")).toBeVisible();
+  expect(screen.queryByText("This area arrives with FE-019.")).toBeNull();
+});

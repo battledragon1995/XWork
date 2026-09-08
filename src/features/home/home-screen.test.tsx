@@ -231,3 +231,13 @@ it("rolls the header over at local midnight and clears its timer", async () => {
   view.unmount();
   expect(vi.getTimerCount()).toBe(0);
 });
+
+/** Optional Notes and composer slots coexist without changing project/session ownership. */
+it("renders the optional writing slots in order", async () => {
+  mount(projects(), { quickNoteSlot: <p>Composer slot</p>, notesSection: <p>Notes section</p> });
+  expect(
+    screen.getByText("Composer slot").compareDocumentPosition(screen.getByText("Notes section")) &
+      Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
+  expect(screen.getByRole("heading", { name: "Recent projects" })).toBeVisible();
+});

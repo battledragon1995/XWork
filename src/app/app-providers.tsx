@@ -1,3 +1,4 @@
+import { NotesProvider } from "@/features/notes";
 import type { ReactNode } from "react";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { FileHandleProvider } from "@/features/files";
@@ -15,7 +16,9 @@ export function AppProviders(props: { children: ReactNode }) {
     <TooltipProvider>
       <AppearanceThemeSync />
       <TerminalProvider>
-        <FileHandleProvider>{props.children}</FileHandleProvider>
+        <FileHandleProvider>
+          <NotesProvider>{props.children}</NotesProvider>
+        </FileHandleProvider>
       </TerminalProvider>
       <QuitDialog />
     </TooltipProvider>

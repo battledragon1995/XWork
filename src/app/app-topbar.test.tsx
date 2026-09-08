@@ -1,3 +1,14 @@
+/** Keep Notes projections healthy so window-control alerts remain isolated. */
+vi.mock("@/lib/ipc/notes", () => ({
+  onNotesChanged: vi.fn(async () => () => {}),
+  listNotes: vi.fn(async () => ({
+    items: [],
+    offset: 0,
+    totalMatches: 0,
+    hasMore: false,
+    counts: { active: 0, archived: 0, trash: 0 },
+  })),
+}));
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";

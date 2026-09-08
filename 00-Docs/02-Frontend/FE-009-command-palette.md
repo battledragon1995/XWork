@@ -290,3 +290,9 @@ Unit/component dùng IPC mocks có kiểm soát, không runtime mock trong app. 
 ## Câu hỏi mở
 
 Không có.
+
+## Mở rộng giai đoạn 18 — Note target
+
+Phần Note của giới hạn Phase 1 ở trên được thay bằng `FE-019-notes.md` và BE-016. Backend đã sinh SearchTargetDto `kind: "note"`; app SearchEntry bỏ guard tạm, enable target và gọi public wrapper `getNote(target.noteId)`. Active mở `/notes?noteId=...&view=active`, Archived mở cùng route với `view=archived` read-only; Trash/missing/ID mismatch báo result unavailable và refresh, không mở target thay thế. Epoch/AbortSignal/Quit/single-flight guards hiện hữu vẫn kiểm tra trước/sau await. Note event có thể invalidates Palette bằng refreshKey tại app, không thêm event BE-010.
+
+Inventory bổ sung nguồn read-only `src/bindings/notes.ts` và wrapper/test `src/lib/ipc/notes.ts`, `src/lib/ipc/notes.test.ts` do FE-019 sở hữu; `src/app/search-entry.tsx` và test hiện hữu kiểm chứng active/archived/stale/late response và regression project/session/command. Không thêm file executor, event result hoặc command catalog mới. Gate extension dùng Cargo `-j 2` theo yêu cầu hiện tại, giữ các flags all-targets/all-features; smoke/p95 lịch sử chưa chạy vẫn pending.

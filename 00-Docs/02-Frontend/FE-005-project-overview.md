@@ -378,3 +378,9 @@ Clipboard thật, file manager hệ điều hành và hành vi focus của cửa
 ## Câu hỏi mở
 
 Không có.
+
+## Mở rộng giai đoạn 18 — Notes linked
+
+Phần Notes của giới hạn Phase 1 ở trên được thay bằng `FE-019-notes.md`. App `src/app/project-overview-entry.tsx` compose public ProjectNotesSection qua prop `renderLinkedNotes?(projectId: string): React.ReactNode` của ProjectOverviewRoute; route chỉ gọi slot sau khi đọc được project thật, kể cả unavailable. Không import feature Notes trong Projects. Section query Active/project/any pin/offset 0/limit 5 theo backend order, có loading/empty/error, All notes và New note khởi tạo draft với project tương ứng. Project remove re-query FK unlink; source folder không thay đổi.
+
+Inventory bổ sung `src/app/project-overview-entry.tsx`, `src/app/project-overview-entry.test.tsx`, `src/app/app-router.tsx`, `src/app/app-router.test.tsx`; route/test hiện hữu nhận slot. Notes owner/files/tests nằm trong FE-019. Regression giữ project/Git/session và mọi Recent files đã có; Events vẫn ngoài scope. Không chỉnh plan hoàn thành của các stage trước.
