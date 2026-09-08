@@ -4,6 +4,7 @@ import {
   closeRuntimeTarget,
   createTab,
   getCloseImpact,
+  saveFilesBeforeClose,
   setActivePane,
   splitPane,
 } from "@/lib/ipc/sessions";
@@ -20,6 +21,7 @@ import { useWorkspaceMutations } from "./use-workspace-mutations";
 
 vi.mock("@/lib/ipc/sessions", () => ({
   closeRuntimeTarget: vi.fn(),
+  saveFilesBeforeClose: vi.fn(),
   createTab: vi.fn(),
   getCloseImpact: vi.fn(),
   moveTab: vi.fn(),
@@ -309,4 +311,29 @@ describe("useWorkspaceMutations", () => {
     pending.resolve(detail);
     await act(async () => first);
   });
+});
+
+// A partial multi-file Save failure must never close the inspected target.
+it("keeps the target open when Save-and-close only partially succeeds", async () => {
+  vi.resetAllMocks();
+  const detail = createNonEmptySessionDetail();
+  const target = createTabCloseTarget();
+  getCloseImpactMock.mockResolvedValue(
+    createCloseImpact({
+      target,
+      requiresConfirmation: true,
+      unsavedFileCount: 2,
+      unsavedFileLabels: ["first.md", "second.md"],
+    }),
+  );
+  vi.mocked(saveFilesBeforeClose).mockRejectedValue(new Error("second file conflicted"));
+  const view = renderHook(() =>
+    useWorkspaceMutations({ detail, onApplyDetail: vi.fn(), onRefresh: vi.fn() }),
+  );
+  await act(async () => view.result.current.requestClose(target));
+  await act(async () => view.result.current.saveAndClose());
+  expect(saveFilesBeforeClose).toHaveBeenCalledWith(target);
+  expect(closeRuntimeTargetMock).not.toHaveBeenCalled();
+  expect(view.result.current.pendingClose?.target).toEqual(target);
+  expect(view.result.current.failure).not.toBeNull();
 });

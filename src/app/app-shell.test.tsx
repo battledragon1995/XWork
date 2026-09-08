@@ -302,6 +302,8 @@ vi.mock("@/lib/ipc/app-lifecycle", () => ({
 }));
 /** A real shell keeps reset apply alive after route departure and defers the tray Quit dialog. */
 it("keeps Data apply alive across route changes and obtains fresh Quit impact", async () => {
+  // Earlier tray scenarios also refresh impact; count only this isolated Data intent.
+  vi.mocked(requestQuit).mockClear();
   resetSettingsStore();
   vi.mocked(getSettings).mockResolvedValue(createSettingsSnapshot());
   vi.mocked(dataIpc.prepareResetXwork).mockResolvedValue({

@@ -26,6 +26,7 @@ export function CloseTargetDialog(props: {
   failure: SessionsFailure | null;
   onCancel(): void;
   onConfirm(): void;
+  onSaveAndClose?(): void;
   onRetry(): void;
   onClosed(): void;
 }) {
@@ -42,7 +43,8 @@ export function CloseTargetDialog(props: {
     : close.isLastPaneOfTab
       ? CLOSE_LAST_PANE_DESCRIPTION
       : CLOSE_PANE_DESCRIPTION;
-  const action = isTab ? "Close Tab" : "Close Pane";
+  const dirty = close.impact.unsavedFileCount > 0;
+  const action = dirty ? "Discard changes" : isTab ? "Close Tab" : "Close Pane";
   return (
     <Dialog
       open
@@ -96,6 +98,11 @@ export function CloseTargetDialog(props: {
           >
             {props.isPending ? "Closing…" : props.failure?.canRetry ? "Try again" : action}
           </Button>
+          {dirty && props.onSaveAndClose && (
+            <Button type="button" disabled={props.isPending} onClick={props.onSaveAndClose}>
+              Save and close
+            </Button>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>

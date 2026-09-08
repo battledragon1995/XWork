@@ -55,6 +55,7 @@ vi.mock("@/lib/ipc/projects", () => ({
 vi.mock("@/lib/ipc/files");
 vi.mock("@/lib/ipc/sessions", () => ({
   listSessions: vi.fn(),
+  getSession: vi.fn(),
   onSessionsRuntimeChanged: vi.fn(async () => () => {}),
 }));
 vi.mock("@/lib/ipc/settings", () => ({

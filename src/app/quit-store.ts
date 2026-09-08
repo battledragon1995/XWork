@@ -5,6 +5,7 @@ import {
   confirmQuit as confirmQuitCommand,
   requestQuit as requestQuitCommand,
 } from "@/lib/ipc/app-lifecycle";
+import { FileEditBoundaryError, fileEditBoundary } from "@/lib/ipc/file-edit-boundary";
 import { IpcCallError } from "@/lib/ipc/ipc-error";
 
 /** Every step of the Quit flow the interface can be in. */
@@ -55,6 +56,7 @@ function integrationFailure(code: AppLifecycleError["code"] | "unknown") {
 }
 
 export const useQuitStore = create<QuitState>((set, get) => {
+  let releaseFiles: (() => void) | null = null;
   // Ask the backend for the current runtime snapshot and publish whichever state it implies.
   // `startQuit` and the one stale-request refresh share this, so both branch identically.
   async function loadRequest(): Promise<void> {
@@ -70,6 +72,13 @@ export const useQuitStore = create<QuitState>((set, get) => {
       set({ phase: "awaiting-confirmation", request, failure: null });
     } catch (rejection) {
       const code = toFailureCode(rejection);
+      if (rejection instanceof FileEditBoundaryError) {
+        set({
+          phase: "snapshot-failed",
+          failure: { stage: "snapshot", code: "runtime_snapshot_failed" },
+        });
+        return;
+      }
 
       if (code === "runtime_snapshot_failed") {
         set({
@@ -114,11 +123,31 @@ export const useQuitStore = create<QuitState>((set, get) => {
       }
 
       set({ phase: "awaiting-confirmation", request, failure: null });
+      if (fileEditBoundary.isRegistered()) {
+        set({ phase: "requesting" });
+        void fileEditBoundary
+          .settle({ kind: "all" })
+          .then(async (release) => {
+            releaseFiles?.();
+            releaseFiles = release;
+            const refreshed = await requestQuitCommand();
+            set({ phase: "awaiting-confirmation", request: refreshed ?? request, failure: null });
+          })
+          .catch(() => {
+            set({
+              phase: "snapshot-failed",
+              request,
+              failure: { stage: "snapshot", code: "runtime_snapshot_failed" },
+            });
+          });
+      }
     },
 
     // Cancel the pending request. Escape and an outside click both arrive here, so a request
     // can never stay pending without a dialog to act on it.
     async cancelQuit() {
+      releaseFiles?.();
+      releaseFiles = null;
       const { phase, request } = get();
       if (phase === "confirming" || phase === "requesting") {
         return;
@@ -154,7 +183,11 @@ export const useQuitStore = create<QuitState>((set, get) => {
     // are already locked when a second click arrives.
     async confirmQuit() {
       const { phase, request } = get();
-      if (phase !== "awaiting-confirmation" || request === null) {
+      if (
+        phase !== "awaiting-confirmation" ||
+        request === null ||
+        get().failure?.stage === "snapshot"
+      ) {
         return;
       }
 
@@ -165,6 +198,13 @@ export const useQuitStore = create<QuitState>((set, get) => {
         // On success the backend exits the process, so there is no follow-up state to publish.
       } catch (rejection) {
         const code = toFailureCode(rejection);
+        if (rejection instanceof FileEditBoundaryError) {
+          set({
+            phase: "snapshot-failed",
+            failure: { stage: "snapshot", code: "runtime_snapshot_failed" },
+          });
+          return;
+        }
 
         if (code === "runtime_shutdown_failed") {
           set({

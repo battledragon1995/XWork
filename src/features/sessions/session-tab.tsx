@@ -1,6 +1,6 @@
-import { FileText, GripVertical, PanelTop, Terminal, X } from "lucide-react";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
+import { FileText, GripVertical, PanelTop, Terminal, X } from "lucide-react";
 import type { TabDto } from "@/bindings/sessions/sessions";
 import { cn } from "@/lib/utils/cn";
 import { findPane } from "./session-layout";
@@ -18,6 +18,7 @@ function TabContentIcon(props: { tab: TabDto }) {
 export function SessionTab(props: {
   tab: TabDto;
   isSelected: boolean;
+  hasUnsavedChanges?: boolean;
   isBusy: boolean;
   onSelect(): void;
   onClose(): void;
@@ -51,6 +52,13 @@ export function SessionTab(props: {
         onKeyDown={props.onNavigate}
       >
         <TabContentIcon tab={props.tab} />
+        {props.hasUnsavedChanges && (
+          <span
+            role="img"
+            aria-label="Unsaved changes"
+            className="size-1.5 shrink-0 rounded-full bg-warn-ink"
+          />
+        )}
         <span className="truncate font-medium">{props.tab.name}</span>
       </button>
       <button

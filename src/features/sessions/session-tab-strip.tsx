@@ -13,11 +13,12 @@ import {
   sortableKeyboardCoordinates,
 } from "@dnd-kit/sortable";
 import { Plus } from "lucide-react";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useSyncExternalStore } from "react";
 import type { KeyboardShortcutsDto } from "@/bindings/keyboard-shortcuts";
 import type { SessionDetailDto, TabDto } from "@/bindings/sessions/sessions";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { fileEditBoundary } from "@/lib/ipc/file-edit-boundary";
 import type { ShortcutPlatform } from "@/lib/utils/keyboard-shortcuts";
 import { SessionTab } from "./session-tab";
 import { TabOptionsMenu } from "./tab-options-menu";
@@ -42,6 +43,21 @@ export function SessionTabStrip(props: {
   onRenameSession(): void;
   onDeleteSession(): void;
 }) {
+  const dirtyTabs = useSyncExternalStore(
+    fileEditBoundary.subscribe,
+    /** Stable primitive snapshot includes every tab with pending local or backend edits. */
+    () =>
+      props.detail.tabs
+        .filter((tab) =>
+          fileEditBoundary.hasPendingEdits({
+            kind: "tab",
+            sessionId: props.detail.summary.id,
+            tabId: tab.id,
+          }),
+        )
+        .map((tab) => tab.id)
+        .join(","),
+  );
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
@@ -96,6 +112,7 @@ export function SessionTabStrip(props: {
               <SessionTab
                 key={tab.id}
                 tab={tab}
+                hasUnsavedChanges={dirtyTabs.split(",").includes(tab.id)}
                 isSelected={tab.id === props.activeTab.id}
                 isBusy={props.isBusy}
                 onSelect={() => props.onSelect(tab.id)}

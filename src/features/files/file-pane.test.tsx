@@ -1,7 +1,11 @@
+import { EditorState } from "@codemirror/state";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { FileHandleDto } from "@/bindings/files/files";
 import { IpcCallError } from "@/lib/ipc/ipc-error";
+import { FileHandleProvider } from "./file-handle-provider";
+import { FileHandleRegistry, type FileHandleRegistryDependencies } from "./file-handle-registry";
+import { FilePane } from "./file-pane";
 import {
   deferred,
   externalConflictState,
@@ -15,10 +19,17 @@ import {
   unreadableState,
   VIEWER_LIMIT_BYTES,
 } from "./files-test-fixture";
-import { FileHandleProvider } from "./file-handle-provider";
-import { FileHandleRegistry, type FileHandleRegistryDependencies } from "./file-handle-registry";
-import { FilePane } from "./file-pane";
 
+// Keep the editable surface inert while testing pane routing and controls.
+vi.mock("./markdown-editor-adapter", () => ({
+  createMarkdownEditor: () => ({
+    setText: vi.fn(),
+    setBlocked: vi.fn(),
+    readState: () => EditorState.create(),
+    readScrollTop: () => 0,
+    destroy: vi.fn(),
+  }),
+}));
 // No CodeMirror view is mounted in jsdom; the surface is an inert adapter double.
 vi.mock("./source-view-adapter", () => ({
   createSourceView: vi.fn(() => ({
@@ -109,17 +120,18 @@ describe("FilePane loading and text", () => {
     expect(screen.getByText("src/main.rs")).toHaveAttribute("title", "src/main.rs");
   });
 
-  // Verify a Markdown snapshot stays source-only, with no Edit or Preview control.
-  it("keeps Markdown read-only with its deferral note", async () => {
+  // Verify backend Markdown classification selects the editable feature.
+  it("routes Markdown to Edit and Preview", async () => {
     await withHandle(handle({ state: readyTextState({ syntaxHint: "md", mode: "markdown" }) }), {
       regions: ["header", "body"],
     });
 
-    expect(
-      await screen.findByText("Editing and preview arrive with the Markdown editor."),
-    ).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /Edit|Preview/ })).not.toBeInTheDocument();
-    expect(screen.getByText("Read-only")).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "Edit" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(screen.getByRole("button", { name: "Preview" })).toBeInTheDocument();
+    expect(screen.queryByText("Read-only")).not.toBeInTheDocument();
   });
 });
 

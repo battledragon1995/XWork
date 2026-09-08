@@ -8,6 +8,7 @@ import type {
   RemoveProjectImpactDto,
   RemoveProjectResultDto,
 } from "@/bindings/projects/projects";
+import { fileEditBoundary, withFileEditBoundary } from "./file-edit-boundary";
 import { invokeCommand } from "./ipc-error";
 
 /** Re-exported so feature hooks can type a subscription without importing Tauri directly. */
@@ -76,12 +77,16 @@ export function openProjectFolder(projectId: string): Promise<void> {
 // Open the native picker to point one project at a new root. Cancellation is a result, not
 // an error, exactly as it is for `addProject`.
 export function locateProjectFolder(projectId: string): Promise<ProjectFolderSelectionDto> {
-  return invokeProjects<ProjectFolderSelectionDto>("locate_project_folder", { projectId });
+  return withFileEditBoundary({ kind: "project", projectId }, () =>
+    invokeProjects<ProjectFolderSelectionDto>("locate_project_folder", { projectId }),
+  );
 }
 
 // Read the facts a remove confirmation must state. The frontend never synthesizes them.
 export function getRemoveProjectImpact(projectId: string): Promise<RemoveProjectImpactDto> {
-  return invokeProjects<RemoveProjectImpactDto>("get_remove_project_impact", { projectId });
+  return withFileEditBoundary({ kind: "project", projectId }, () =>
+    invokeProjects<RemoveProjectImpactDto>("get_remove_project_impact", { projectId }),
+  );
 }
 
 // Forget one project's metadata. `confirmed` is forwarded as given; the feature always sends
@@ -90,7 +95,14 @@ export function removeProject(
   projectId: string,
   confirmed: boolean,
 ): Promise<RemoveProjectResultDto> {
-  return invokeProjects<RemoveProjectResultDto>("remove_project", { projectId, confirmed });
+  return withFileEditBoundary({ kind: "project", projectId }, async () => {
+    const result = await invokeProjects<RemoveProjectResultDto>("remove_project", {
+      projectId,
+      confirmed,
+    });
+    fileEditBoundary.retire({ kind: "project", projectId });
+    return result;
+  });
 }
 
 // Subscribe to project invalidation. The returned callback removes the listener.

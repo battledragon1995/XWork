@@ -5,6 +5,7 @@ import type {
   SessionDetailDto,
   SplitDirectionDto,
 } from "@/bindings/sessions/sessions";
+import { FileEditBoundaryError, fileEditBoundary } from "@/lib/ipc/file-edit-boundary";
 import {
   closeRuntimeTarget,
   createTab,
@@ -12,6 +13,7 @@ import {
   moveTab,
   renameTab,
   reopenLastClosedTab,
+  saveFilesBeforeClose,
   selectPaneTool,
   setActivePane,
   setActiveTab,
@@ -80,6 +82,7 @@ export interface WorkspaceMutations {
   prepareFileTarget(placement: SessionFilePlacement): Promise<SessionFileTarget | null>;
   requestClose(target: CloseTargetDto): Promise<void>;
   confirmClose(): Promise<void>;
+  saveAndClose(): Promise<void>;
   cancelClose(): void;
   clearFailure(): void;
   retryFailure(): Promise<void>;
@@ -153,6 +156,16 @@ export function useWorkspaceMutations(options: UseWorkspaceMutationsOptions): Wo
   const handleFailure = useCallback(
     (rejection: unknown, retry: (() => Promise<void>) | null = null) => {
       const error = sessionsErrorOf(rejection);
+      if (rejection instanceof FileEditBoundaryError) {
+        setFailure({
+          kind: "integration",
+          code: "contentLifecycleFailed",
+          message: rejection.message,
+          canRetry: retry !== null,
+        });
+        retryRef.current = retry;
+        return;
+      }
       if (error?.code === "runtimeShuttingDown") {
         setPendingClose(null);
         setFailure(null);
@@ -496,7 +509,10 @@ export function useWorkspaceMutations(options: UseWorkspaceMutationsOptions): Wo
         await finishClose(target, false);
       } catch (rejection: unknown) {
         const error = sessionsErrorOf(rejection);
-        if (error?.code === "contentLifecycleFailed") {
+        if (
+          error?.code === "contentLifecycleFailed" ||
+          rejection instanceof FileEditBoundaryError
+        ) {
           // There are no trustworthy facts after a failed inspection. The dialog remains the
           // only safe place to retry instead of accidentally bypassing a future confirmation.
           setPendingClose({
@@ -534,6 +550,36 @@ export function useWorkspaceMutations(options: UseWorkspaceMutationsOptions): Wo
     }
   }, [finishClose, pendingClose]);
 
+  /** Hold an outer admission lease through sequential saves, fresh impact and close. */
+  const saveAndClose = useCallback(async () => {
+    const current = pendingClose;
+    if (current === null || structuralBusy.current) return;
+    structuralBusy.current = true;
+    setPending("close");
+    let release: (() => void) | null = null;
+    try {
+      release = await fileEditBoundary.settle(current.target);
+      await saveFilesBeforeClose(current.target);
+      const impact = await getCloseImpact(current.target);
+      if (impact.unsavedFileCount > 0 || fileEditBoundary.hasPendingEdits(current.target))
+        throw new Error("Files still have unsaved changes.");
+      if (
+        impact.runningProcessCount !== current.impact.runningProcessCount ||
+        impact.runningProcessLabels.join("\n") !== current.impact.runningProcessLabels.join("\n")
+      ) {
+        setPendingClose({ ...current, impact });
+        return;
+      }
+      await finishClose(current.target, true);
+    } catch (error) {
+      handleFailure(new FileEditBoundaryError(error));
+    } finally {
+      release?.();
+      structuralBusy.current = false;
+      setPending(null);
+    }
+  }, [pendingClose, finishClose, handleFailure]);
+
   const cancelClose = useCallback(() => {
     setPendingClose(null);
     setFailure(null);
@@ -569,6 +615,7 @@ export function useWorkspaceMutations(options: UseWorkspaceMutationsOptions): Wo
     prepareFileTarget,
     requestClose,
     confirmClose,
+    saveAndClose,
     cancelClose,
     clearFailure,
     retryFailure,

@@ -10,25 +10,26 @@ import type {
   SessionSummaryDto,
   SessionsError,
 } from "@/bindings/sessions/sessions";
+import { registerFileEditBoundary } from "./file-edit-boundary";
 import { IpcCallError } from "./ipc-error";
 import {
   closeRuntimeTarget,
-  createTab,
   createSession,
+  createTab,
   getCloseImpact,
   getSession,
   listSessions,
-  onSessionsRuntimeChanged,
   moveTab,
-  renameTab,
+  onSessionsRuntimeChanged,
   renameSession,
+  renameTab,
   reopenLastClosedTab,
   selectPaneTool,
   selectSessionTool,
-  setObservedSession,
   setActivePane,
   setActiveTab,
   setMaximizedPane,
+  setObservedSession,
   setSplitRatio,
   splitPane,
 } from "./sessions";
@@ -335,4 +336,54 @@ describe("Sessions runtime event", () => {
 
     await expect(onSessionsRuntimeChanged(vi.fn())).rejects.toThrow("registration refused");
   });
+});
+
+// Destructive IPC cannot outrun a pending producer acknowledgement.
+it("waits for Files settlement before close impact and releases after invoke", async () => {
+  let finish!: (release: () => void) => void;
+  const pending = new Promise<() => void>((resolve) => {
+    finish = resolve;
+  });
+  const release = vi.fn();
+  const unregister = registerFileEditBoundary({
+    settle: () => pending,
+    save: async () => undefined,
+    hasPendingEdits: () => true,
+    subscribe: () => () => undefined,
+  });
+  try {
+    const action = getCloseImpact({ kind: "session", sessionId: "session" });
+    expect(invoke).not.toHaveBeenCalled();
+    finish(release);
+    await action;
+    expect(invoke).toHaveBeenCalledWith("get_close_impact", {
+      target: { kind: "session", sessionId: "session" },
+    });
+    expect(release).toHaveBeenCalledOnce();
+  } finally {
+    unregister();
+  }
+});
+
+// Retire callbacks follow successful backend closure only, preserving failed-close drafts.
+it("retires Files entries only after a successful close response", async () => {
+  const retire = vi.fn();
+  const target = { kind: "session" as const, sessionId: "session" };
+  const unregister = registerFileEditBoundary({
+    settle: async () => () => undefined,
+    save: async () => undefined,
+    hasPendingEdits: () => false,
+    subscribe: () => () => undefined,
+    retire,
+  });
+  try {
+    vi.mocked(invoke).mockRejectedValueOnce({ code: "closeInProgress" });
+    await expect(closeRuntimeTarget(target, true)).rejects.toThrow();
+    expect(retire).not.toHaveBeenCalled();
+    vi.mocked(invoke).mockResolvedValueOnce({ target, session: null });
+    await closeRuntimeTarget(target, true);
+    expect(retire).toHaveBeenCalledExactlyOnceWith(target);
+  } finally {
+    unregister();
+  }
 });

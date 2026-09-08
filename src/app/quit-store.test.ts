@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { QuitRequestDto } from "@/bindings/app-lifecycle";
 import { cancelQuit, confirmQuit, requestQuit } from "@/lib/ipc/app-lifecycle";
+import { registerFileEditBoundary } from "@/lib/ipc/file-edit-boundary";
 import { IpcCallError } from "@/lib/ipc/ipc-error";
 import { resetQuitStore, useQuitStore } from "./quit-store";
 
@@ -303,4 +304,59 @@ describe("confirmQuit", () => {
     expect(confirmQuitMock).not.toHaveBeenCalled();
     expect(useQuitStore.getState().phase).toBe("idle");
   });
+});
+
+// Even a clean composition owner must settle before tray facts can authorize confirmation.
+it("refreshes tray facts only after Files settles, including a not-yet-dirty composition", async () => {
+  let finish!: (release: () => void) => void;
+  const pending = new Promise<() => void>((resolve) => {
+    finish = resolve;
+  });
+  const release = vi.fn();
+  const unregister = registerFileEditBoundary({
+    settle: () => pending,
+    save: async () => undefined,
+    hasPendingEdits: () => false,
+    subscribe: () => () => undefined,
+  });
+  try {
+    requestQuitMock.mockResolvedValue({
+      ...REQUEST,
+      summary: { ...REQUEST.summary, unsavedFileCount: 2 },
+    });
+    useQuitStore.getState().receiveTrayRequest(REQUEST);
+    expect(useQuitStore.getState().phase).toBe("requesting");
+    await useQuitStore.getState().confirmQuit();
+    expect(confirmQuitMock).not.toHaveBeenCalled();
+    expect(requestQuitMock).not.toHaveBeenCalled();
+    finish(release);
+    for (let i = 0; i < 8; i += 1) await Promise.resolve();
+    expect(useQuitStore.getState().request?.summary.unsavedFileCount).toBe(2);
+    await useQuitStore.getState().cancelQuit();
+    expect(release).toHaveBeenCalledOnce();
+  } finally {
+    unregister();
+  }
+});
+// Failed IME or buffer settlement leaves Cancel and snapshot retry available.
+it("keeps tray cancellation available after Files preflight failure", async () => {
+  const unregister = registerFileEditBoundary({
+    settle: async () => {
+      throw new Error("IME incomplete");
+    },
+    save: async () => undefined,
+    hasPendingEdits: () => true,
+    subscribe: () => () => undefined,
+  });
+  try {
+    useQuitStore.getState().receiveTrayRequest(REQUEST);
+    for (let i = 0; i < 8; i += 1) await Promise.resolve();
+    expect(useQuitStore.getState().phase).toBe("snapshot-failed");
+    await useQuitStore.getState().confirmQuit();
+    expect(confirmQuitMock).not.toHaveBeenCalled();
+    await useQuitStore.getState().cancelQuit();
+    expect(cancelQuitMock).toHaveBeenCalledWith(REQUEST.requestId);
+  } finally {
+    unregister();
+  }
 });

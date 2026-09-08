@@ -10,7 +10,8 @@ import type {
   ResetImpactDto,
   ResetResultDto,
 } from "@/bindings/data-management";
-import { invokeCommand, IpcCallError } from "./ipc-error";
+import { withFileEditBoundary } from "./file-edit-boundary";
+import { IpcCallError, invokeCommand } from "./ipc-error";
 
 /** Validate numeric counts without coercing malformed native payloads. */
 function count(value: unknown): value is number {
@@ -89,7 +90,8 @@ export async function prepareImportBackup(): Promise<PrepareBackupImportOutcomeD
 export const confirmImportBackup = (requestId: number) =>
   call<BackupImportResultDto>("confirm_import_backup", { requestId });
 /** Read reset impact before destructive confirmation. */
-export const prepareResetXwork = () => call<ResetImpactDto>("prepare_reset_xwork");
+export const prepareResetXwork = () =>
+  withFileEditBoundary({ kind: "all" }, () => call<ResetImpactDto>("prepare_reset_xwork"));
 /** Send the explicit destructive confirmation unchanged. */
 export const confirmResetXwork = (requestId: number, confirmation: string) =>
   call<ResetResultDto>("confirm_reset_xwork", { requestId, confirmation });

@@ -24,6 +24,7 @@ const mutations = {
   reopenLastClosedTab: vi.fn(),
   requestClose: vi.fn(),
   confirmClose: vi.fn(),
+  saveAndClose: vi.fn(),
   cancelClose: vi.fn(),
   clearFailure: vi.fn(),
   retryFailure: vi.fn(),

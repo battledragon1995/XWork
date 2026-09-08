@@ -51,7 +51,12 @@ export function DataManagementHost(props: { children: React.ReactNode }) {
   }
   /** Claim all producer barriers in the same turn and release all of them on failure. */
   async function beforeConfirm() {
-    const owners = [useSettingsStore.getState(), useCliProfilesStore.getState(), shortcuts];
+    const owners = [
+      useSettingsStore.getState(),
+      useCliProfilesStore.getState(),
+      shortcuts,
+      fileData,
+    ];
     const attempts = owners.map(
       /** Claim each barrier synchronously. */ (owner) => owner.settleBeforeDataChange(),
     );

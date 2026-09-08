@@ -13,11 +13,23 @@ export function useFileHandleRegistry(): FileHandleRegistry {
 
 /** Expose renderer-only maintenance actions through the existing registry identity. */
 export function useFileDataBoundary(): {
+  settleBeforeDataChange(): Promise<void>;
+  releaseDataChangeBarrier(): void;
   clearAfterReset(): void;
   reconcileAfterResetFailure(): void;
 } {
   const registry = useFileHandleRegistry();
+  let release: (() => void) | null = null;
   return {
+    /** Hold Files admission until confirmation and reconciliation finish. */
+    async settleBeforeDataChange() {
+      release = await registry.settle({ kind: "all" });
+    },
+    /** Release the captured owner barrier after success or failure. */
+    releaseDataChangeBarrier() {
+      release?.();
+      release = null;
+    },
     /** Drop retained handles only after a committed reset. */
     clearAfterReset: () => registry.clearAfterReset(),
     /** Re-read retained handles without optimistic deletion. */

@@ -9,6 +9,7 @@ import type {
   SessionsError,
   SplitDirectionDto,
 } from "@/bindings/sessions/sessions";
+import { fileEditBoundary, withFileEditBoundary } from "./file-edit-boundary";
 import { invokeCommand } from "./ipc-error";
 
 /** Re-exported so feature hooks can type a subscription without importing Tauri directly. */
@@ -156,7 +157,9 @@ export function reopenLastClosedTab(sessionId: string): Promise<SessionDetailDto
 
 /** Read the process and unsaved-file blockers of one close target. Nothing is closed yet. */
 export function getCloseImpact(target: CloseTargetDto): Promise<CloseImpactDto> {
-  return invokeSessions<CloseImpactDto>("get_close_impact", { target });
+  return withFileEditBoundary(target, () =>
+    invokeSessions<CloseImpactDto>("get_close_impact", { target }),
+  );
 }
 
 /**
@@ -167,7 +170,14 @@ export function closeRuntimeTarget(
   target: CloseTargetDto,
   confirmed: boolean,
 ): Promise<CloseResultDto> {
-  return invokeSessions<CloseResultDto>("close_runtime_target", { target, confirmed });
+  return withFileEditBoundary(target, async () => {
+    const result = await invokeSessions<CloseResultDto>("close_runtime_target", {
+      target,
+      confirmed,
+    });
+    fileEditBoundary.retire(target);
+    return result;
+  });
 }
 
 /**
@@ -192,4 +202,9 @@ export function onSessionsRuntimeChanged(
       handler(event.payload);
     },
   );
+}
+
+/** Save only the files in this explicit close target through the producer. */
+export async function saveFilesBeforeClose(target: CloseTargetDto): Promise<void> {
+  await fileEditBoundary.save(target);
 }

@@ -1,4 +1,5 @@
 import { type ReactNode, useEffect, useRef } from "react";
+import { registerFileEditBoundary } from "@/lib/ipc/file-edit-boundary";
 import { FileHandleRegistryContext } from "./file-handle-context";
 import { FileHandleRegistry } from "./file-handle-registry";
 
@@ -18,7 +19,11 @@ export function FileHandleProvider(props: FileHandleProviderProps) {
   useEffect(() => {
     const current = registry.current;
     current?.startMonitoring();
-    return () => current?.stopMonitoring();
+    const unregister = current ? registerFileEditBoundary(current.boundary()) : undefined;
+    return () => {
+      unregister?.();
+      current?.stopMonitoring();
+    };
   }, []);
 
   return (

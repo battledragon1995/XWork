@@ -1,10 +1,12 @@
 import { Lock } from "lucide-react";
-import { useEffect, useMemo, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useMemo, useSyncExternalStore } from "react";
 import type { FileHandleDto } from "@/bindings/files/files";
 import { Button } from "@/components/ui/button";
 import { fileErrorCopy } from "./file-error-copy";
+import type { FileExplorerBoundary } from "./file-explorer";
 import { useFileHandleRegistry } from "./file-handle-context";
 import type { FileHandleEntryState } from "./file-handle-registry";
+import { MarkdownEditor } from "./markdown-editor";
 import { SourceView } from "./source-view";
 import { UnsupportedFile } from "./unsupported-file";
 
@@ -36,6 +38,11 @@ export interface FilePaneProps {
   fileHandleId: string;
   paneTitle: string;
   isVisible: boolean;
+  isActive?: boolean;
+  platform?: string;
+  onActivate?(): void;
+  boundary?: FileExplorerBoundary;
+  readBoundary?(): FileExplorerBoundary;
   onRefreshSession(): void;
   onOpenProject(): void;
 }
@@ -105,6 +112,11 @@ function FilePaneHeader(props: {
 /** Render one region of a file pane from the snapshot both regions share. */
 export function FilePane(props: FilePaneProps): React.JSX.Element {
   const registry = useFileHandleRegistry();
+  /** Read current app suspension without rebuilding the editor on each transaction. */
+  const isSuspended = useCallback(
+    () => (props.readBoundary?.() ?? props.boundary)?.suspended ?? false,
+    [props.readBoundary, props.boundary],
+  );
   // One entry per handle: header and body retain the same object, so one read serves both.
   const entry = useMemo(() => registry.entry(props.fileHandleId), [registry, props.fileHandleId]);
   const state: FileHandleEntryState = useSyncExternalStore(entry.subscribe, entry.getSnapshot);
@@ -120,6 +132,21 @@ export function FilePane(props: FilePaneProps): React.JSX.Element {
   useEffect(() => {
     if (isRetired && props.region === "body") props.onRefreshSession();
   }, [isRetired, props.region, props.onRefreshSession]);
+
+  if (state.draft !== null)
+    return (
+      <MarkdownEditor
+        entry={entry}
+        state={state}
+        region={props.region}
+        active={props.isActive ?? true}
+        visible={props.isVisible}
+        platform={props.platform}
+        onActivate={props.onActivate}
+        isSuspended={isSuspended}
+        onOpenProject={props.onOpenProject}
+      />
+    );
 
   if (props.region === "header") {
     return <FilePaneHeader handle={handle} paneTitle={props.paneTitle} />;

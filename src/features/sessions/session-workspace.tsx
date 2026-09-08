@@ -231,6 +231,7 @@ export function SessionWorkspace(props: {
         failure={mutations.pendingClose === null ? null : mutations.failure}
         onCancel={mutations.cancelClose}
         onConfirm={() => void mutations.confirmClose()}
+        onSaveAndClose={() => void mutations.saveAndClose()}
         onRetry={() => void mutations.retryFailure()}
         onClosed={restoreFocus}
       />

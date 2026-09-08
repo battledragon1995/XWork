@@ -5,6 +5,7 @@ import type {
   FileHandleChangedEventDto,
   FileHandleDto,
   FileHandleRequestDto,
+  UpdateMarkdownBufferRequestDto,
 } from "@/bindings/files/files";
 import { IpcCallError } from "@/lib/ipc/ipc-error";
 import { FileHandleRegistry, type FileHandleRegistryDependencies } from "./file-handle-registry";
@@ -653,4 +654,208 @@ it("keeps handles of the same path independent", async () => {
   expect(right.getSnapshot().handle?.revision).toBe("4");
   releaseLeft();
   releaseRight();
+});
+
+/** Make a Markdown-specific controller with isolated mutable backend snapshots. */
+async function markdownFixture() {
+  const fixture = dependencies();
+  let backend = handle({
+    name: "readme.md",
+    state: readyTextState({ mode: "markdown", text: "base\r\n" }),
+  });
+  fixture.deps.getOpenFile.mockImplementation(async () => backend);
+  const update = vi.fn(async (request: UpdateMarkdownBufferRequestDto) => {
+    backend = {
+      ...backend,
+      revision: String(BigInt(backend.revision) + 1n),
+      isDirty: request.text !== "base\r\n",
+      state: readyTextState({ mode: "markdown", text: request.text }),
+    };
+    return backend;
+  });
+  const save = vi.fn(async () => {
+    backend = { ...backend, revision: String(BigInt(backend.revision) + 1n), isDirty: false };
+    return { outcome: "saved" as const, savedDisk: null, file: backend };
+  });
+  const resolve = vi.fn(async () => backend);
+  const registry = new FileHandleRegistry({
+    ...fixture.deps,
+    updateMarkdownBuffer: update,
+    saveMarkdownFile: save,
+    resolveExternalFileChange: resolve,
+  });
+  const entry = registry.entry(HANDLE_ID);
+  entry.retain();
+  await settle();
+  return { ...fixture, registry, entry, update, save, resolve };
+}
+// The very first transaction starts IPC synchronously and subsequent transactions coalesce.
+it("dispatches first edit immediately and coalesces newer drafts", async () => {
+  const { entry, update } = await markdownFixture();
+  const pending = deferred<FileHandleDto>();
+  update.mockReturnValueOnce(pending.promise);
+  entry.setMarkdownText("one");
+  expect(update).toHaveBeenCalledOnce();
+  entry.setMarkdownText("two");
+  entry.setMarkdownText("three");
+  expect(entry.getSnapshot().draft).toBe("three");
+  expect(entry.getSnapshot().isDirty).toBe(true);
+  pending.resolve(
+    handle({
+      revision: "2",
+      isDirty: true,
+      state: readyTextState({ mode: "markdown", text: "one" }),
+    }),
+  );
+  await entry.flushMarkdown();
+  expect(update).toHaveBeenCalledTimes(2);
+  expect(update.mock.calls[1]?.[0].text).toBe("three");
+  expect(entry.getSnapshot().draft).toBe("three");
+});
+// A newer query cannot overwrite a transaction that has not been acknowledged.
+it("preserves the rendered base and draft through watcher-first-edit reconciliation", async () => {
+  const { entry, update, deps } = await markdownFixture();
+  update.mockRejectedValueOnce(ipcError("revisionConflict"));
+  const newer = handle({
+    revision: "5",
+    state: readyTextState({ mode: "markdown", text: "external" }),
+  });
+  if (newer.state.kind === "ready") newer.state.disk.diskRevision = "new-disk";
+  deps.getOpenFile.mockResolvedValue(newer);
+  entry.setMarkdownText("mine");
+  await entry.flushMarkdown();
+  expect(update.mock.calls[1]?.[0]).toMatchObject({
+    baseDiskRevision: "disk-1",
+    expectedRevision: "5",
+    text: "mine",
+  });
+  expect(entry.getSnapshot().draft).toBe("mine");
+});
+// Transport failure retains the latest editor text and rejects lifecycle preflight.
+it("blocks a destructive boundary when an update cannot be acknowledged", async () => {
+  const { entry, registry, update } = await markdownFixture();
+  update.mockRejectedValue(new Error("transport"));
+  entry.setMarkdownText("retained");
+  await expect(registry.settle({ kind: "all" })).rejects.toThrow();
+  expect(entry.getSnapshot().draft).toBe("retained");
+  expect(entry.getSnapshot().admissionBlocked).toBe(false);
+});
+// Nested leases remain locked until the final owner releases, including idempotent cleanup.
+it("holds synchronous nested admission through pending updates", async () => {
+  const { entry, registry } = await markdownFixture();
+  entry.setMarkdownText("draft");
+  const first = registry.settle({ kind: "all" });
+  expect(entry.getSnapshot().admissionBlocked).toBe(true);
+  const release1 = await first;
+  const release2 = await registry.settle({ kind: "all" });
+  entry.setMarkdownText("denied");
+  expect(entry.getSnapshot().draft).toBe("draft");
+  release1();
+  release1();
+  expect(entry.getSnapshot().admissionBlocked).toBe(true);
+  release2();
+  expect(entry.getSnapshot().admissionBlocked).toBe(false);
+});
+// Mode survives route unmount and the old viewer's LRU threshold.
+it("retains Markdown mode under viewer cache pressure", async () => {
+  const { entry, registry } = await markdownFixture();
+  entry.setMarkdownMode("preview");
+  for (let i = 0; i < 80; i += 1) registry.entry(`unused-${i}`);
+  expect(registry.entry(HANDLE_ID)).toBe(entry);
+  expect(entry.getSnapshot().markdownMode).toBe("preview");
+});
+// The entire oversized transaction is rejected rather than truncated or sent to IPC.
+it("refuses oversized UTF-8 transactions without truncation", async () => {
+  const { entry, update } = await markdownFixture();
+  entry.setMarkdownText("😀".repeat(1_310_721));
+  expect(entry.getSnapshot().draft).toBe("base\r\n");
+  expect(update).not.toHaveBeenCalled();
+  expect(entry.getSnapshot().failure).toContain("5 MiB");
+});
+// Explicit saves flush first and never write a partially acknowledged draft.
+it("saves after buffer acknowledgement and converges clean", async () => {
+  const { entry, update, save } = await markdownFixture();
+  entry.setMarkdownText("save me");
+  await entry.saveMarkdown();
+  expect(update).toHaveBeenCalledOnce();
+  expect(save).toHaveBeenCalledOnce();
+  expect(entry.getSnapshot().isDirty).toBe(false);
+  expect(entry.getSnapshot().announcement).toBe("Saved.");
+});
+// Keep mine only resolves in memory and never invokes disk Save.
+it("keeps the explicit conflict choice separate from saving", async () => {
+  const { entry, resolve, save } = await markdownFixture();
+  entry.setMarkdownText("mine");
+  await entry.flushMarkdown();
+  await entry.resolveMarkdown("keepMine");
+  expect(resolve).toHaveBeenCalledWith(expect.objectContaining({ resolution: "keepMine" }));
+  expect(save).not.toHaveBeenCalled();
+});
+
+// Close must wait for a save that was already writing when admission was claimed.
+it("waits for an in-flight Save before completing lifecycle preflight", async () => {
+  const { entry, registry, save } = await markdownFixture();
+  const pending = deferred<Awaited<ReturnType<typeof save>>>();
+  save.mockReturnValueOnce(pending.promise);
+  entry.setMarkdownText("save");
+  const saving = entry.saveMarkdown();
+  await settle();
+  let completed = false;
+  const boundary = registry.settle({ kind: "all" }).then((release) => {
+    completed = true;
+    return release;
+  });
+  await settle();
+  expect(completed).toBe(false);
+  pending.resolve({
+    outcome: "saved",
+    savedDisk: null,
+    file: handle({ revision: "4", state: readyTextState({ mode: "markdown", text: "save" }) }),
+  });
+  await saving;
+  (await boundary)();
+  expect(completed).toBe(true);
+});
+// The composition's final transaction is accepted even after destructive admission starts.
+it("settles the final IME transaction before denying later edits", async () => {
+  const { entry, registry, update } = await markdownFixture();
+  entry.setComposition(true, () => {
+    entry.setMarkdownText("completed IME");
+    entry.setComposition(false);
+  });
+  const release = await registry.settle({ kind: "all" });
+  expect(update).toHaveBeenCalledWith(expect.objectContaining({ text: "completed IME" }));
+  entry.setMarkdownText("too late");
+  expect(entry.getSnapshot().draft).toBe("completed IME");
+  release();
+});
+// Reset lifetime guards suppress a save result from an entry that no longer exists.
+it("ignores Save completion after a committed reset", async () => {
+  const { entry, registry, save } = await markdownFixture();
+  const pending = deferred<Awaited<ReturnType<typeof save>>>();
+  save.mockReturnValueOnce(pending.promise);
+  entry.setMarkdownText("old");
+  const saving = entry.saveMarkdown();
+  await settle();
+  registry.clearAfterReset();
+  pending.resolve({ outcome: "saved", savedDisk: null, file: handle({ revision: "9" }) });
+  await saving;
+  expect(registry.entry(HANDLE_ID)).not.toBe(entry);
+  expect(entry.getSnapshot().announcement).not.toBe("Saved.");
+});
+
+// Closing one Markdown handle releases its cache while unrelated open handles remain intact.
+it("retires only the confirmed close scope", async () => {
+  const { entry, registry } = await markdownFixture();
+  const other = registry.entry(OTHER_ID);
+  const target = entry.getSnapshot().handle;
+  if (!target) throw new Error("Expected loaded fixture");
+  registry.retireScope({
+    kind: "pane",
+    sessionId: target.sessionId,
+    tabId: target.tabId,
+    paneId: target.paneId,
+  });
+  expect(registry.entry(HANDLE_ID)).not.toBe(entry);
+  expect(registry.entry(OTHER_ID)).toBe(other);
 });

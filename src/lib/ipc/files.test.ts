@@ -10,8 +10,11 @@ import {
   openFileInPane,
   openFileWithDefaultApp,
   reloadOpenFile,
+  resolveExternalFileChange,
   revealFileEntry,
+  saveMarkdownFile,
   searchFileTree,
+  updateMarkdownBuffer,
 } from "./files";
 import { IpcCallError } from "./ipc-error";
 
@@ -140,4 +143,24 @@ it("propagates a failed handle subscription", async () => {
   vi.mocked(listen).mockRejectedValue(new Error("registration refused"));
 
   await expect(onFileHandleChanged(vi.fn())).rejects.toThrow("registration refused");
+});
+
+// Generated Markdown contracts preserve command names, request envelopes and results.
+it("forwards Markdown update, save and resolution intents", async () => {
+  const update = {
+    fileHandleId: "file",
+    expectedRevision: "9007199254740993",
+    baseDiskRevision: "opaque",
+    text: "a\r\nb",
+  };
+  const save = { fileHandleId: "file", expectedRevision: "2" };
+  const resolve = { ...save, resolution: "keepMine" as const };
+  const result = { marker: "unchanged" };
+  vi.mocked(invoke).mockResolvedValue(result);
+  expect(await updateMarkdownBuffer(update)).toBe(result);
+  expect(await saveMarkdownFile(save)).toBe(result);
+  expect(await resolveExternalFileChange(resolve)).toBe(result);
+  expect(invoke).toHaveBeenNthCalledWith(1, "update_markdown_buffer", { request: update });
+  expect(invoke).toHaveBeenNthCalledWith(2, "save_markdown_file", { request: save });
+  expect(invoke).toHaveBeenNthCalledWith(3, "resolve_external_file_change", { request: resolve });
 });

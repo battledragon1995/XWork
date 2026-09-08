@@ -4,6 +4,7 @@ import type {
   QuitRequestDto,
   SessionNavigationDto,
 } from "@/bindings/app-lifecycle";
+import { withFileEditBoundary } from "./file-edit-boundary";
 import { invokeCommand } from "./ipc-error";
 
 /** Re-exported so shell code can type a subscription without importing Tauri directly. */
@@ -39,7 +40,9 @@ export function toggleMainWindowMaximized(): Promise<boolean> {
 
 // Ask the backend to quit. A `null` result means the backend already exited on its own.
 export function requestQuit(): Promise<QuitRequestDto | null> {
-  return invokeLifecycle<QuitRequestDto | null>("request_quit");
+  return withFileEditBoundary({ kind: "all" }, () =>
+    invokeLifecycle<QuitRequestDto | null>("request_quit"),
+  );
 }
 
 // Drop one pending quit request. Tauri maps `requestId` to the Rust `request_id` parameter.
@@ -49,7 +52,9 @@ export function cancelQuit(requestId: number): Promise<void> {
 
 // Confirm one pending quit request and let the backend shut the runtime down.
 export function confirmQuit(requestId: number): Promise<void> {
-  return invokeLifecycle<void>("confirm_quit", { requestId });
+  return withFileEditBoundary({ kind: "all" }, () =>
+    invokeLifecycle<void>("confirm_quit", { requestId }),
+  );
 }
 
 // Subscribe to tray-initiated quit requests. The returned callback removes the listener.

@@ -11,7 +11,11 @@ import type {
   ListFileChildrenRequestDto,
   OpenFileInPaneRequestDto,
   OpenFileResultDto,
+  ResolveExternalFileChangeRequestDto,
+  SaveMarkdownFileRequestDto,
+  SaveMarkdownFileResultDto,
   SearchFileTreeRequestDto,
+  UpdateMarkdownBufferRequestDto,
 } from "@/bindings/files/files";
 import { invokeCommand } from "./ipc-error";
 
@@ -64,4 +68,25 @@ export function onFileHandleChanged(
       listener(event.payload);
     },
   );
+}
+
+/** Forward one explicit Markdown intent through the generated contract. */
+export function updateMarkdownBuffer(
+  request: UpdateMarkdownBufferRequestDto,
+): Promise<FileHandleDto> {
+  return invokeCommand<FileHandleDto, FilesError>("update_markdown_buffer", { request });
+}
+
+/** Forward one explicit Markdown intent through the generated contract. */
+export function saveMarkdownFile(
+  request: SaveMarkdownFileRequestDto,
+): Promise<SaveMarkdownFileResultDto> {
+  return invokeCommand<SaveMarkdownFileResultDto, FilesError>("save_markdown_file", { request });
+}
+
+/** Forward one explicit Markdown intent through the generated contract. */
+export function resolveExternalFileChange(
+  request: ResolveExternalFileChangeRequestDto,
+): Promise<FileHandleDto> {
+  return invokeCommand<FileHandleDto, FilesError>("resolve_external_file_change", { request });
 }

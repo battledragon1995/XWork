@@ -105,6 +105,11 @@ export function SessionTerminalRoute() {
         fileHandleId={props.content.fileHandleId}
         paneTitle={props.content.title}
         isVisible={props.isVisible}
+        isActive={props.isActive}
+        onActivate={props.onActivate}
+        boundary={{ epoch: invalidationEpoch, suspended }}
+        readBoundary={readBoundary}
+        platform={shortcuts.platform ?? "windows"}
         onRefreshSession={props.onRefreshSession}
         onOpenProject={
           /** Recovery navigates through the app, never through a Files-owned route. */ () => {
@@ -116,7 +121,7 @@ export function SessionTerminalRoute() {
         }
       />
     ),
-    [invalidationEpoch, navigate, readBoundary],
+    [invalidationEpoch, navigate, readBoundary, shortcuts.platform, suspended],
   );
 
   /** Renders one terminal without making Sessions import Terminal implementation. */
