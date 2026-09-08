@@ -377,6 +377,8 @@ pub enum FileHandleChangeKindDto {
     Unreadable,
     ProjectRootChanged,
     WatchModeChanged,
+    EditorUpdated,
+    Saved,
 }
 
 /// Invalidates one handle without sending source content through an event.
@@ -469,4 +471,44 @@ mod tests {
             serde_json::json!("symbolicLink")
         );
     }
+}
+
+/// Carries one full editor snapshot with its acknowledged version tokens.
+#[derive(Clone, Debug, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase", export_to = "files/files.ts")]
+pub struct UpdateMarkdownBufferRequestDto {
+    pub file_handle_id: String,
+    pub expected_revision: String,
+    pub base_disk_revision: String,
+    pub text: String,
+}
+
+/// Requests manual saving of one acknowledged editor version.
+#[derive(Clone, Debug, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase", export_to = "files/files.ts")]
+pub struct SaveMarkdownFileRequestDto {
+    pub file_handle_id: String,
+    pub expected_revision: String,
+}
+
+/// Distinguishes a clean no-op from persisted and subsequently edited snapshots.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase", export_to = "files/files.ts")]
+pub enum MarkdownSaveOutcomeDto {
+    AlreadyClean,
+    Saved,
+    SavedWithNewerEdits,
+}
+
+/// Returns the committed disk version and the current editor authority.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase", export_to = "files/files.ts")]
+pub struct SaveMarkdownFileResultDto {
+    pub outcome: MarkdownSaveOutcomeDto,
+    pub saved_disk: Option<FileDiskVersionDto>,
+    pub file: FileHandleDto,
 }

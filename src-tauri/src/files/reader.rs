@@ -204,7 +204,7 @@ fn classify_content(
 }
 
 /// Counts logical breaks and classifies CRLF versus bare LF bytes.
-fn line_facts(text: &str) -> Result<(u32, LineEndingDto), FilesError> {
+pub(crate) fn line_facts(text: &str) -> Result<(u32, LineEndingDto), FilesError> {
     if text.is_empty() {
         return Ok((0, LineEndingDto::None));
     }
@@ -244,11 +244,30 @@ fn mime_type(path: &Path, may_be_text: bool) -> String {
 }
 
 /// Encodes a private fingerprint into an opaque public token.
-fn fingerprint_token(fingerprint: &DiskFingerprint) -> String {
+pub(crate) fn fingerprint_token(fingerprint: &DiskFingerprint) -> String {
     let mut hasher = blake3::Hasher::new();
     hasher.update(&fingerprint.byte_size.to_le_bytes());
-    if let Some(modified) = system_time_ms(fingerprint.modified_at) {
-        hasher.update(&modified.to_le_bytes());
+    if let Some(modified) = fingerprint
+        .modified_at
+        .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
+    {
+        hasher.update(&modified.as_nanos().to_le_bytes());
+    }
+    match &fingerprint.file_identity {
+        #[cfg(windows)]
+        Some(PlatformFileIdentity::Windows {
+            volume_serial_number,
+            file_id,
+        }) => {
+            hasher.update(&volume_serial_number.to_le_bytes());
+            hasher.update(&file_id.to_le_bytes());
+        }
+        #[cfg(unix)]
+        Some(PlatformFileIdentity::Unix { device, inode }) => {
+            hasher.update(&device.to_le_bytes());
+            hasher.update(&inode.to_le_bytes());
+        }
+        None => (),
     }
     hasher.update(fingerprint.content_digest.as_bytes());
     hasher.finalize().to_hex().to_string()

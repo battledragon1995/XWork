@@ -126,3 +126,34 @@ fn require_main<R: Runtime>(window: &WebviewWindow<R>) -> Result<(), FilesError>
         .then_some(())
         .ok_or(FilesError::WindowNotAllowed)
 }
+
+/// Applies one editor snapshot from the main window without touching disk.
+#[tauri::command]
+pub(crate) async fn update_markdown_buffer<R: Runtime>(
+    request: super::UpdateMarkdownBufferRequestDto,
+    window: WebviewWindow<R>,
+    state: State<'_, FilesService>,
+) -> Result<FileHandleDto, FilesError> {
+    require_main(&window)?;
+    state
+        .replace_editor_snapshot(
+            &request.file_handle_id,
+            super::FileEditorSnapshot {
+                text: request.text,
+                expected_handle_revision: request.expected_revision,
+                base_disk_revision: request.base_disk_revision,
+            },
+        )
+        .await
+}
+
+/// Saves exactly one acknowledged snapshot from the main window.
+#[tauri::command]
+pub(crate) async fn save_markdown_file<R: Runtime>(
+    request: super::SaveMarkdownFileRequestDto,
+    window: WebviewWindow<R>,
+    state: State<'_, FilesService>,
+) -> Result<super::SaveMarkdownFileResultDto, FilesError> {
+    require_main(&window)?;
+    state.save_markdown_file(request).await
+}

@@ -814,6 +814,7 @@ impl<R: Runtime> SessionEventSink for TauriSessionEventSink<R> {
 
 /// Adapts Sessions and Projects owner snapshots to application lifecycle needs.
 pub(crate) struct SessionsAppRuntime {
+    files: crate::files::FilesService,
     sessions: Arc<SessionManager>,
     projects: ProjectService,
     terminal: TerminalManager,
@@ -827,8 +828,10 @@ impl SessionsAppRuntime {
         projects: ProjectService,
         terminal: TerminalManager,
         notifications: NotificationService,
+        files: crate::files::FilesService,
     ) -> Self {
         Self {
+            files,
             sessions,
             projects,
             terminal,
@@ -912,10 +915,11 @@ impl AppRuntime for SessionsAppRuntime {
         Box::pin(async move {
             self.notifications.begin_shutdown();
             self.terminal.begin_shutdown();
+            let files = self.files.shutdown().await;
             let sessions = self.sessions.shutdown_all().await;
             let terminal = self.terminal.shutdown_remaining().await;
             let notifications = self.notifications.shutdown_runtime_sources().await;
-            if sessions.is_err() || terminal.is_err() || notifications.is_err() {
+            if files.is_err() || sessions.is_err() || terminal.is_err() || notifications.is_err() {
                 Err(AppLifecycleError::RuntimeShutdownFailed)
             } else {
                 Ok(())

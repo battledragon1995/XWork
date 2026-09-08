@@ -408,6 +408,8 @@ fn app_invoke_handler<R: Runtime>() -> impl Fn(tauri::ipc::Invoke<R>) -> bool + 
         crate::files::commands::resolve_external_file_change,
         crate::files::commands::open_file_with_default_app,
         crate::files::commands::list_recent_files,
+        crate::files::commands::update_markdown_buffer,
+        crate::files::commands::save_markdown_file,
         crate::settings::get_settings,
         crate::settings::get_keyboard_shortcuts,
         crate::settings::set_keyboard_shortcut,
@@ -566,6 +568,7 @@ where
                             app.state::<ProjectService>().inner().clone(),
                             terminal.clone(),
                             notifications.clone(),
+                            app.state::<FilesService>().inner().clone(),
                         ))
                     },
                 );

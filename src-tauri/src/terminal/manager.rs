@@ -1340,7 +1340,8 @@ mod tests {
         {
             Box::pin(async move {
                 self.launches.fetch_add(1, Ordering::SeqCst);
-                self.entered.notify_waiters();
+                // Retain the single test signal even if the awaiting caller has not polled yet.
+                self.entered.notify_one();
                 if self.block_launch.load(Ordering::SeqCst) {
                     self.release.notified().await;
                 }
@@ -1820,7 +1821,9 @@ mod tests {
                     )
                     .await
             });
-            dependencies.entered.notified().await;
+            tokio::time::timeout(Duration::from_secs(5), dependencies.entered.notified())
+                .await
+                .expect("the first launch should reach the owner barrier");
             let second = manager
                 .start_with_sender(
                     "session-1",
@@ -1837,9 +1840,10 @@ mod tests {
                 second,
                 Err(TerminalError::TerminalAlreadyAttached { .. })
             ));
-            dependencies.release.notify_waiters();
-            first
+            dependencies.release.notify_one();
+            tokio::time::timeout(Duration::from_secs(5), first)
                 .await
+                .expect("the first launch should finish after release")
                 .expect("first task should join")
                 .expect("first launch should succeed");
             assert_eq!(dependencies.launches.load(Ordering::SeqCst), 1);

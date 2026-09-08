@@ -7,7 +7,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use tokio::sync::Semaphore;
+use tokio::sync::{Mutex as AsyncMutex, Semaphore};
 
 use crate::{
     projects::ProjectService,
@@ -63,6 +63,10 @@ struct RuntimeState {
     clock: FilesClock,
     handle_events: FileHandleEventSink,
     recent_events: RecentFilesEventSink,
+    path_gates: Mutex<HashMap<String, std::sync::Weak<AsyncMutex<()>>>>,
+    writer: Mutex<Arc<dyn super::writer::AtomicFileWriter>>,
+    shutdown: std::sync::atomic::AtomicBool,
+    active_saves: Arc<tokio::sync::RwLock<()>>,
 }
 
 #[derive(Default)]
@@ -70,6 +74,32 @@ struct HandleState {
     live: HashMap<String, HandleRecord>,
     retained: HashMap<String, RetainedHandle>,
     text_bytes: usize,
+    reserved_bytes: usize,
+    save_operations: HashMap<String, u64>,
+    next_save_operation: u64,
+}
+
+/// Owns one monotonic save lease and releases its reserved publication memory on every exit.
+struct SaveLease {
+    service: FilesService,
+    handle_id: String,
+    operation: u64,
+    reserved_bytes: usize,
+}
+
+impl Drop for SaveLease {
+    /// Retires only this lease, including when an async worker fails or is dropped.
+    fn drop(&mut self) {
+        if let Ok(runtime) = self.service.runtime()
+            && let Ok(mut handles) = runtime.handles.lock()
+            && handles.save_operations.get(&self.handle_id) == Some(&self.operation)
+        {
+            handles
+                .save_operations
+                .retain(|_, operation| *operation != self.operation);
+            handles.reserved_bytes = handles.reserved_bytes.saturating_sub(self.reserved_bytes);
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -79,6 +109,9 @@ struct HandleRecord {
     root_identity: ProjectRootIdentity,
     parent: PathBuf,
     fingerprint: DiskFingerprint,
+    local_digest: blake3::Hash,
+    original_has_utf8_bom: bool,
+    base_disk_revision: String,
     base_text: Option<TextFileDto>,
     recovery_text: Option<TextFileDto>,
     previous_clean_disk_revision: Option<String>,
@@ -191,6 +224,10 @@ impl FilesService {
                     clock,
                     handle_events,
                     recent_events,
+                    path_gates: Mutex::new(HashMap::new()),
+                    writer: Mutex::new(Arc::new(super::writer::NativeAtomicFileWriter)),
+                    shutdown: std::sync::atomic::AtomicBool::new(false),
+                    active_saves: Arc::new(tokio::sync::RwLock::new(())),
                 }),
             }
         });
@@ -408,6 +445,11 @@ impl FilesService {
             .dependencies
             .available_project_root(&target.project_id)
             .await?;
+        let root_identity = self.inner.policy.identify_root(&root)?;
+        let _path_gate = self
+            .path_gate_for(&root_identity, &request.relative_path)?
+            .lock_owned()
+            .await;
         let snapshot = self
             .read_new_visible(&root, &request.relative_path, observed_at_ms)
             .await?;
@@ -452,6 +494,10 @@ impl FilesService {
             root,
             root_identity,
             parent: parent.clone(),
+            original_has_utf8_bom: text_content(&snapshot.content)
+                .is_some_and(|file| file.has_utf8_bom),
+            local_digest: snapshot.fingerprint.content_digest,
+            base_disk_revision: snapshot.disk.disk_revision.clone(),
             fingerprint: snapshot.fingerprint,
             base_text: text_content(&snapshot.content),
             recovery_text: None,
@@ -531,6 +577,8 @@ impl FilesService {
         &self,
         request: ResolveExternalFileChangeRequestDto,
     ) -> Result<FileHandleDto, FilesError> {
+        let initial = self.get_record(&request.file_handle_id)?;
+        let _gate = self.path_gate(&initial)?.lock_owned().await;
         let current = self.get_record(&request.file_handle_id)?;
         if request.expected_revision != current.dto.revision {
             return Err(FilesError::RevisionConflict {
@@ -577,6 +625,7 @@ impl FilesService {
         match request.resolution {
             super::ExternalFileResolutionDto::KeepMine => {
                 let local = local_text(&next.dto.state).ok_or(FilesError::NoExternalConflict)?;
+                next.base_disk_revision = snapshot.disk.disk_revision.clone();
                 next.base_text = text_content(&snapshot.content);
                 next.dto.state = FileHandleStateDto::Ready {
                     content: FileContentDto::Text { file: local },
@@ -587,6 +636,8 @@ impl FilesService {
                 next.dto.is_dirty = false;
                 next.dto.dirty_since_ms = None;
                 next.dto.edit_count = 0;
+                next.local_digest = snapshot.fingerprint.content_digest;
+                next.base_disk_revision = snapshot.disk.disk_revision.clone();
                 next.base_text = text_content(&snapshot.content);
                 next.dto.state = FileHandleStateDto::Ready {
                     content: snapshot.content.clone(),
@@ -601,7 +652,7 @@ impl FilesService {
             .text_bytes
             .saturating_sub(old_bytes)
             .saturating_add(record_text_bytes(&next));
-        if projected > MAX_TEXT_BUFFER_BYTES {
+        if projected.saturating_add(handles.reserved_bytes) > MAX_TEXT_BUFFER_BYTES {
             return Err(FilesError::FileMemoryLimitReached);
         }
         handles.text_bytes = projected;
@@ -785,96 +836,568 @@ impl FilesService {
         file_handle_id: &str,
         snapshot: FileEditorSnapshot,
     ) -> Result<FileHandleDto, FilesError> {
+        validate_handle_id(file_handle_id)?;
+        let expected = parse_revision(&snapshot.expected_handle_revision)?;
+        if snapshot.base_disk_revision.is_empty()
+            || snapshot.base_disk_revision.len() > 128
+            || snapshot.base_disk_revision.chars().any(char::is_control)
+        {
+            return Err(FilesError::InvalidDiskRevision);
+        }
+        let initial = self.get_record(file_handle_id)?;
+        let mut initial_local = local_text(&initial.dto.state)
+            .or(initial.recovery_text)
+            .or(initial.base_text)
+            .ok_or(FilesError::MarkdownNotEditable)?;
+        initial_local.has_utf8_bom = initial.original_has_utf8_bom;
+        if initial_local.mode != TextFileModeDto::Markdown {
+            return Err(FilesError::MarkdownNotEditable);
+        }
+        let permit = self.acquire_scan().await?;
+        let prepared = tauri::async_runtime::spawn_blocking(move || {
+            let _permit = permit;
+            prepare_markdown(snapshot.text, initial_local)
+        })
+        .await
+        .map_err(|_| FilesError::FileOperationUnavailable)??;
         let now = (self.runtime()?.clock)()?;
         let runtime = self.runtime()?;
         let mut handles = runtime
             .handles
             .lock()
-            .map_err(|_| FilesError::FileReadFailed)?;
-        let (current_revision, current_disk, watcher_race, base, current_local, old_bytes) =
-            {
-                let record = handles.live.get(file_handle_id).ok_or_else(|| {
-                    FilesError::FileHandleNotFound {
-                        file_handle_id: file_handle_id.to_owned(),
-                    }
-                })?;
-                let current_revision = record.dto.revision.clone();
-                let current_disk =
-                    disk_version(&record.dto.state).ok_or(FilesError::RevisionConflict {
-                        current_revision: current_revision.clone(),
-                    })?;
-                (
-                    current_revision,
-                    current_disk,
-                    record.previous_clean_disk_revision.as_deref()
-                        == Some(snapshot.base_disk_revision.as_str()),
-                    record
-                        .base_text
-                        .clone()
-                        .ok_or(FilesError::UnsavedChangesWouldBeLost)?,
-                    local_text(&record.dto.state),
-                    record_text_bytes(record),
-                )
-            };
-        if snapshot.expected_handle_revision != current_revision && !watcher_race {
-            return Err(FilesError::RevisionConflict { current_revision });
-        }
-        if base.mode != TextFileModeDto::Markdown {
-            return Err(FilesError::UnsavedChangesWouldBeLost);
-        }
-        let current_local = current_local.unwrap_or_else(|| base.clone());
-        if current_local.text == snapshot.text {
-            return Ok(handles
+            .map_err(|_| FilesError::FileOperationUnavailable)?;
+        let current =
+            handles
                 .live
                 .get(file_handle_id)
-                .expect("handle exists")
-                .dto
-                .clone());
+                .ok_or_else(|| FilesError::FileHandleNotFound {
+                    file_handle_id: file_handle_id.to_owned(),
+                })?;
+        let current_revision = parse_revision(&current.dto.revision)?;
+        let current_disk = disk_version(&current.dto.state);
+        let compatible = current.base_disk_revision == snapshot.base_disk_revision
+            || current_disk
+                .as_ref()
+                .is_some_and(|disk| disk.disk_revision == snapshot.base_disk_revision)
+            || super::reader::fingerprint_token(&current.fingerprint)
+                == snapshot.base_disk_revision;
+        let watcher_race = !current.dto.is_dirty
+            && matches!(current.dto.state, FileHandleStateDto::Ready { .. })
+            && expected.checked_add(1) == Some(current_revision)
+            && current.previous_clean_disk_revision.as_deref()
+                == Some(&snapshot.base_disk_revision);
+        let identical = current.local_digest == prepared.1;
+        if expected != current_revision && !(identical && compatible) && !watcher_race {
+            return Err(FilesError::RevisionConflict {
+                current_revision: current.dto.revision.clone(),
+            });
         }
-        let mut local = current_local;
-        local.byte_size = snapshot.text.len() as u64;
-        local.text = snapshot.text;
-        let new_bytes = local.text.len().saturating_add(base.text.len());
+        if identical && compatible {
+            return Ok(current.dto.clone());
+        }
+        if handles.save_operations.contains_key(file_handle_id)
+            && current_revision.checked_add(2).is_none()
+        {
+            return Err(FilesError::FileOperationUnavailable);
+        }
+        let old_bytes = record_text_bytes(current);
+        let mut next = current.clone();
+        increment_revision(&mut next.dto)?;
+        next.local_digest = prepared.1;
+        let local = prepared.0;
+        let converged = prepared.1 == next.fingerprint.content_digest;
+        let ready_disk = current_disk.clone();
+        if converged
+            && matches!(
+                next.dto.state,
+                FileHandleStateDto::Ready { .. } | FileHandleStateDto::ExternalConflict { .. }
+            )
+        {
+            next.dto.is_dirty = false;
+            next.dto.dirty_since_ms = None;
+            next.dto.edit_count = 0;
+            next.base_disk_revision = ready_disk
+                .as_ref()
+                .ok_or(FilesError::FileOperationUnavailable)?
+                .disk_revision
+                .clone();
+            next.base_text = Some(local.clone());
+            next.dto.state = FileHandleStateDto::Ready {
+                content: FileContentDto::Text { file: local },
+                disk: ready_disk.ok_or(FilesError::FileOperationUnavailable)?,
+            };
+        } else {
+            if !next.dto.is_dirty {
+                next.dto.dirty_since_ms = Some(now);
+                next.dto.edit_count = 0;
+            }
+            next.dto.is_dirty = true;
+            if !identical {
+                next.dto.edit_count = next.dto.edit_count.saturating_add(1);
+            }
+            next.dto.state = match next.dto.state {
+                FileHandleStateDto::ProjectRootChanged => {
+                    next.recovery_text = Some(local);
+                    FileHandleStateDto::ProjectRootChanged
+                }
+                FileHandleStateDto::Missing { last_disk, .. } => FileHandleStateDto::Missing {
+                    last_disk,
+                    local: Some(local),
+                },
+                FileHandleStateDto::Unreadable { last_disk, .. } => {
+                    FileHandleStateDto::Unreadable {
+                        last_disk,
+                        local: Some(local),
+                    }
+                }
+                FileHandleStateDto::ExternalConflict { external, .. } => {
+                    FileHandleStateDto::ExternalConflict { local, external }
+                }
+                FileHandleStateDto::Ready { disk, .. } if !compatible || watcher_race => {
+                    FileHandleStateDto::ExternalConflict {
+                        local,
+                        external: disk,
+                    }
+                }
+                FileHandleStateDto::Ready { disk, .. } => FileHandleStateDto::Ready {
+                    content: FileContentDto::Text { file: local },
+                    disk,
+                },
+            };
+        }
+        next.previous_clean_disk_revision = None;
         let projected = handles
             .text_bytes
             .saturating_sub(old_bytes)
-            .saturating_add(new_bytes);
-        if projected > MAX_TEXT_BUFFER_BYTES {
+            .saturating_add(record_text_bytes(&next));
+        if projected.saturating_add(handles.reserved_bytes) > MAX_TEXT_BUFFER_BYTES {
             return Err(FilesError::FileMemoryLimitReached);
         }
         handles.text_bytes = projected;
-        let record = handles.live.get_mut(file_handle_id).expect("handle exists");
-        increment_revision(&mut record.dto)?;
-        if local.text == base.text {
-            record.dto.is_dirty = false;
-            record.dto.dirty_since_ms = None;
-            record.dto.edit_count = 0;
-            record.dto.state = FileHandleStateDto::Ready {
-                content: FileContentDto::Text { file: local },
-                disk: current_disk,
-            };
-        } else {
-            if !record.dto.is_dirty {
-                record.dto.dirty_since_ms = Some(now);
-                record.dto.edit_count = 1;
-            } else {
-                record.dto.edit_count = record.dto.edit_count.saturating_add(1);
+        let dto = next.dto.clone();
+        handles.live.insert(file_handle_id.to_owned(), next);
+        drop(handles);
+        let _ = (runtime.handle_events)(FileHandleChangedEventDto {
+            file_handle_id: dto.id.clone(),
+            revision: dto.revision.clone(),
+            change: FileHandleChangeKindDto::EditorUpdated,
+        });
+        Ok(dto)
+    }
+
+    /// Runs a save worker independently of caller cancellation until its lease completes.
+    pub async fn save_markdown_file(
+        &self,
+        request: super::SaveMarkdownFileRequestDto,
+    ) -> Result<super::SaveMarkdownFileResultDto, FilesError> {
+        validate_handle_id(&request.file_handle_id)?;
+        parse_revision(&request.expected_revision)?;
+        let service = self.clone();
+        tauri::async_runtime::spawn(async move { service.save_markdown_inner(request).await })
+            .await
+            .map_err(|_| FilesError::FileOperationUnavailable)?
+    }
+
+    /// Stages an acknowledged snapshot and serializes commit with path lifecycle operations.
+    async fn save_markdown_inner(
+        &self,
+        request: super::SaveMarkdownFileRequestDto,
+    ) -> Result<super::SaveMarkdownFileResultDto, FilesError> {
+        let runtime = self.runtime()?;
+        let _active = runtime.active_saves.clone().read_owned().await;
+        if runtime.shutdown.load(std::sync::atomic::Ordering::Acquire) {
+            return Err(FilesError::FileOperationUnavailable);
+        }
+        let initial = self.get_record(&request.file_handle_id)?;
+        let _lease = self.path_gate(&initial)?.lock_owned().await;
+        let current = self.get_record(&request.file_handle_id)?;
+        if current.dto.revision != request.expected_revision {
+            return Err(FilesError::RevisionConflict {
+                current_revision: current.dto.revision,
+            });
+        }
+        let local = local_text(&current.dto.state)
+            .or_else(|| current.recovery_text.clone())
+            .ok_or(FilesError::MarkdownNotEditable)?;
+        if local.mode != TextFileModeDto::Markdown {
+            return Err(FilesError::MarkdownNotEditable);
+        }
+        match &current.dto.state {
+            FileHandleStateDto::ExternalConflict { .. } => {
+                return Err(FilesError::ExternalChangeDetected {
+                    current_revision: current.dto.revision,
+                });
             }
-            record.dto.is_dirty = true;
-            if snapshot.base_disk_revision != current_disk.disk_revision || watcher_race {
-                record.dto.state = FileHandleStateDto::ExternalConflict {
-                    local,
-                    external: current_disk,
-                };
-            } else {
-                record.dto.state = FileHandleStateDto::Ready {
-                    content: FileContentDto::Text { file: local },
-                    disk: current_disk,
-                };
+            FileHandleStateDto::Missing { .. } => {
+                return Err(FilesError::EntryNotFound {
+                    relative_path: current.dto.relative_path,
+                });
+            }
+            FileHandleStateDto::Unreadable { .. } => return Err(FilesError::FileReadFailed),
+            FileHandleStateDto::ProjectRootChanged => {
+                return Err(FilesError::ProjectRootChanged {
+                    project_id: current.dto.project_id,
+                });
+            }
+            FileHandleStateDto::Ready { .. } => (),
+        }
+        if !current.dto.is_dirty {
+            return Ok(super::SaveMarkdownFileResultDto {
+                outcome: super::MarkdownSaveOutcomeDto::AlreadyClean,
+                saved_disk: None,
+                file: current.dto,
+            });
+        }
+        // Reserve publication revision before any irreversible disk operation.
+        let mut reserved = current.dto.clone();
+        increment_revision(&mut reserved)?;
+        let lease = self.reserve_save(&current, local.text.len())?;
+        let outcome = self.write_snapshot(&current, local, &lease).await;
+        match outcome {
+            Ok(snapshot) => self.publish_saved(&current, snapshot),
+            Err(error) => {
+                match &error {
+                    FilesError::ExternalChangeDetected { .. } => (),
+                    FilesError::EntryNotFound { .. } => {
+                        self.commit_unavailable(&request.file_handle_id, true)?;
+                    }
+                    FilesError::ProjectRootChanged { .. } => {
+                        self.commit_root_changed(&request.file_handle_id)?;
+                    }
+                    FilesError::FileReadFailed
+                    | FilesError::FileSystemReadFailed
+                    | FilesError::AtomicCommitStateUnknown => {
+                        self.commit_unavailable(&request.file_handle_id, false)?;
+                    }
+                    _ => (),
+                }
+                Err(error)
             }
         }
-        record.previous_clean_disk_revision = None;
-        Ok(record.dto.clone())
+    }
+
+    /// Performs bounded filesystem work and rechecks current root after staging.
+    async fn write_snapshot(
+        &self,
+        current: &HandleRecord,
+        local: TextFileDto,
+        lease: &SaveLease,
+    ) -> Result<DiskFileSnapshot, FilesError> {
+        let saved_content = FileContentDto::Text {
+            file: local.clone(),
+        };
+        let root = self
+            .runtime()?
+            .dependencies
+            .available_project_root(&current.dto.project_id)
+            .await?;
+        let policy = self.inner.policy;
+        let path = current.dto.relative_path.clone();
+        let expected = current.root_identity.clone();
+        let writer = self
+            .runtime()?
+            .writer
+            .lock()
+            .map_err(|_| FilesError::FileOperationUnavailable)?
+            .clone();
+        let permit = self.acquire_scan().await?;
+        let staged = tauri::async_runtime::spawn_blocking(move || {
+            let _permit = permit;
+            let target = policy.resolve_writer_target(&root, &path, &expected)?;
+            let (local, _) = prepare_markdown(local.text.clone(), local)?;
+            let mut bytes = Vec::with_capacity(local.byte_size as usize);
+            if local.has_utf8_bom {
+                bytes.extend_from_slice(&[0xef, 0xbb, 0xbf]);
+            }
+            bytes.extend_from_slice(local.text.as_bytes());
+            writer.stage(target, &bytes)
+        })
+        .await
+        .map_err(|_| FilesError::FileOperationUnavailable)??;
+        let latest_root = self
+            .runtime()?
+            .dependencies
+            .available_project_root(&current.dto.project_id)
+            .await;
+        let validation = (|| {
+            let runtime = self.runtime()?;
+            if runtime.shutdown.load(std::sync::atomic::Ordering::Acquire) {
+                return Err(FilesError::FileOperationUnavailable);
+            }
+            let handles = runtime
+                .handles
+                .lock()
+                .map_err(|_| FilesError::FileOperationUnavailable)?;
+            if handles.save_operations.get(&current.dto.id) != Some(&lease.operation)
+                || !handles
+                    .live
+                    .get(&current.dto.id)
+                    .is_some_and(|record| record.fingerprint == current.fingerprint)
+            {
+                return Err(FilesError::FileOperationUnavailable);
+            }
+            latest_root
+        })();
+        let latest_root = match validation {
+            Ok(root) => root,
+            Err(error) => {
+                tauri::async_runtime::spawn_blocking(move || drop(staged))
+                    .await
+                    .map_err(|_| FilesError::FileOperationUnavailable)?;
+                return Err(error);
+            }
+        };
+        let expected = current.root_identity.clone();
+        let path = current.dto.relative_path.clone();
+        let base = current.fingerprint.clone();
+        let writer = self
+            .runtime()?
+            .writer
+            .lock()
+            .map_err(|_| FilesError::FileOperationUnavailable)?
+            .clone();
+        let observed = (self.runtime()?.clock)()?;
+        let permit = self.acquire_scan().await?;
+        let result = tauri::async_runtime::spawn_blocking(move || {
+            let _permit = permit;
+            let target = policy.resolve(
+                &latest_root,
+                &path,
+                Some(&expected),
+                FilePathIntent::ExistingHandleFile,
+            )?;
+            policy.revalidate_writer_target(&staged.target)?;
+            super::writer::writable(&staged.target)?;
+            let before = FileReader.read(policy, &target, observed)?;
+            if before.fingerprint != base {
+                return Ok((false, before));
+            }
+            writer.commit(&staged, &base)?;
+            let mut after = FileReader
+                .read(policy, &target, observed)
+                .map_err(|_| FilesError::AtomicCommitStateUnknown)?;
+            if after.fingerprint.content_digest != staged.digest {
+                return Err(FilesError::AtomicCommitStateUnknown);
+            }
+            after.content = saved_content;
+            Ok((true, after))
+        })
+        .await
+        .map_err(|_| FilesError::FileOperationUnavailable)??;
+        if !result.0 {
+            self.commit_snapshot(
+                &current.dto.id,
+                result.1,
+                FileHandleChangeKindDto::ConflictDetected,
+                true,
+            )?;
+            return Err(FilesError::ExternalChangeDetected {
+                current_revision: self.get_open_file(&current.dto.id)?.revision,
+            });
+        }
+        Ok(result.1)
+    }
+
+    /// Publishes every same-path handle atomically before deterministic event fanout.
+    fn publish_saved(
+        &self,
+        initiating: &HandleRecord,
+        snapshot: DiskFileSnapshot,
+    ) -> Result<super::SaveMarkdownFileResultDto, FilesError> {
+        let runtime = self.runtime()?;
+        let mut handles = runtime
+            .handles
+            .lock()
+            .map_err(|_| FilesError::FileOperationUnavailable)?;
+        let mut ids = handles
+            .live
+            .values()
+            .filter(|record| {
+                record.root_identity == initiating.root_identity
+                    && path_key(&record.dto.relative_path)
+                        == path_key(&initiating.dto.relative_path)
+            })
+            .map(|record| record.dto.id.clone())
+            .collect::<Vec<_>>();
+        ids.sort();
+        ids.retain(|id| id != &initiating.dto.id);
+        ids.insert(0, initiating.dto.id.clone());
+        let mut changes = Vec::new();
+        let mut total = handles.text_bytes;
+        for id in ids {
+            let current = handles
+                .live
+                .get(&id)
+                .ok_or(FilesError::FileOperationUnavailable)?;
+            let mut next = current.clone();
+            increment_revision(&mut next.dto)?;
+            let mut change = FileHandleChangeKindDto::Reloaded;
+            if id == initiating.dto.id {
+                let local =
+                    local_text(&next.dto.state).ok_or(FilesError::FileOperationUnavailable)?;
+                let saved =
+                    text_content(&snapshot.content).ok_or(FilesError::FileOperationUnavailable)?;
+                next.dto.is_dirty = next.local_digest != snapshot.fingerprint.content_digest;
+                if !next.dto.is_dirty {
+                    next.dto.dirty_since_ms = None;
+                    next.dto.edit_count = 0;
+                } else if next.dto.dirty_since_ms.is_none() {
+                    // Undo may have converged with the old base while this snapshot was staging.
+                    next.dto.dirty_since_ms = Some(snapshot.disk.observed_at_ms);
+                    next.dto.edit_count = next.dto.edit_count.max(1);
+                }
+                next.base_disk_revision = snapshot.disk.disk_revision.clone();
+                next.base_text = Some(saved);
+                next.dto.state = FileHandleStateDto::Ready {
+                    content: FileContentDto::Text { file: local },
+                    disk: snapshot.disk.clone(),
+                };
+                change = FileHandleChangeKindDto::Saved;
+            } else if next.dto.is_dirty {
+                next.dto.state = FileHandleStateDto::ExternalConflict {
+                    local: local_text(&next.dto.state)
+                        .ok_or(FilesError::FileOperationUnavailable)?,
+                    external: snapshot.disk.clone(),
+                };
+                change = FileHandleChangeKindDto::ConflictDetected;
+            } else {
+                next.local_digest = snapshot.fingerprint.content_digest;
+                next.base_disk_revision = snapshot.disk.disk_revision.clone();
+                next.base_text = text_content(&snapshot.content);
+                next.dto.state = FileHandleStateDto::Ready {
+                    content: snapshot.content.clone(),
+                    disk: snapshot.disk.clone(),
+                };
+            }
+            next.fingerprint = snapshot.fingerprint.clone();
+            next.previous_clean_disk_revision = None;
+            total = total
+                .saturating_sub(record_text_bytes(current))
+                .saturating_add(record_text_bytes(&next));
+            changes.push((next, change));
+        }
+        // Existing handles are bounded; a committed base must always remain publishable.
+        let mut events = Vec::new();
+        for (record, change) in changes {
+            events.push(FileHandleChangedEventDto {
+                file_handle_id: record.dto.id.clone(),
+                revision: record.dto.revision.clone(),
+                change,
+            });
+            handles.live.insert(record.dto.id.clone(), record);
+        }
+        handles.text_bytes = total;
+        let file = handles
+            .live
+            .get(&initiating.dto.id)
+            .ok_or(FilesError::FileOperationUnavailable)?
+            .dto
+            .clone();
+        drop(handles);
+        for event in events {
+            let _ = (runtime.handle_events)(event);
+        }
+        Ok(super::SaveMarkdownFileResultDto {
+            outcome: if file.is_dirty {
+                super::MarkdownSaveOutcomeDto::SavedWithNewerEdits
+            } else {
+                super::MarkdownSaveOutcomeDto::Saved
+            },
+            saved_disk: Some(snapshot.disk),
+            file,
+        })
+    }
+
+    /// Reserves monotonic lease identity and the worst-case retained bytes before writing.
+    fn reserve_save(
+        &self,
+        initiating: &HandleRecord,
+        text_len: usize,
+    ) -> Result<SaveLease, FilesError> {
+        let mut handles = self
+            .runtime()?
+            .handles
+            .lock()
+            .map_err(|_| FilesError::FileOperationUnavailable)?;
+        let mut reserved_bytes = text_len.saturating_mul(2).saturating_add(3);
+        for record in handles.live.values().filter(|record| {
+            record.root_identity == initiating.root_identity
+                && path_key(&record.dto.relative_path) == path_key(&initiating.dto.relative_path)
+        }) {
+            let mut revision = record.dto.clone();
+            increment_revision(&mut revision)?;
+            // A sibling may become dirty during staging, so reserve its new base conservatively.
+            reserved_bytes = reserved_bytes.saturating_add(text_len.saturating_mul(2));
+        }
+        if handles
+            .text_bytes
+            .saturating_add(handles.reserved_bytes)
+            .saturating_add(reserved_bytes)
+            > MAX_TEXT_BUFFER_BYTES
+        {
+            return Err(FilesError::FileMemoryLimitReached);
+        }
+        let operation = handles
+            .next_save_operation
+            .checked_add(1)
+            .ok_or(FilesError::FileOperationUnavailable)?;
+        handles.next_save_operation = operation;
+        let ids = handles
+            .live
+            .values()
+            .filter(|record| {
+                record.root_identity == initiating.root_identity
+                    && path_key(&record.dto.relative_path)
+                        == path_key(&initiating.dto.relative_path)
+            })
+            .map(|record| record.dto.id.clone())
+            .collect::<Vec<_>>();
+        for id in ids {
+            handles.save_operations.insert(id, operation);
+        }
+        handles.reserved_bytes += reserved_bytes;
+        Ok(SaveLease {
+            service: self.clone(),
+            handle_id: initiating.dto.id.clone(),
+            operation,
+            reserved_bytes,
+        })
+    }
+
+    /// Stops save admission and waits until all admitted workers have completed.
+    pub async fn shutdown(&self) -> Result<(), FilesError> {
+        let runtime = self.runtime()?;
+        runtime
+            .shutdown
+            .store(true, std::sync::atomic::Ordering::Release);
+        let _finished = runtime.active_saves.write().await;
+        Ok(())
+    }
+
+    /// Gets a shared path gate while retaining no completed-path allocation.
+    fn path_gate(&self, record: &HandleRecord) -> Result<Arc<AsyncMutex<()>>, FilesError> {
+        self.path_gate_for(&record.root_identity, &record.dto.relative_path)
+    }
+
+    /// Serializes opening and reopening with saves before a disk snapshot is captured.
+    fn path_gate_for(
+        &self,
+        root: &ProjectRootIdentity,
+        path: &str,
+    ) -> Result<Arc<AsyncMutex<()>>, FilesError> {
+        let key = format!("{}|{}", root.canonical_key, path_key(path));
+        let mut gates = self
+            .runtime()?
+            .path_gates
+            .lock()
+            .map_err(|_| FilesError::FileOperationUnavailable)?;
+        gates.retain(|_, gate| gate.strong_count() > 0);
+        if let Some(gate) = gates.get(&key).and_then(std::sync::Weak::upgrade) {
+            return Ok(gate);
+        }
+        let gate = Arc::new(AsyncMutex::new(()));
+        gates.insert(key, Arc::downgrade(&gate));
+        Ok(gate)
     }
 
     /// Reconciles every attached handle after focus or watcher overflow recovery.
@@ -1006,7 +1529,11 @@ impl FilesService {
             .lock()
             .map_err(|_| FilesError::FileMemoryLimitReached)?;
         if handles.live.len().saturating_add(handles.retained.len()) >= MAX_FILE_HANDLES
-            || handles.text_bytes.saturating_add(bytes) > MAX_TEXT_BUFFER_BYTES
+            || handles
+                .text_bytes
+                .saturating_add(handles.reserved_bytes)
+                .saturating_add(bytes)
+                > MAX_TEXT_BUFFER_BYTES
         {
             return Err(FilesError::FileMemoryLimitReached);
         }
@@ -1084,13 +1611,37 @@ impl FilesService {
         file_handle_id: &str,
         explicit: bool,
     ) -> Result<(), FilesError> {
+        let initial = self.get_record(file_handle_id)?;
+        let _gate = self.path_gate(&initial)?.lock_owned().await;
         let current = self.get_record(file_handle_id)?;
+        if current.dto.state == FileHandleStateDto::ProjectRootChanged {
+            return Ok(());
+        }
+        if explicit {
+            self.runtime()?
+                .handles
+                .lock()
+                .map_err(|_| FilesError::FileOperationUnavailable)?
+                .live
+                .get_mut(file_handle_id)
+                .ok_or(FilesError::FileOperationUnavailable)?
+                .previous_clean_disk_revision = None;
+        }
         if explicit && current.dto.is_dirty {
             return Err(FilesError::UnsavedChangesWouldBeLost);
         }
         let observed = (self.runtime()?.clock)()?;
-        match self.read_existing(&current, observed).await {
-            Ok(snapshot) if snapshot.fingerprint == current.fingerprint => Ok(()),
+        let result = match self.read_existing(&current, observed).await {
+            Ok(snapshot)
+                if snapshot.fingerprint == current.fingerprint
+                    && matches!(
+                        current.dto.state,
+                        FileHandleStateDto::Ready { .. }
+                            | FileHandleStateDto::ExternalConflict { .. }
+                    ) =>
+            {
+                Ok(())
+            }
             Ok(snapshot) => self.commit_snapshot(
                 file_handle_id,
                 snapshot,
@@ -1103,7 +1654,18 @@ impl FilesService {
                 self.commit_unavailable(file_handle_id, false)
             }
             Err(error) => Err(error),
+        };
+        if explicit {
+            self.runtime()?
+                .handles
+                .lock()
+                .map_err(|_| FilesError::FileOperationUnavailable)?
+                .live
+                .get_mut(file_handle_id)
+                .ok_or(FilesError::FileOperationUnavailable)?
+                .previous_clean_disk_revision = None;
         }
+        result
     }
 
     /// Commits one changed disk snapshot while preserving dirty Markdown buffers.
@@ -1124,7 +1686,12 @@ impl FilesService {
                 file_handle_id: file_handle_id.to_owned(),
             }
         })?;
-        if current.fingerprint == snapshot.fingerprint {
+        if current.fingerprint == snapshot.fingerprint
+            && matches!(
+                current.dto.state,
+                FileHandleStateDto::Ready { .. } | FileHandleStateDto::ExternalConflict { .. }
+            )
+        {
             return Ok(());
         }
         let old_bytes = record_text_bytes(&current);
@@ -1141,6 +1708,8 @@ impl FilesService {
             actual_change = FileHandleChangeKindDto::ConflictDetected;
         } else {
             next.previous_clean_disk_revision = old_disk;
+            next.local_digest = snapshot.fingerprint.content_digest;
+            next.base_disk_revision = snapshot.disk.disk_revision.clone();
             next.base_text = text_content(&snapshot.content);
             next.recovery_text = None;
             next.dto.state = FileHandleStateDto::Ready {
@@ -1154,7 +1723,7 @@ impl FilesService {
             .text_bytes
             .saturating_sub(old_bytes)
             .saturating_add(new_bytes);
-        if projected > MAX_TEXT_BUFFER_BYTES {
+        if projected.saturating_add(handles.reserved_bytes) > MAX_TEXT_BUFFER_BYTES {
             return Err(FilesError::FileMemoryLimitReached);
         }
         handles.text_bytes = projected;
@@ -1198,6 +1767,7 @@ impl FilesService {
         }
         let mut next_record = current;
         increment_revision(&mut next_record.dto)?;
+        next_record.previous_clean_disk_revision = None;
         next_record.dto.state = next;
         handles.text_bytes = handles
             .text_bytes
@@ -1243,6 +1813,7 @@ impl FilesService {
                 .then(|| local_text(&next.dto.state))
                 .flatten();
             increment_revision(&mut next.dto)?;
+            next.previous_clean_disk_revision = None;
             next.dto.state = FileHandleStateDto::ProjectRootChanged;
             handles.text_bytes = handles
                 .text_bytes
@@ -1313,6 +1884,15 @@ impl FilesService {
         file_handle_id: &str,
         retention: CloseRetention,
     ) -> Result<Option<ReopenHandle>, FilesError> {
+        let gate = self
+            .get_record(file_handle_id)
+            .ok()
+            .map(|record| self.path_gate(&record))
+            .transpose()?;
+        let _lease = match gate {
+            Some(gate) => Some(gate.lock_owned().await),
+            None => None,
+        };
         if let Some(existing) = self
             .runtime()?
             .handles
@@ -1395,6 +1975,10 @@ impl FilesService {
                 project_id: retained.project_id,
             });
         }
+        let _path_gate = self
+            .path_gate_for(&retained.root_identity, &retained.relative_path)?
+            .lock_owned()
+            .await;
         let snapshot = self
             .read_new_visible(&root, &retained.relative_path, (self.runtime()?.clock)()?)
             .await?;
@@ -1443,6 +2027,10 @@ impl FilesService {
             root,
             root_identity: retained.root_identity.clone(),
             parent: parent.clone(),
+            original_has_utf8_bom: text_content(&snapshot.content)
+                .is_some_and(|file| file.has_utf8_bom),
+            local_digest: snapshot.fingerprint.content_digest,
+            base_disk_revision: snapshot.disk.disk_revision.clone(),
             fingerprint: snapshot.fingerprint,
             base_text: text_content(&snapshot.content),
             recovery_text: None,
@@ -1576,7 +2164,7 @@ fn increment_revision(dto: &mut FileHandleDto) -> Result<(), FilesError> {
         .map_err(|_| FilesError::FileReadFailed)?;
     dto.revision = current
         .checked_add(1)
-        .ok_or(FilesError::FileReadFailed)?
+        .ok_or(FilesError::FileOperationUnavailable)?
         .to_string();
     Ok(())
 }
@@ -1862,3 +2450,40 @@ mod tests {
         }
     }
 }
+
+/// Parses decimal revision tokens without accepting signs, spaces, or overflow.
+fn parse_revision(value: &str) -> Result<u64, FilesError> {
+    if value.is_empty() || !value.bytes().all(|byte| byte.is_ascii_digit()) {
+        return Err(FilesError::InvalidRevision);
+    }
+    value.parse().map_err(|_| FilesError::InvalidRevision)
+}
+
+/// Derives exact byte metadata and digest outside the handle lock.
+fn prepare_markdown(
+    text: String,
+    mut template: TextFileDto,
+) -> Result<(TextFileDto, blake3::Hash), FilesError> {
+    let byte_size = text.len() as u64 + if template.has_utf8_bom { 3 } else { 0 };
+    if byte_size > super::models::MAX_VIEWER_BYTES {
+        return Err(FilesError::MarkdownSizeLimitExceeded {
+            byte_size,
+            limit_bytes: super::models::MAX_VIEWER_BYTES,
+        });
+    }
+    let (line_count, line_ending) = super::reader::line_facts(&text)?;
+    let mut hash = blake3::Hasher::new();
+    if template.has_utf8_bom {
+        hash.update(&[0xef, 0xbb, 0xbf]);
+    }
+    hash.update(text.as_bytes());
+    template.text = text;
+    template.byte_size = byte_size;
+    template.line_count = line_count;
+    template.line_ending = line_ending;
+    Ok((template, hash.finalize()))
+}
+
+#[cfg(test)]
+#[path = "save_tests.rs"]
+mod save_tests;

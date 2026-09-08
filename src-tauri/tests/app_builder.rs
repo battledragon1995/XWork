@@ -415,6 +415,8 @@ fn projects_composition_routes_lifecycle_and_projects_commands() {
         "resolve_external_file_change",
         "open_file_with_default_app",
         "list_recent_files",
+        "update_markdown_buffer",
+        "save_markdown_file",
         "update_settings",
         "create_cli_profile",
         "update_cli_profile",

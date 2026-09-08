@@ -19,6 +19,7 @@ Backend giữ buffer Markdown runtime đồng bộ với editor, xác định ch
 
 ### Quyết định và giả định đã chốt
 
+- Quyết định triển khai 2026-09-08: giữ runtime state duy nhất đang do `FilesService` của BE-014 sở hữu; `FileHandleManager` tiếp tục là weak lifecycle delegate và các primitive edit/save có thể delegate vào service nội bộ cùng capability. Không tạo map handle/state owner thứ hai chỉ để khớp vị trí code minh họa bên dưới. Dependency Windows hiện tại đã có `windows-sys = "=0.61.2"` cùng các feature writer cần, nên không thay manifest/lock nếu không có nhu cầu thực tế.
 - Có đúng hai command mới: `update_markdown_buffer` cập nhật runtime buffer và `save_markdown_file` thực hiện Save thủ công. Không có autosave, save timer hoặc ghi khi đổi Edit/Preview.
 - `Ctrl+S` trên Windows và `Command+S` trên macOS là shortcut cố định, editor-scoped của FE-018. Nó không được thêm vào catalog tùy chỉnh BE-009 vì §17.4 không liệt kê Save và shortcut chỉ có nghĩa khi pane Markdown active.
 - Update gửi snapshot text đầy đủ, không gửi patch/operation tùy ý. FE-018 gửi ngay transaction đầu làm file dirty, sau đó giữ tối đa một invoke in-flight và coalesce transaction đang chờ; trước Save hoặc close-impact flow phải flush snapshot mới nhất.
@@ -31,6 +32,12 @@ Backend giữ buffer Markdown runtime đồng bộ với editor, xác định ch
 - Atomic replace thay inode/file identity nên hard link khác không được cập nhật. Đây là tradeoff có chủ ý để không truncate file gốc; BE-015 chỉ hứa lưu path được mở, không bảo toàn quan hệ hard-link.
 - Handle có thể nhận edit mới trong khi một Save đang stage. Save ghi đúng snapshot của revision được yêu cầu; nếu editor đã tiến thêm sau commit, disk base cập nhật nhưng handle vẫn dirty và outcome là `SavedWithNewerEdits`.
 - `KeepMine` của BE-014 là xác nhận explicit cho disk version đang conflict: nó chỉ cập nhật base và vẫn không ghi. Save tiếp theo được phép thay version đó nếu fingerprint preflight vẫn khớp; `ReloadFromDisk` bỏ local draft và làm Save trở thành no-op sạch.
+
+- Quyết định triển khai 2026-09-08 sau kiểm chứng NTFS: `ReplaceFileW` có thể khiến một lần mở file đồng thời trả `ERROR_FILE_NOT_FOUND` hoặc `ERROR_SHARING_VIOLATION` thoáng qua. Atomic visibility trong tài liệu này bảo đảm mỗi lần đọc thành công trả phiên bản cũ/mới đầy đủ, không bảo đảm mọi lần mở đồng thời luôn thành công. Files serialize watcher/read với path gate và giữ draft khi lỗi đọc; không dùng retry replace để che lỗi.
+- Save lease dùng operation ID tăng checked, reservation memory và path gate nội bộ. Gate cũng serialize open/reopen/reload/resolve/close; editor tiếp tục cập nhật bằng digest đã chuẩn bị ngoài state lock. Worker được giữ độc lập với cancellation của caller; shutdown ngừng admission, hủy stage trước commit và đợi worker đã được nhận.
+- Opaque disk revision phản ánh cả file identity và timestamp độ chính xác native, ngoài size/digest; frontend vẫn không được parse token. Metadata native được kiểm trực tiếp qua `std::fs::Metadata`/permissions và `ReplaceFileW`, không cần dựng enum metadata trùng lặp chỉ để truyền qua lớp wrapper.
+- Save reserve memory bảo thủ cho working bytes và toàn bộ fanout trước khi stage. Gần giới hạn 64 MiB, Save có thể trả `FileMemoryLimitReached` dù từng file vẫn dưới 5 MiB; frontend giữ draft và đề nghị đóng file khác.
+- Nếu native commit thành công nhưng không thể xác nhận fingerprint post-commit hoặc gặp disk version thứ ba, backend trả `AtomicCommitStateUnknown`, giữ recovery draft và yêu cầu reconcile trước lần Save tiếp theo.
 
 ### Ngoài phạm vi
 

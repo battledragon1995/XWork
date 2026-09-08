@@ -9,6 +9,7 @@ mod repository;
 mod service;
 mod walker;
 mod watcher;
+mod writer;
 
 pub use error::FilesError;
 pub use models::{
@@ -22,6 +23,10 @@ pub use models::{
     RecentFileDto, RecentFilesChangedEventDto, RecentFilesResetPlan, RecentFilesResetProjection,
     ResolveExternalFileChangeRequestDto, SearchFileTreeRequestDto, TextEncodingDto, TextFileDto,
     TextFileModeDto,
+};
+pub use models::{
+    MarkdownSaveOutcomeDto, SaveMarkdownFileRequestDto, SaveMarkdownFileResultDto,
+    UpdateMarkdownBufferRequestDto,
 };
 pub use service::{FilesService, system_files_clock};
 

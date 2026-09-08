@@ -73,6 +73,18 @@ const errors: Record<FilesError["code"], string> = {
   invalidLimit: "Could not list the requested files.",
   recentFilesFailed: "Could not load recent files.",
   clockFailed: "Could not open the file. Check the system clock.",
+  invalidRevision: "The file version is invalid. Refresh and try again.",
+  invalidDiskRevision: "The disk version is invalid. Refresh and try again.",
+  markdownNotEditable: "This file cannot be edited as Markdown.",
+  markdownSizeLimitExceeded: "Markdown files must be 5 MiB or smaller, including the UTF-8 BOM.",
+  externalChangeDetected: "The file changed on disk. Review the conflict before saving.",
+  fileNotWritable: "This file is read-only. Your draft has been kept.",
+  fileWriteFailed: "Could not write the file. Your draft has been kept.",
+  fileSyncFailed: "Could not sync the file. Your draft has been kept.",
+  atomicReplaceFailed: "Could not replace the file. Your draft has been kept.",
+  atomicCommitStateUnknown:
+    "The save result is uncertain. Review the disk version before trying again.",
+  fileOperationUnavailable: "Saving is temporarily unavailable. Your draft has been kept.",
   openExternalFailed: "Could not open this file with the default app.",
 };
 /** Read only a normalized public error code, never raw transport text. */

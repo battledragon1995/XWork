@@ -44,6 +44,17 @@ pub enum FilesError {
     RecentFilesFailed,
     ClockFailed,
     OpenExternalFailed,
+    InvalidRevision,
+    InvalidDiskRevision,
+    MarkdownNotEditable,
+    MarkdownSizeLimitExceeded { byte_size: u64, limit_bytes: u64 },
+    ExternalChangeDetected { current_revision: String },
+    FileNotWritable,
+    FileWriteFailed,
+    FileSyncFailed,
+    AtomicReplaceFailed,
+    AtomicCommitStateUnknown,
+    FileOperationUnavailable,
 }
 
 impl Display for FilesError {
@@ -83,6 +94,17 @@ impl Display for FilesError {
             Self::InvalidLimit => "the requested limit is invalid",
             Self::RecentFilesFailed => "recent files could not be accessed",
             Self::ClockFailed => "the system clock could not be read",
+            Self::InvalidRevision => "the revision is invalid",
+            Self::InvalidDiskRevision => "the disk revision is invalid",
+            Self::MarkdownNotEditable => "the handle is not editable Markdown",
+            Self::MarkdownSizeLimitExceeded { .. } => "the Markdown size limit was exceeded",
+            Self::ExternalChangeDetected { .. } => "the disk has an unaccepted external change",
+            Self::FileNotWritable => "the file is not writable",
+            Self::FileWriteFailed => "staging the file failed",
+            Self::FileSyncFailed => "syncing the staged file failed",
+            Self::AtomicReplaceFailed => "the atomic replacement did not commit",
+            Self::AtomicCommitStateUnknown => "the atomic commit state is unknown",
+            Self::FileOperationUnavailable => "the file operation is unavailable",
             Self::OpenExternalFailed => "the file could not be opened externally",
         };
         formatter.write_str(message)

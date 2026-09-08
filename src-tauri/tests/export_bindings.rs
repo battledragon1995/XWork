@@ -11,10 +11,11 @@ use xwork_lib::files::{
     FileHandleRequestDto, FileHandleStateDto, FileSearchTruncatedReasonDto, FileTreeEntryDto,
     FileTreeEntryKindDto, FileTreePageDto, FileTreeSearchDto, FileTreeWarningDto,
     FileTreeWarningReasonDto, FileWatchModeDto, FilesError, LineEndingDto,
-    ListFileChildrenRequestDto, OpenFileInPaneRequestDto, OpenFileResultDto, OpenFileWarningDto,
-    RecentFileAvailabilityDto, RecentFileDto, RecentFilesChangedEventDto,
-    ResolveExternalFileChangeRequestDto, SearchFileTreeRequestDto, TextEncodingDto, TextFileDto,
-    TextFileModeDto,
+    ListFileChildrenRequestDto, MarkdownSaveOutcomeDto, OpenFileInPaneRequestDto,
+    OpenFileResultDto, OpenFileWarningDto, RecentFileAvailabilityDto, RecentFileDto,
+    RecentFilesChangedEventDto, ResolveExternalFileChangeRequestDto, SaveMarkdownFileRequestDto,
+    SaveMarkdownFileResultDto, SearchFileTreeRequestDto, TextEncodingDto, TextFileDto,
+    TextFileModeDto, UpdateMarkdownBufferRequestDto,
 };
 use xwork_lib::projects::{
     GitFileChangeDto, GitFileChangeKindDto, GitHeadDto, GitRepositoryKindDto,
@@ -369,6 +370,10 @@ fn generated_files_binding() -> String {
         FileHandleChangeKindDto::export_to_string(&config).unwrap(),
         FileHandleChangedEventDto::export_to_string(&config).unwrap(),
         RecentFilesChangedEventDto::export_to_string(&config).unwrap(),
+        UpdateMarkdownBufferRequestDto::export_to_string(&config).unwrap(),
+        SaveMarkdownFileRequestDto::export_to_string(&config).unwrap(),
+        MarkdownSaveOutcomeDto::export_to_string(&config).unwrap(),
+        SaveMarkdownFileResultDto::export_to_string(&config).unwrap(),
         FilesError::export_to_string(&config).unwrap(),
     ]
     .join("\n")

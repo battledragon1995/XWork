@@ -2196,6 +2196,13 @@ fn phase_one_service_round_trips_and_resets_temp_storage() {
     #[allow(deprecated)]
     app.run_iteration(|_, _| {});
 
+    // Import participants require hydrated owner state; mock setup starts hydration asynchronously.
+    tauri::async_runtime::block_on(
+        app.state::<xwork_lib::terminal::CliProfilesService>()
+            .initialize(),
+    )
+    .expect("CLI profile fixtures should finish hydration before import");
+
     let participants = DataParticipants {
         projects: app.state::<ProjectsDataParticipant>().inner().clone(),
         settings: app.state::<SettingsDataParticipant>().inner().clone(),
