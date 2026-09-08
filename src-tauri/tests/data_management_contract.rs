@@ -2204,6 +2204,11 @@ fn phase_one_service_round_trips_and_resets_temp_storage() {
     .expect("CLI profile fixtures should finish hydration before import");
 
     let participants = DataParticipants {
+        notes: xwork_lib::app::data_participants::NotesDataParticipant::new(
+            app.state::<xwork_lib::notes::NotesService>()
+                .inner()
+                .clone(),
+        ),
         projects: app.state::<ProjectsDataParticipant>().inner().clone(),
         settings: app.state::<SettingsDataParticipant>().inner().clone(),
         cli_profiles: app.state::<CliProfilesDataParticipant>().inner().clone(),
@@ -2220,7 +2225,7 @@ fn phase_one_service_round_trips_and_resets_temp_storage() {
         Arc::new(EmptyDataRuntime),
         Arc::new(DataTestPlatform {
             app_data: app_data.clone(),
-            import_path,
+            import_path: import_path.clone(),
             export_path: export_path.clone(),
         }),
         Arc::new(DataTestClock),
@@ -2229,6 +2234,15 @@ fn phase_one_service_round_trips_and_resets_temp_storage() {
     let settings_service = app.state::<SettingsService>().inner().clone();
 
     tauri::async_runtime::block_on(async {
+        let notes = app.state::<xwork_lib::notes::NotesService>();
+        let original = notes
+            .create_note(xwork_lib::notes::CreateNoteInputDto {
+                title: Some("Local note".into()),
+                content_markdown: "preserve v1".into(),
+                project_id: None,
+            })
+            .await
+            .unwrap();
         let PrepareBackupImportOutcomeDto::Ready { preview } = service
             .prepare_import_backup()
             .await
@@ -2266,6 +2280,7 @@ fn phase_one_service_round_trips_and_resets_temp_storage() {
             1
         );
 
+        assert_eq!(notes.get_note(original.id.clone()).await.unwrap(), original);
         let outcome = service
             .export_backup()
             .await
@@ -2273,7 +2288,7 @@ fn phase_one_service_round_trips_and_resets_temp_storage() {
         assert!(matches!(
             outcome,
             BackupExportOutcomeDto::Exported {
-                schema_version: 1,
+                schema_version: 2,
                 ..
             }
         ));
@@ -2292,11 +2307,70 @@ fn phase_one_service_round_trips_and_resets_temp_storage() {
             1
         );
 
+        let mut v2: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(v2["schemaVersion"], 2);
+        assert!(v2["data"]["notes"][0].get("revision").is_none());
+        v2["data"]["notes"][0]["contentMarkdown"] = serde_json::json!("incoming v2");
+        v2["data"]["notes"][0]["projectId"] =
+            serde_json::json!("10000000-0000-4000-8000-000000000001");
+        v2["data"]["projects"][0]["displayName"] = serde_json::json!("Updated by v2");
+        std::fs::write(&import_path, serde_json::to_vec(&v2).unwrap()).unwrap();
+        let PrepareBackupImportOutcomeDto::Ready { preview } =
+            service.prepare_import_backup().await.unwrap()
+        else {
+            panic!("selected fixture")
+        };
+        assert_eq!(preview.schema_version, 2);
+        assert_eq!(preview.counts.notes, Some(1));
+        app.state::<Storage>().with_connection(
+            // Aborts Notes after earlier Projects writes to prove all-domain rollback.
+            |db|{db.execute_batch("CREATE TRIGGER reject_notes BEFORE UPDATE ON notes BEGIN SELECT RAISE(ABORT,'injected'); END;").unwrap();Ok::<_,xwork_lib::storage::StorageError>(())}).unwrap();
+        assert!(
+            service
+                .confirm_import_backup(preview.request_id)
+                .await
+                .is_err()
+        );
+        assert_eq!(notes.get_note(original.id.clone()).await.unwrap(), original);
+        assert_eq!(
+            app.state::<ProjectService>()
+                .list_projects(None)
+                .await
+                .unwrap()[0]
+                .display_name,
+            "Imported"
+        );
+        app.state::<Storage>()
+            .with_connection(
+                // Removes the failure injection before retrying the same preview.
+                |db| {
+                    db.execute_batch("DROP TRIGGER reject_notes;").unwrap();
+                    Ok::<_, xwork_lib::storage::StorageError>(())
+                },
+            )
+            .unwrap();
+        let result = service
+            .confirm_import_backup(preview.request_id)
+            .await
+            .unwrap();
+        assert_eq!(result.schema_version, 2);
+        let merged = notes.get_note(original.id.clone()).await.unwrap();
+        assert_eq!(merged.content_markdown, "incoming v2");
+        assert_eq!(merged.revision, "2");
+        assert_eq!(
+            merged.project_id.as_deref(),
+            Some("10000000-0000-4000-8000-000000000001")
+        );
+        assert_eq!(
+            std::fs::read(&import_path).unwrap(),
+            serde_json::to_vec(&v2).unwrap()
+        );
         let impact = service
             .prepare_reset_xwork()
             .await
             .expect("reset preview should succeed");
         assert_eq!(impact.projects, 1);
+        assert_eq!(impact.notes, 1);
         assert_eq!(
             service
                 .confirm_reset_xwork(impact.request_id, "reset")
@@ -2311,6 +2385,33 @@ fn phase_one_service_round_trips_and_resets_temp_storage() {
                 .len(),
             1
         );
+        app.state::<Storage>().with_connection(
+            // Aborts the child reset so preceding owner writes must roll back.
+            |db|{db.execute_batch("CREATE TRIGGER reject_note_reset BEFORE DELETE ON notes BEGIN SELECT RAISE(ABORT,'injected'); END;").unwrap();Ok::<_,xwork_lib::storage::StorageError>(())}).unwrap();
+        assert!(
+            service
+                .confirm_reset_xwork(impact.request_id, "RESET")
+                .await
+                .is_err()
+        );
+        assert_eq!(notes.get_note(original.id.clone()).await.unwrap(), merged);
+        assert_eq!(
+            app.state::<ProjectService>()
+                .list_projects(None)
+                .await
+                .unwrap()
+                .len(),
+            1
+        );
+        app.state::<Storage>()
+            .with_connection(
+                // Clears the failure injection before a valid reset retry.
+                |db| {
+                    db.execute_batch("DROP TRIGGER reject_note_reset;").unwrap();
+                    Ok::<_, xwork_lib::storage::StorageError>(())
+                },
+            )
+            .unwrap();
         service
             .confirm_reset_xwork(impact.request_id, "RESET")
             .await
@@ -2331,6 +2432,10 @@ fn phase_one_service_round_trips_and_resets_temp_storage() {
         assert_eq!(
             std::fs::read(project_root.join("source-canary.txt")).expect("source should remain"),
             b"SOURCE_CANARY"
+        );
+        assert_eq!(
+            notes.get_note(original.id).await,
+            Err(xwork_lib::notes::NotesError::NoteNotFound)
         );
         assert!(app_data.join(Storage::DATABASE_FILE_NAME).is_file());
     });

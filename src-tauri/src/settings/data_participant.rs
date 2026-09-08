@@ -13,6 +13,7 @@ use crate::terminal::{CliProfilesCommittedProjection, CliProfilesImportPlan};
 /// Holds the concrete Phase 1 owner adapters in dependency order.
 #[derive(Clone)]
 pub struct DataParticipants {
+    pub notes: crate::app::data_participants::NotesDataParticipant,
     pub projects: ProjectsDataParticipant,
     pub settings: SettingsDataParticipant,
     pub cli_profiles: CliProfilesDataParticipant,
@@ -22,6 +23,7 @@ pub struct DataParticipants {
 
 /// Owns every validated Phase 1 import plan until one transaction applies it.
 pub struct PreparedImportPlans {
+    pub notes: Option<crate::notes::NotesImportPlan>,
     pub projects: ProjectImportPlan,
     pub settings: crate::settings::SettingsRestorePlan,
     pub cli_profiles: CliProfilesImportPlan,
@@ -30,6 +32,7 @@ pub struct PreparedImportPlans {
 
 /// Owns every projection that becomes publishable after an import commit.
 pub struct ImportCommittedProjections {
+    pub notes: Option<crate::notes::NotesCommittedProjection>,
     pub projects: ProjectCommittedProjection,
     pub settings: SettingsCommittedProjection,
     pub cli_profiles: CliProfilesCommittedProjection,
@@ -38,6 +41,7 @@ pub struct ImportCommittedProjections {
 
 /// Owns every projection that becomes publishable after a reset commit.
 pub struct ResetCommittedProjections {
+    pub notes: crate::notes::NotesCommittedProjection,
     pub projects: ProjectCommittedProjection,
     pub settings: SettingsCommittedProjection,
     pub cli_profiles: CliProfilesCommittedProjection,

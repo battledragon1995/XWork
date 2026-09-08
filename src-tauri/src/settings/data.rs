@@ -30,7 +30,7 @@ use super::{
 /// Names the aggregate event emitted after import or reset publication.
 pub const DATA_CHANGED_EVENT: &str = "data://changed";
 const BACKUP_FORMAT: &str = "xwork-backup";
-const SCHEMA_VERSION: u32 = 1;
+const SCHEMA_VERSION: u32 = 2;
 const REQUEST_TTL: Duration = Duration::from_secs(10 * 60);
 const MAX_RECORDS: usize = 100_000;
 
@@ -54,6 +54,31 @@ pub struct BackupDataV1 {
     pub appearance: crate::settings::AppearanceSettingsDto,
     pub sidebar: crate::settings::SidebarSettingsDto,
     pub keyboard_shortcut_overrides: Vec<ShortcutOverride>,
+}
+
+/// Requires a Notes array in every strict schema-v2 package.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct BackupDataV2 {
+    pub projects: Vec<ProjectBackupRecordV1>,
+    pub cli_profiles: CliProfilesBackupV1,
+    pub appearance: crate::settings::AppearanceSettingsDto,
+    pub sidebar: crate::settings::SidebarSettingsDto,
+    pub keyboard_shortcut_overrides: Vec<ShortcutOverride>,
+    pub notes: Vec<crate::notes::NoteBackupRecordV1>,
+}
+
+/// Keeps v1 absence distinct from the mandatory v2 Notes section.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ParsedBackupData {
+    pub projects: Vec<ProjectBackupRecordV1>,
+    pub cli_profiles: CliProfilesBackupV1,
+    pub appearance: crate::settings::AppearanceSettingsDto,
+    pub sidebar: crate::settings::SidebarSettingsDto,
+    pub keyboard_shortcut_overrides: Vec<ShortcutOverride>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub notes: Option<Vec<crate::notes::NoteBackupRecordV1>>,
 }
 
 /// Describes the backend-resolved application data location.
@@ -330,7 +355,7 @@ impl<R: Runtime> DataEventSink for TauriDataEventSink<R> {
 
 #[derive(Clone)]
 struct PendingImport {
-    package: BackupEnvelope<BackupDataV1>,
+    package: BackupEnvelope<ParsedBackupData>,
     preview: BackupImportPreviewDto,
     fingerprint: Vec<u8>,
     created: Duration,
@@ -567,7 +592,7 @@ impl DataManagementService {
                 kind: DataChangeKindDto::BackupImported,
             });
             Ok(BackupImportResultDto {
-                schema_version: SCHEMA_VERSION,
+                schema_version: pending.package.schema_version,
                 applied: pending.preview.merge,
                 credential_cleanup_pending: cleanup,
             })
@@ -682,7 +707,7 @@ impl DataManagementService {
                         custom_cli_profiles_removed: current.custom_cli_profiles,
                         keyboard_shortcut_overrides_removed: current.keyboard_shortcut_overrides,
                         settings_reset: current.settings_differ_from_default,
-                        notes_removed: 0,
+                        notes_removed: current.notes,
                         events_removed: 0,
                         sessions_stopped: current.sessions,
                         credential_cleanup_pending: cleanup,
@@ -729,7 +754,7 @@ impl DataManagementService {
     async fn snapshot(
         &self,
         created_at_ms: i64,
-    ) -> Result<BackupEnvelope<BackupDataV1>, DataManagementError> {
+    ) -> Result<BackupEnvelope<ParsedBackupData>, DataManagementError> {
         let storage = self.inner.storage.clone();
         let participants = self.inner.participants.clone();
         tauri::async_runtime::spawn_blocking(move || {
@@ -743,7 +768,13 @@ impl DataManagementService {
                     schema_version: SCHEMA_VERSION,
                     created_at_ms,
                     app_version: env!("CARGO_PKG_VERSION").to_owned(),
-                    data: BackupDataV1 {
+                    data: ParsedBackupData {
+                        notes: Some(
+                            participants
+                                .notes
+                                .export(tx)
+                                .map_err(|_| DataManagementError::SnapshotFailed)?,
+                        ),
                         projects: participants
                             .projects
                             .export(tx)
@@ -769,7 +800,7 @@ impl DataManagementService {
     /// Builds owner plans and deterministic aggregate counts without writes.
     async fn prepare_plans(
         &self,
-        data: &BackupDataV1,
+        data: &ParsedBackupData,
     ) -> Result<(PreparedImportPlans, BackupMergeCountsDto, Vec<u8>), DataManagementError> {
         let storage = self.inner.storage.clone();
         let participants = self.inner.participants.clone();
@@ -792,7 +823,13 @@ impl DataManagementService {
                     .keyboard_shortcuts
                     .export(tx)
                     .map_err(|_| domain(BackupDomainDto::KeyboardShortcuts))?;
-                let fingerprint = serde_json::to_vec(&BackupDataV1 {
+                let fingerprint = serde_json::to_vec(&ParsedBackupData {
+                    notes: Some(
+                        participants
+                            .notes
+                            .export(tx)
+                            .map_err(|_| domain(BackupDomainDto::Notes))?,
+                    ),
                     projects: current_projects,
                     cli_profiles: current_profiles,
                     appearance: current_settings.appearance,
@@ -823,6 +860,19 @@ impl DataManagementService {
                     .keyboard_shortcuts
                     .prepare_replace(tx, &data.keyboard_shortcut_overrides)
                     .map_err(|_| domain(BackupDomainDto::KeyboardShortcuts))?;
+                let notes = data
+                    .notes
+                    .as_ref()
+                    .map(
+                        // Prepares only v2 Notes, preserving all local Notes for v1 imports.
+                        |records| {
+                            participants
+                                .notes
+                                .prepare_import(tx, records, &projects.import_map)
+                        },
+                    )
+                    .transpose()
+                    .map_err(|_| domain(BackupDomainDto::Notes))?;
                 let shortcut_counts =
                     compare_shortcuts(&current_shortcuts, &data.keyboard_shortcut_overrides)?;
                 let merge = BackupMergeCountsDto {
@@ -831,24 +881,34 @@ impl DataManagementService {
                         .inserts
                         .checked_add(cli_profiles.counts.inserts)
                         .and_then(|n| n.checked_add(shortcut_counts.0))
+                        .and_then(|n| {
+                            n.checked_add(notes.as_ref().map_or(0, |plan| plan.counts.inserts))
+                        })
                         .ok_or(DataManagementError::InvalidBackup)?,
                     updates: projects
                         .counts
                         .updates
                         .checked_add(cli_profiles.counts.updates)
                         .and_then(|n| n.checked_add(shortcut_counts.1))
+                        .and_then(|n| {
+                            n.checked_add(notes.as_ref().map_or(0, |plan| plan.counts.updates))
+                        })
                         .ok_or(DataManagementError::InvalidBackup)?,
                     unchanged: projects
                         .counts
                         .unchanged
                         .checked_add(cli_profiles.counts.unchanged)
                         .and_then(|n| n.checked_add(shortcut_counts.2))
+                        .and_then(|n| {
+                            n.checked_add(notes.as_ref().map_or(0, |plan| plan.counts.unchanged))
+                        })
                         .ok_or(DataManagementError::InvalidBackup)?,
                     removals: shortcut_counts.3,
                     project_path_matches: projects.counts.path_matches,
                 };
                 Ok((
                     PreparedImportPlans {
+                        notes,
                         projects,
                         settings,
                         cli_profiles,
@@ -872,11 +932,19 @@ impl DataManagementService {
         let participants = self.inner.participants.clone();
         tauri::async_runtime::spawn_blocking(move || {
             storage.with_transaction(|tx| {
+                let projects = participants
+                    .projects
+                    .apply_import(tx, &plans.projects)
+                    .map_err(|_| DataManagementError::PersistenceFailed)?;
+                let notes = plans
+                    .notes
+                    .as_ref()
+                    .map(|plan| participants.notes.apply_import(tx, plan))
+                    .transpose()
+                    .map_err(|_| DataManagementError::PersistenceFailed)?;
                 Ok(ImportCommittedProjections {
-                    projects: participants
-                        .projects
-                        .apply_import(tx, &plans.projects)
-                        .map_err(|_| DataManagementError::PersistenceFailed)?,
+                    notes,
+                    projects,
                     settings: participants
                         .settings
                         .apply_restore(tx, &plans.settings)
@@ -898,6 +966,9 @@ impl DataManagementService {
 
     /// Publishes committed import projections in dependency order.
     fn publish_import(&self, projections: ImportCommittedProjections) {
+        if let Some(notes) = projections.notes {
+            self.inner.participants.notes.publish_after_commit(notes);
+        }
         self.inner
             .participants
             .projects
@@ -934,7 +1005,7 @@ impl DataManagementService {
                 notification_settings: None,
             } != SettingsBackupSection::defaults()
                 || snapshot.data.cli_profiles.default_shell_id != "system",
-            notes: 0,
+            notes: count(snapshot.data.notes.as_ref().map_or(0, Vec::len))?,
             events: 0,
             sessions: runtime.sessions,
             running_processes: runtime.running_processes,
@@ -966,7 +1037,12 @@ impl DataManagementService {
                     ),
                     _ => None,
                 };
+                let notes = participants
+                    .notes
+                    .apply_reset(tx)
+                    .map_err(|_| DataManagementError::PersistenceFailed)?;
                 Ok(ResetCommittedProjections {
+                    notes,
                     notifications,
                     keyboard_shortcuts: participants
                         .keyboard_shortcuts
@@ -994,6 +1070,10 @@ impl DataManagementService {
 
     /// Publishes reset projections only after the shared transaction commits.
     async fn publish_reset(&self, projections: ResetCommittedProjections) {
+        self.inner
+            .participants
+            .notes
+            .publish_after_commit(projections.notes);
         self.inner
             .participants
             .projects
@@ -1135,7 +1215,7 @@ impl DataManagementService {
 }
 
 /// Strictly parses and validates one Phase 1 package.
-pub fn parse_backup(bytes: &[u8]) -> Result<BackupEnvelope<BackupDataV1>, DataManagementError> {
+pub fn parse_backup(bytes: &[u8]) -> Result<BackupEnvelope<ParsedBackupData>, DataManagementError> {
     if bytes.is_empty() || bytes.len() > MAX_BACKUP_BYTES || bytes.starts_with(&[0xEF, 0xBB, 0xBF])
     {
         return Err(if bytes.len() > MAX_BACKUP_BYTES {
@@ -1145,8 +1225,56 @@ pub fn parse_backup(bytes: &[u8]) -> Result<BackupEnvelope<BackupDataV1>, DataMa
         });
     }
     validate_backup_shape(bytes)?;
-    let package: BackupEnvelope<BackupDataV1> =
+    let root: serde_json::Value =
         serde_json::from_slice(bytes).map_err(|_| DataManagementError::InvalidBackup)?;
+    let version = root
+        .get("schemaVersion")
+        .and_then(serde_json::Value::as_u64)
+        .ok_or(DataManagementError::InvalidBackup)?;
+    let package: BackupEnvelope<ParsedBackupData> = match version {
+        1 => {
+            let value: BackupEnvelope<BackupDataV1> =
+                serde_json::from_slice(bytes).map_err(|_| DataManagementError::InvalidBackup)?;
+            BackupEnvelope {
+                format: value.format,
+                schema_version: 1,
+                created_at_ms: value.created_at_ms,
+                app_version: value.app_version,
+                data: ParsedBackupData {
+                    projects: value.data.projects,
+                    cli_profiles: value.data.cli_profiles,
+                    appearance: value.data.appearance,
+                    sidebar: value.data.sidebar,
+                    keyboard_shortcut_overrides: value.data.keyboard_shortcut_overrides,
+                    notes: None,
+                },
+            }
+        }
+        2 => {
+            let value: BackupEnvelope<BackupDataV2> =
+                serde_json::from_slice(bytes).map_err(|_| DataManagementError::InvalidBackup)?;
+            BackupEnvelope {
+                format: value.format,
+                schema_version: 2,
+                created_at_ms: value.created_at_ms,
+                app_version: value.app_version,
+                data: ParsedBackupData {
+                    projects: value.data.projects,
+                    cli_profiles: value.data.cli_profiles,
+                    appearance: value.data.appearance,
+                    sidebar: value.data.sidebar,
+                    keyboard_shortcut_overrides: value.data.keyboard_shortcut_overrides,
+                    notes: Some(value.data.notes),
+                },
+            }
+        }
+        _ => {
+            return Err(DataManagementError::UnsupportedBackupVersion {
+                found: u32::try_from(version).map_err(|_| DataManagementError::InvalidBackup)?,
+                supported: SCHEMA_VERSION,
+            });
+        }
+    };
     if package.format != BACKUP_FORMAT
         || package.created_at_ms < 0
         || package.app_version.is_empty()
@@ -1155,7 +1283,7 @@ pub fn parse_backup(bytes: &[u8]) -> Result<BackupEnvelope<BackupDataV1>, DataMa
     {
         return Err(DataManagementError::InvalidBackup);
     }
-    if package.schema_version != SCHEMA_VERSION {
+    if !(1..=SCHEMA_VERSION).contains(&package.schema_version) {
         return Err(DataManagementError::UnsupportedBackupVersion {
             found: package.schema_version,
             supported: SCHEMA_VERSION,
@@ -1180,16 +1308,48 @@ fn validate_backup_shape(bytes: &[u8]) -> Result<(), DataManagementError> {
         ],
     )?;
     let data = field(&root, "data")?;
-    object_fields(
-        data,
-        &[
-            "projects",
-            "cliProfiles",
-            "appearance",
-            "sidebar",
-            "keyboardShortcutOverrides",
-        ],
-    )?;
+    let version = root
+        .get("schemaVersion")
+        .and_then(serde_json::Value::as_u64)
+        .ok_or(DataManagementError::InvalidBackup)?;
+    if version != 1 && version != 2 {
+        return Err(DataManagementError::UnsupportedBackupVersion {
+            found: u32::try_from(version).map_err(|_| DataManagementError::InvalidBackup)?,
+            supported: SCHEMA_VERSION,
+        });
+    }
+    let mut fields = vec![
+        "projects",
+        "cliProfiles",
+        "appearance",
+        "sidebar",
+        "keyboardShortcutOverrides",
+    ];
+    if version == 2 {
+        fields.push("notes");
+    }
+    object_fields(data, &fields)?;
+    if version == 2 {
+        for note in array(field(data, "notes")?)? {
+            object_fields(
+                note,
+                &[
+                    "id",
+                    "title",
+                    "contentMarkdown",
+                    "projectId",
+                    "isPinned",
+                    "status",
+                    "trashedFrom",
+                    "createdAtMs",
+                    "updatedAtMs",
+                    "archivedAtMs",
+                    "trashedAtMs",
+                ],
+            )?;
+        }
+    }
+
     for project in array(field(data, "projects")?)? {
         object_fields(
             project,
@@ -1294,11 +1454,12 @@ fn array(value: &serde_json::Value) -> Result<&Vec<serde_json::Value>, DataManag
 }
 
 /// Counts every record and secret reference with overflow and allocation limits.
-fn content_counts(data: &BackupDataV1) -> Result<BackupContentCountsDto, DataManagementError> {
+fn content_counts(data: &ParsedBackupData) -> Result<BackupContentCountsDto, DataManagementError> {
     let total = data
         .projects
         .len()
-        .checked_add(data.cli_profiles.custom_profiles.len())
+        .checked_add(data.notes.as_ref().map_or(0, Vec::len))
+        .and_then(|n| n.checked_add(data.cli_profiles.custom_profiles.len()))
         .and_then(|n| n.checked_add(data.keyboard_shortcut_overrides.len()))
         .ok_or(DataManagementError::InvalidBackup)?;
     if total > MAX_RECORDS {
@@ -1321,7 +1482,11 @@ fn content_counts(data: &BackupDataV1) -> Result<BackupContentCountsDto, DataMan
         custom_cli_profiles: count(data.cli_profiles.custom_profiles.len())?,
         secret_references: count(secret_references)?,
         keyboard_shortcut_overrides: count(data.keyboard_shortcut_overrides.len())?,
-        notes: None,
+        notes: data
+            .notes
+            .as_ref()
+            .map(|records| count(records.len()))
+            .transpose()?,
         events: None,
     })
 }
@@ -1565,12 +1730,12 @@ mod tests {
         );
         let newer = String::from_utf8(fixture())
             .expect("fixture is UTF-8")
-            .replace("\"schemaVersion\":1", "\"schemaVersion\":2");
+            .replace("\"schemaVersion\":1", "\"schemaVersion\":3");
         assert_eq!(
             parse_backup(newer.as_bytes()),
             Err(DataManagementError::UnsupportedBackupVersion {
-                found: 2,
-                supported: 1
+                found: 3,
+                supported: 2
             })
         );
         let zero = String::from_utf8(fixture())
@@ -1580,7 +1745,7 @@ mod tests {
             parse_backup(zero.as_bytes()),
             Err(DataManagementError::UnsupportedBackupVersion {
                 found: 0,
-                supported: 1
+                supported: 2
             })
         );
         let unknown = String::from_utf8(fixture())

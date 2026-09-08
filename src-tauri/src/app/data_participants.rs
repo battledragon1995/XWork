@@ -239,3 +239,68 @@ impl CliProfilesDataParticipant {
         self.service.pending_credential_cleanup_count().await
     }
 }
+
+/// Adapts Notes to shared transactions and public project remapping.
+#[derive(Clone)]
+pub struct NotesDataParticipant {
+    service: crate::notes::NotesService,
+}
+impl NotesDataParticipant {
+    /// Wraps the single managed Notes owner.
+    pub fn new(service: crate::notes::NotesService) -> Self {
+        Self { service }
+    }
+    /// Exports all lifecycle states in deterministic identity order.
+    pub fn export(
+        &self,
+        tx: &Transaction<'_>,
+    ) -> Result<Vec<crate::notes::NoteBackupRecordV1>, crate::notes::NotesError> {
+        self.service.export_notes_in(tx)
+    }
+    /// Clones parsed records before resolving nullable source project links.
+    pub fn prepare_import(
+        &self,
+        tx: &Transaction<'_>,
+        records: &[crate::notes::NoteBackupRecordV1],
+        map: &ProjectImportMap,
+    ) -> Result<crate::notes::NotesImportPlan, crate::notes::NotesError> {
+        let records = records
+            .iter()
+            .cloned()
+            .map(
+                // Leaves the immutable parsed package untouched while mapping owned copies.
+                |mut record| {
+                    record.project_id = record
+                        .project_id
+                        .as_deref()
+                        .and_then(
+                            // Uses only the public Projects mapping authority.
+                            |id| map.resolve(id),
+                        )
+                        .map(str::to_owned);
+                    record
+                },
+            )
+            .collect::<Vec<_>>();
+        self.service.prepare_notes_merge_in(tx, &records)
+    }
+    /// Applies a prevalidated plan after Projects in the shared transaction.
+    pub fn apply_import(
+        &self,
+        tx: &Transaction<'_>,
+        plan: &crate::notes::NotesImportPlan,
+    ) -> Result<crate::notes::NotesCommittedProjection, crate::notes::NotesError> {
+        self.service.apply_notes_merge_in(tx, plan)
+    }
+    /// Deletes Notes before Projects in a shared reset transaction.
+    pub fn apply_reset(
+        &self,
+        tx: &Transaction<'_>,
+    ) -> Result<crate::notes::NotesCommittedProjection, crate::notes::NotesError> {
+        self.service.reset_notes_in(tx)
+    }
+    /// Consumes committed projections without a database requery.
+    pub fn publish_after_commit(&self, projection: crate::notes::NotesCommittedProjection) {
+        self.service.publish_data_change(projection);
+    }
+}

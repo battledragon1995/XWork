@@ -391,3 +391,122 @@ fn unified_search_authorizes_and_validates_before_querying() {
     .unwrap_err();
     assert_eq!(invalid, serde_json::json!({"code": "invalid_query"}));
 }
+/// Exercises real Notes commands, source joining, lifecycle exclusion and caller boundaries.
+#[test]
+fn notes_commands_and_search_use_the_managed_public_owner() {
+    use xwork_lib::notes::NotesService;
+    let app_data = tempfile::tempdir().unwrap();
+    let source = tempfile::tempdir().unwrap();
+    let project_root = source.path().join("Notes project");
+    std::fs::create_dir(&project_root).unwrap();
+    let canary = project_root.join("canary.md");
+    std::fs::write(&canary, "untouched source").unwrap();
+    let project_events = Arc::new(RecordingProjectEvents {
+        count: AtomicUsize::new(0),
+    });
+    let mut app = build_app(app_data.path().into(), project_root, project_events.clone());
+    run_setup(&mut app);
+    let main = window(&app, "main");
+    let quick = window(&app, "quick-note");
+    let project = invoke(&main, "add_project", serde_json::json!({}));
+    let project_id = project["project"]["id"].as_str().unwrap();
+    let note = invoke(
+        &quick,
+        "create_note",
+        serde_json::json!({"input":{"title":null,"contentMarkdown":"needle body","projectId":project_id}}),
+    );
+    let id = note["id"].as_str().unwrap();
+    let unauthorized = tauri::test::get_ipc_response(
+        &quick,
+        request("get_note", serde_json::json!({"noteId":id})),
+    )
+    .unwrap_err();
+    assert_eq!(
+        unauthorized,
+        serde_json::json!({"code":"unauthorized_window"})
+    );
+    let response = invoke(
+        &main,
+        "search_unified",
+        serde_json::json!({"input":{"query":"needle","contextProjectId":null}}),
+    );
+    let result = &response["groups"][0]["results"][0];
+    assert_eq!(
+        result["target"],
+        serde_json::json!({"kind":"note","noteId":id})
+    );
+    assert_eq!(result["title"], "Untitled note");
+    assert!(
+        result["context"]
+            .as_str()
+            .unwrap()
+            .contains("Notes project")
+    );
+    let archived = invoke(
+        &main,
+        "archive_note",
+        serde_json::json!({"input":{"noteId":id,"expectedRevision":"1"}}),
+    );
+    let response = invoke(
+        &main,
+        "search_unified",
+        serde_json::json!({"input":{"query":"needle","contextProjectId":null}}),
+    );
+    assert_eq!(response["groups"][0]["kind"], "note");
+    let trashed = invoke(
+        &main,
+        "move_note_to_trash",
+        serde_json::json!({"input":{"noteId":id,"expectedRevision":archived["revision"]}}),
+    );
+    let response = invoke(
+        &main,
+        "search_unified",
+        serde_json::json!({"input":{"query":"needle","contextProjectId":null}}),
+    );
+    assert_eq!(response["resultCount"], 0);
+    let restored = invoke(
+        &main,
+        "restore_note_from_trash",
+        serde_json::json!({"input":{"noteId":id,"expectedRevision":trashed["revision"]}}),
+    );
+    let events = project_events.count.load(Ordering::SeqCst);
+    invoke(
+        &main,
+        "remove_project",
+        serde_json::json!({"projectId":project_id,"confirmed":true}),
+    );
+    assert_eq!(project_events.count.load(Ordering::SeqCst), events + 1);
+    let after = invoke(&main, "get_note", serde_json::json!({"noteId":id}));
+    assert_eq!(after["projectId"], serde_json::Value::Null);
+    assert_eq!(after["revision"], restored["revision"]);
+    assert_eq!(
+        std::fs::read_to_string(&canary).unwrap(),
+        "untouched source"
+    );
+    tauri::async_runtime::block_on(async {
+        let service = app.state::<NotesService>();
+        for index in 0..65 {
+            service
+                .create_note(xwork_lib::notes::CreateNoteInputDto {
+                    title: Some(format!("cap note {index}")),
+                    content_markdown: "cap".into(),
+                    project_id: None,
+                })
+                .await
+                .unwrap();
+        }
+        let prefix = service.search_for_unified("cap", 64).await.unwrap();
+        assert_eq!(prefix.items.len(), 64);
+        assert!(prefix.has_more);
+    });
+    let response = invoke(
+        &main,
+        "search_unified",
+        serde_json::json!({"input":{"query":"cap","contextProjectId":null}}),
+    );
+    assert_eq!(
+        response["groups"][0]["results"].as_array().unwrap().len(),
+        8
+    );
+    assert_eq!(response["groups"][0]["hasMore"], true);
+}

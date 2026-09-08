@@ -41,6 +41,11 @@ pub(crate) const MIGRATIONS: &[Migration] = &[
         name: "create_recent_files",
         sql: include_str!("../../migrations/0006_create_recent_files.sql"),
     },
+    Migration {
+        version: 7,
+        name: "create_notes",
+        sql: include_str!("../../migrations/0007_create_notes.sql"),
+    },
 ];
 
 /// Applies every missing migration after validating the complete registry.

@@ -35,6 +35,8 @@ const UNAVAILABLE = new Set([
 
 /** Fail closed for catalog entries that have no public palette executor. */
 function availability(target: SearchTargetDto): SearchTargetAvailability {
+  if (target.kind === "note")
+    return { enabled: false, reason: "Note opening will be available in the next Notes update." };
   if (target.kind === "file")
     return {
       enabled: false,
@@ -232,7 +234,7 @@ export function SearchEntry() {
         if (detail.summary.id !== target.sessionId || detail.summary.projectId !== target.projectId)
           throw new IpcCallError("get_session", { code: "target_unavailable" });
         destination = `/sessions/${encodeURIComponent(detail.summary.id)}`;
-      } else if (target.kind === "file") {
+      } else if (target.kind === "file" || target.kind === "note") {
         return;
       } else if (
         target.actionId === "sessions.create_current_project" &&

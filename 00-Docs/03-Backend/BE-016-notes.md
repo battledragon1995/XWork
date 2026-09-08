@@ -60,7 +60,10 @@ Backend lưu note Markdown local trong SQLite, cung cấp query/mutation typed c
 | `src-tauri/src/app/data_participants.rs` | Adapter clone Note backup record, remap link bằng public `ProjectImportMap::resolve`, rồi gọi Notes maintenance API |
 | `src-tauri/src/settings/data.rs` | Bump backup envelope lên schema v2 bắt buộc có `notes` |
 | `src-tauri/src/settings/data_participant.rs` | Thêm tagged Notes section/plan/projection vào orchestration BE-012 |
-| `src-tauri/src/bin/export_bindings.rs` | Đăng ký DTO/event/error BE-016 với binding generator |
+| `src-tauri/src/search/mod.rs` | Bổ sung Note DTO variant và public NoteSearchSource/NoteSearchDocument theo BE-010 |
+| `src/app/search-entry.tsx` | Guard tối thiểu variant Note mới trước khi frontend owner được ghép ở phần FE stage18 |
+| `src/app/search-entry.test.tsx` | Regression guard target Note chưa có route owner |
+| `src/bindings/search.ts` | Binding Search sinh lại khi thêm Note variant |
 | `src/bindings/notes.ts` | Binding TypeScript aggregate được sinh từ Rust; không sửa thủ công |
 | `src-tauri/tests/notes_contract.rs` | Integration test migration, command, persistence, concurrency và lifecycle |
 | `src-tauri/tests/unified_search_contract.rs` | Mở rộng contract test BE-010 bằng Notes source thật/fake |
@@ -852,7 +855,7 @@ pub enum NotesError {
     NoteNotFound,
     NoteNotEditable { status: NoteStatusDto },
     InvalidTransition { status: NoteStatusDto },
-    RevisionConflict { current: NoteDto },
+    RevisionConflict { current: Box<NoteDto> },
     RevisionExhausted,
     TrashEmpty,
     NoPendingTrashOperation,
@@ -929,7 +932,7 @@ Public error không chứa raw SQLite, content/title/query hoặc project detail
 - Hiệu năng: List max 100 summary, unified search max 64 candidate, snippet 160 scalar. Benchmark Windows với 10.000 note trung bình 4 KiB: list không search p95 <50 ms, search p95 <200 ms; nếu không đạt phải profile trước khi thêm FTS migration.
 - Concurrency: Một Notes mutation mutex serialize revision check/write/event sequence. Persistent path tuân theo `DataMaintenanceGate` read permit → Notes mutation/pending mutex → Storage → cache/internal/event publish; maintenance `_in` path dùng transaction của coordinator và không lấy lại permit/mutex/Storage. Reads chỉ serialize qua Storage. FE autosave một in-flight để tránh conflict tự tạo.
 - Persistence: Mọi mutation nhiều câu lệnh qua `Storage::with_transaction(Immediate)`; read qua `with_connection`; owner `_in` methods không mở nested storage call.
-- Desktop boundary: Custom Tauri commands/event/binding và migration mới, không plugin/permission mới. `pnpm tauri build` bắt buộc sau khi nối FE vì boundary/schema thay đổi.
+- Desktop boundary: Custom Tauri commands/event/binding và migration mới, không plugin/permission mới. `pnpm tauri build` bắt buộc ngay ở phần backend vì boundary/schema thay đổi, và chạy lại sau khi nối FE.
 
 ## Tiêu chí hoàn thành
 
@@ -967,3 +970,25 @@ Database/project/clock/event fixtures dùng temp/fake, không chạm app data ho
 ## Câu hỏi mở
 
 - Không có.
+
+## Đối chiếu implementation stage18 ngày 2026-09-08
+
+- Repo đã có `shared/maintenance.rs`; tái sử dụng gate đang được composition inject, không tạo primitive hoặc gate riêng. Migration kế tiếp thực tế là version 7.
+- Exporter thực tế là `src-tauri/tests/export_bindings.rs`, vừa sinh file vừa báo drift lần đầu; không tạo binary `src/bin/export_bindings.rs`. Bổ sung aggregate `src/bindings/notes.ts`, đồng thời regenerate `src/bindings/search.ts` khi thêm variant Note.
+- `search/mod.rs` hiện chưa có Note variant/document/source; bổ sung contract BE-010 tại stage18, giữ các constructor cũ tương thích và thêm constructor có Notes cho production. Candidate Notes public hoạt động ngay trong phần backend. Trước khi FE-019 được ghép, consumer `src/app/search-entry.tsx` guard và disable Note target, không coi nó là Command; không thêm static navigation action chưa có handler. Phần FE tiếp theo thay guard bằng mở owner thật và revalidate `get_note`; đây là điểm bàn giao trong stage18, chưa được coi là hoàn tất stage18.
+- Không tạo Notes frontend trong phần backend. Các tiêu chí component FE-019/020 và Home/Project/Palette thuộc phần FE nối tiếp, không dùng chúng để trì hoãn Tauri build backend hoặc khai báo toàn stage18 hoàn tất sớm.
+- Command `create_note` chuẩn bị allowlist `main`/`quick-note` theo contract nhưng không tạo window/capability/global shortcut/tray của stage19.
+- Các test dùng constructor Rust `NotesService::with_seams(storage, gate, clock, events)` với clock/event sink inject; clock cung cấp Unix milliseconds có thể lỗi và monotonic elapsed kiểm soát được cho TTL. Constructor không tạo dữ liệu mẫu hoặc purge Trash. Chi tiết trait thuộc nội bộ Notes, không sinh binding.
+
+### Quyết định triển khai backend stage18
+
+- `RevisionConflict.current` dùng `Box<NoteDto>` trong Rust để giữ error enum nhỏ; JSON và binding vẫn là `current: NoteDto`, không đổi contract frontend.
+- Parser giữ `BackupDataV1` strict và thêm `BackupDataV2` strict có Notes bắt buộc; `ParsedBackupData` nội bộ phân biệt `None` (v1 giữ Notes) với `Some([])` (v2 merge mảng rỗng). Export luôn ghi version 2; preview/result import giữ version thực của package.
+- Ngoài guard trong `src/app/search-entry.tsx`, map nhãn nguồn trong `src/features/search/search-error-copy.ts` thêm `notes: "Notes"` để union generated mới được xử lý đầy đủ. Không thêm route hoặc feature Notes frontend ở phần backend.
+- Owner không cần cache row riêng: SQLite là snapshot authority; projection hậu commit chỉ cập nhật sequence/pending nội bộ và phát invalidation. Callback `_in` không lấy gate/mutex/Storage lồng và không query sau commit.
+- Kiểm thử hành vi owner được gom tại `src-tauri/tests/notes_contract.rs` thay vì tách thêm module test đồng dạng vào từng file models/repository/service. Search scalar/snippet có unit test riêng; real IPC/composition, Search, backup v1/v2/rollback dùng các target contract hiện có.
+- Benchmark Windows riêng với 10.000 Notes khoảng 4 KiB đạt list p95 **17,8167 ms** và search p95 **75,3463 ms**. Đây là fixture tạm, không dùng database hoặc project người dùng.
+- Native Notes/Home smoke chưa chạy vì không có công cụ điều khiển native khả dụng trong phiên này; phần FE-019/020 stage18 vẫn phải được triển khai và kiểm thử sau handoff backend. Không tạo cửa sổ, shortcut hoặc tray Quick Note của stage19.
+
+
+Backend BE-016 đã hoàn tất và sẵn sàng ghép FE: Rustfmt/Clippy, 546 Rust tests, 2.429 frontend tests, formatter/linter/typecheck, frontend build và Windows Tauri build đều exit 0. Binding Notes/Search đã sinh lại từ Rust và xác nhận không còn drift. Các tiêu chí liên quan debounce/Notes/Home UI cùng native smoke vẫn thuộc FE-019/020 tiếp theo; không dùng kết quả backend để đánh dấu toàn stage18 hoàn tất.

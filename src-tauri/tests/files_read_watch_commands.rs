@@ -263,7 +263,7 @@ fn text_open_watch_and_recent_are_isolated_and_read_only() {
                 .map_err(|_| FilesError::RecentFilesFailed)
         })
         .expect("schema should be readable");
-    assert_eq!(version, 6);
+    assert_eq!(version, 7);
 }
 
 /// Verifies binary and oversized files attach without retaining their bytes.

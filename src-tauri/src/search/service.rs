@@ -1,3 +1,4 @@
+use super::{NoteSearchDocument, NoteSearchSource};
 use std::{
     collections::{HashMap, HashSet},
     future::{Future, poll_fn},
@@ -72,6 +73,7 @@ pub struct SearchService {
     sessions: Arc<dyn SessionSearchSource>,
     shortcuts: Arc<dyn ShortcutCatalogSource>,
     files: Arc<dyn FileSearchSource>,
+    notes: Arc<dyn NoteSearchSource>,
 }
 
 /// Retains ranking metadata until one group has been sorted and capped.
@@ -124,7 +126,21 @@ impl SearchService {
             sessions,
             shortcuts,
             files,
+            notes: Arc::new(EmptyNoteSearchSource),
         })
+    }
+
+    /// Activates the Notes source while preserving legacy constructor behavior.
+    pub fn new_with_notes(
+        projects: Arc<dyn ProjectSearchSource>,
+        sessions: Arc<dyn SessionSearchSource>,
+        files: Arc<dyn FileSearchSource>,
+        notes: Arc<dyn NoteSearchSource>,
+        shortcuts: Arc<dyn ShortcutCatalogSource>,
+    ) -> Result<Self, UnifiedSearchError> {
+        let mut service = Self::new_with_files(projects, sessions, files, shortcuts)?;
+        service.notes = notes;
+        Ok(service)
     }
 
     /// Validates input, queries active sources, and builds one partial response.
@@ -144,18 +160,22 @@ impl SearchService {
         let mut failures = Vec::new();
         let joined = timeout(
             TOTAL_TIMEOUT,
-            join_three(
-                timeout(SOURCE_TIMEOUT, self.projects.list_projects()),
-                timeout(SOURCE_TIMEOUT, self.sessions.list_sessions()),
-                timeout(SOURCE_TIMEOUT, self.files.search_files(&query, 64)),
+            join_two(
+                join_three(
+                    timeout(SOURCE_TIMEOUT, self.projects.list_projects()),
+                    timeout(SOURCE_TIMEOUT, self.sessions.list_sessions()),
+                    timeout(SOURCE_TIMEOUT, self.files.search_files(&query, 64)),
+                ),
+                timeout(SOURCE_TIMEOUT, self.notes.search_notes(&query, 64)),
             ),
         )
         .await;
-        let (projects, sessions, files) = match joined {
-            Ok((project_outcome, session_outcome, file_outcome)) => (
+        let (projects, sessions, files, notes) = match joined {
+            Ok(((project_outcome, session_outcome, file_outcome), note_outcome)) => (
                 source_outcome(project_outcome, SearchSourceDto::Projects, &mut failures),
                 source_outcome(session_outcome, SearchSourceDto::Sessions, &mut failures),
                 candidate_outcome(file_outcome, SearchSourceDto::Files, &mut failures),
+                candidate_outcome(note_outcome, SearchSourceDto::Notes, &mut failures),
             ),
             Err(_) => {
                 failures.push(failure(
@@ -170,7 +190,11 @@ impl SearchService {
                     SearchSourceDto::Files,
                     SearchSourceFailureReasonDto::Timeout,
                 ));
-                (None, None, None)
+                failures.push(failure(
+                    SearchSourceDto::Notes,
+                    SearchSourceFailureReasonDto::Timeout,
+                ));
+                (None, None, None, None)
             }
         };
         let shortcut_outcome = self.shortcuts.shortcut_actions();
@@ -222,6 +246,16 @@ impl SearchService {
             groups.push(group);
         }
 
+        if let Some(candidates) = notes {
+            if has_duplicate(candidates.items.iter().map(
+                // Rejects duplicate source identities before grouping.
+                |note| note.note_id.as_str(),
+            )) {
+                replace_failure(&mut failures, SearchSourceDto::Notes);
+            } else if let Some(group) = note_group(&query, candidates) {
+                groups.push(group);
+            }
+        }
         let context_project = input.context_project_id.as_deref().and_then(|id| {
             valid_projects
                 .as_deref()
@@ -346,8 +380,7 @@ where
     .await
 }
 
-/// Polls two independent futures for focused concurrency unit tests.
-#[cfg(test)]
+/// Polls two independent source futures concurrently.
 async fn join_two<A, B>(first: A, second: B) -> (A::Output, B::Output)
 where
     A: Future,
@@ -438,6 +471,7 @@ fn source_order(source: SearchSourceDto) -> u8 {
         SearchSourceDto::Projects => 0,
         SearchSourceDto::Sessions => 1,
         SearchSourceDto::Files => 2,
+        SearchSourceDto::Notes => 3,
         SearchSourceDto::Commands => 5,
     }
 }
@@ -757,6 +791,86 @@ fn capped_group(
         results,
         has_more,
     })
+}
+
+/// Keeps Notes inactive for callers using the older constructors.
+struct EmptyNoteSearchSource;
+impl NoteSearchSource for EmptyNoteSearchSource {
+    /// Returns an empty successful source snapshot.
+    fn search_notes<'a>(
+        &'a self,
+        _query: &'a str,
+        _limit: u32,
+    ) -> super::SearchFuture<'a, Result<SearchCandidates<NoteSearchDocument>, SearchSourceError>>
+    {
+        Box::pin(async {
+            Ok(SearchCandidates {
+                items: vec![],
+                has_more: false,
+            })
+        })
+    }
+}
+/// Ranks owner-matched Notes while retaining matches outside the short snippet.
+fn note_group(
+    query: &str,
+    candidates: SearchCandidates<NoteSearchDocument>,
+) -> Option<SearchGroupDto> {
+    let mut scored = Vec::new();
+    for note in candidates.items {
+        let title = note.title.as_deref().unwrap_or("Untitled note");
+        let context = match (&note.project_name, &note.matching_snippet) {
+            (Some(project), Some(snippet)) => Some(format!("{project} › {snippet}")),
+            (Some(project), None) => Some(project.clone()),
+            (None, snippet) => snippet.clone(),
+        };
+        // The source has already matched every token against the full body; display truncation must not drop that match.
+        let ranked = rank_text(query, title, context.as_deref(), &[query.to_owned()])
+            .expect("owner-matched query remains a keyword match");
+        scored.push((
+            ranked.score,
+            note.updated_at_ms,
+            SearchResultDto {
+                key: format!("note:{}", note.note_id),
+                kind: SearchResultKindDto::Note,
+                title: ranked.title,
+                context: ranked.context,
+                title_highlights: ranked.title_highlights,
+                context_highlights: ranked.context_highlights,
+                target: SearchTargetDto::Note {
+                    note_id: note.note_id,
+                },
+                shortcut: None,
+                supports_open_in_split: false,
+            },
+        ));
+    }
+    scored.sort_by(
+        // Uses edited time and identity after the shared text rank.
+        |a, b| {
+            b.0.cmp(&a.0)
+                .then_with(|| b.1.cmp(&a.1))
+                .then_with(|| a.2.key.cmp(&b.2.key))
+        },
+    );
+    let has_more = candidates.has_more || scored.len() > GROUP_LIMIT;
+    scored.truncate(GROUP_LIMIT);
+    if scored.is_empty() {
+        None
+    } else {
+        Some(SearchGroupDto {
+            kind: SearchResultKindDto::Note,
+            label: "Notes".into(),
+            has_more,
+            results: scored
+                .into_iter()
+                .map(
+                    // Removes internal ranking metadata.
+                    |(_, _, result)| result,
+                )
+                .collect(),
+        })
+    }
 }
 
 #[cfg(test)]
@@ -1274,5 +1388,64 @@ mod tests {
         ) -> SearchFuture<'a, Result<Vec<ProjectSearchDocument>, SearchSourceError>> {
             Box::pin(async { Err(SearchSourceError::Unavailable) })
         }
+    }
+
+    /// Supplies a pending Notes source to prove timeout isolation.
+    struct PendingNotes {
+        calls: AtomicUsize,
+    }
+    impl NoteSearchSource for PendingNotes {
+        /// Counts admission then stays pending until the source deadline cancels it.
+        fn search_notes<'a>(
+            &'a self,
+            _query: &'a str,
+            _limit: u32,
+        ) -> super::super::SearchFuture<
+            'a,
+            Result<SearchCandidates<NoteSearchDocument>, SearchSourceError>,
+        > {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            Box::pin(std::future::pending())
+        }
+    }
+    /// Verifies empty queries skip Notes and paused time enforces the per-source deadline.
+    #[test]
+    fn notes_deadline_preserves_successful_groups_and_empty_query_skips_owner() {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_time()
+            .build()
+            .unwrap()
+            .block_on(async {
+                tokio::time::pause();
+                let (mut service, _, _, _) = fixture_service();
+                let notes = Arc::new(PendingNotes {
+                    calls: AtomicUsize::new(0),
+                });
+                service.notes = notes.clone();
+                service
+                    .search(UnifiedSearchInputDto {
+                        query: String::new(),
+                        context_project_id: None,
+                    })
+                    .await
+                    .unwrap();
+                assert_eq!(notes.calls.load(Ordering::SeqCst), 0);
+                let response = service
+                    .search(UnifiedSearchInputDto {
+                        query: "work".into(),
+                        context_project_id: None,
+                    })
+                    .await
+                    .unwrap();
+                assert!(response.groups.iter().any(
+                    // Keeps a successful domain despite Notes timeout.
+                    |group| group.kind == SearchResultKindDto::Project
+                ));
+                assert!(response.source_failures.contains(&failure(
+                    SearchSourceDto::Notes,
+                    SearchSourceFailureReasonDto::Timeout
+                )));
+                assert_eq!(notes.calls.load(Ordering::SeqCst), 1);
+            });
     }
 }

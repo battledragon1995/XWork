@@ -293,9 +293,8 @@ fn search_binding_matches_rust_contract() {
     assert!(generated.contains("sessionId"));
     assert!(generated.contains("actionId"));
     assert!(generated.contains("relativePath"));
-    for future_phase in ["noteId", "eventId"] {
-        assert!(!generated.contains(future_phase));
-    }
+    assert!(generated.contains("noteId"));
+    assert!(!generated.contains("eventId"));
     assert_binding_is_current(binding_path(&["search.ts"]), generated);
 }
 
@@ -474,4 +473,41 @@ fn notifications_binding_matches_rust_contract() {
         binding_path(&["notifications", "notifications.ts"]),
         generated,
     );
+}
+
+/// Generates every public Notes contract and rejects stale checked-in output.
+#[test]
+fn notes_binding_matches_rust_contract() {
+    use xwork_lib::notes::*;
+    let config = Config::default();
+    let generated = [
+        NoteStatusDto::export_to_string(&config).unwrap(),
+        NotePreviousStatusDto::export_to_string(&config).unwrap(),
+        NotePinnedFilterDto::export_to_string(&config).unwrap(),
+        NoteProjectFilterDto::export_to_string(&config).unwrap(),
+        ListNotesInputDto::export_to_string(&config).unwrap(),
+        NoteTextRangeDto::export_to_string(&config).unwrap(),
+        NoteSummaryDto::export_to_string(&config).unwrap(),
+        NoteDto::export_to_string(&config).unwrap(),
+        NoteCountsDto::export_to_string(&config).unwrap(),
+        NoteListPageDto::export_to_string(&config).unwrap(),
+        CreateNoteInputDto::export_to_string(&config).unwrap(),
+        AutosaveNoteInputDto::export_to_string(&config).unwrap(),
+        SetNotePinnedInputDto::export_to_string(&config).unwrap(),
+        SetNoteProjectInputDto::export_to_string(&config).unwrap(),
+        NoteRevisionInputDto::export_to_string(&config).unwrap(),
+        DeletedNoteDto::export_to_string(&config).unwrap(),
+        TrashNoteLabelDto::export_to_string(&config).unwrap(),
+        EmptyNotesTrashImpactDto::export_to_string(&config).unwrap(),
+        EmptyNotesTrashResultDto::export_to_string(&config).unwrap(),
+        NoteChangeKindDto::export_to_string(&config).unwrap(),
+        NoteChangedEventDto::export_to_string(&config).unwrap(),
+        NotesError::export_to_string(&config).unwrap(),
+    ]
+    .join("\n");
+    assert!(generated.contains("createdAtMs: number"));
+    assert!(generated.contains("revision: string"));
+    assert!(generated.contains("projectId"));
+    assert!(!generated.contains("bigint"));
+    assert_binding_is_current(binding_path(&["notes.ts"]), generated);
 }

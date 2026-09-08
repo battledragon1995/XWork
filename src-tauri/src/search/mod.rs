@@ -38,6 +38,7 @@ pub enum SearchResultKindDto {
     Project,
     Session,
     File,
+    Note,
     Command,
 }
 
@@ -77,6 +78,9 @@ pub enum SearchTargetDto {
     File {
         project_id: String,
         relative_path: String,
+    },
+    Note {
+        note_id: String,
     },
     Command {
         action_id: String,
@@ -119,6 +123,7 @@ pub enum SearchSourceDto {
     Projects,
     Sessions,
     Files,
+    Notes,
     Commands,
 }
 
@@ -293,4 +298,23 @@ pub async fn search_unified<R: Runtime>(
         return Err(UnifiedSearchError::UnauthorizedWindow);
     }
     state.search(input).await
+}
+
+/// Supplies a bounded public Note candidate without owner internals.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct NoteSearchDocument {
+    pub note_id: String,
+    pub title: Option<String>,
+    pub matching_snippet: Option<String>,
+    pub project_name: Option<String>,
+    pub updated_at_ms: i64,
+}
+/// Searches active and archived owner records.
+pub trait NoteSearchSource: Send + Sync {
+    /// Returns at most the requested candidate prefix.
+    fn search_notes<'a>(
+        &'a self,
+        query: &'a str,
+        candidate_limit: u32,
+    ) -> SearchFuture<'a, Result<SearchCandidates<NoteSearchDocument>, SearchSourceError>>;
 }

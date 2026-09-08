@@ -200,3 +200,68 @@ impl ShortcutCatalogSource for AppShortcutCatalogSource {
             })
     }
 }
+
+/// Adapts public Notes records and current project display names.
+pub struct AppNoteSearchSource {
+    notes: crate::notes::NotesService,
+    projects: ProjectService,
+}
+impl AppNoteSearchSource {
+    /// Creates the adapter using public owner services only.
+    pub fn new(notes: crate::notes::NotesService, projects: ProjectService) -> Self {
+        Self { notes, projects }
+    }
+}
+impl crate::search::NoteSearchSource for AppNoteSearchSource {
+    /// Joins optional project names without exposing repository access.
+    fn search_notes<'a>(
+        &'a self,
+        query: &'a str,
+        limit: u32,
+    ) -> SearchFuture<
+        'a,
+        Result<SearchCandidates<crate::search::NoteSearchDocument>, SearchSourceError>,
+    > {
+        Box::pin(async move {
+            let slice = self.notes.search_for_unified(query, limit).await.map_err(
+                // Redacts Notes errors at the source boundary.
+                |_| SearchSourceError::Unavailable,
+            )?;
+            let names = self
+                .projects
+                .list_projects(None)
+                .await
+                .map_err(
+                    // Redacts project query failures.
+                    |_| SearchSourceError::Unavailable,
+                )?
+                .into_iter()
+                .map(
+                    // Indexes the public project snapshot by identity.
+                    |project| (project.id, project.display_name),
+                )
+                .collect::<HashMap<_, _>>();
+            Ok(SearchCandidates {
+                has_more: slice.has_more,
+                items: slice
+                    .items
+                    .into_iter()
+                    .map(
+                        // Maps only the documented source fields.
+                        |note| crate::search::NoteSearchDocument {
+                            project_name: note
+                                .project_id
+                                .as_ref()
+                                .and_then(|id| names.get(id))
+                                .cloned(),
+                            note_id: note.note_id,
+                            title: note.title,
+                            matching_snippet: note.matching_snippet,
+                            updated_at_ms: note.updated_at_ms,
+                        },
+                    )
+                    .collect(),
+            })
+        })
+    }
+}

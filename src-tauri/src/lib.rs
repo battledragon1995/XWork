@@ -16,3 +16,5 @@ pub fn run() {
         .run(tauri::generate_context!())
         .expect("failed to start the XWork desktop application");
 }
+
+pub mod notes;

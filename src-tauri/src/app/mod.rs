@@ -1,3 +1,5 @@
+use self::search_sources::AppNoteSearchSource;
+use crate::notes::{NotesService, SystemNotesClock, TauriNotesEventSink};
 use std::{
     path::{Path, PathBuf},
     sync::Arc,
@@ -380,6 +382,20 @@ fn native_project_collaborators<R: Runtime>(app: &AppHandle<R>) -> ProjectCollab
 /// Creates the single command router shared by production and tests.
 fn app_invoke_handler<R: Runtime>() -> impl Fn(tauri::ipc::Invoke<R>) -> bool + Send + Sync {
     tauri::generate_handler![
+        crate::notes::commands::list_notes,
+        crate::notes::commands::get_note,
+        crate::notes::commands::create_note,
+        crate::notes::commands::autosave_note,
+        crate::notes::commands::set_note_pinned,
+        crate::notes::commands::set_note_project,
+        crate::notes::commands::archive_note,
+        crate::notes::commands::restore_archived_note,
+        crate::notes::commands::move_note_to_trash,
+        crate::notes::commands::restore_note_from_trash,
+        crate::notes::commands::delete_note_permanently,
+        crate::notes::commands::prepare_empty_notes_trash,
+        crate::notes::commands::confirm_empty_notes_trash,
+        crate::notes::commands::cancel_empty_notes_trash,
         lifecycle::hide_main_window,
         lifecycle::minimize_main_window,
         lifecycle::toggle_main_window_maximized,
@@ -522,6 +538,12 @@ where
                     files_reveal_override,
                     native_terminal_interactions,
                 )?;
+                app.manage(NotesService::with_seams(
+                    storage.clone(),
+                    app.state::<DataMaintenanceGate>().inner().clone(),
+                    Arc::new(SystemNotesClock::default()),
+                    Arc::new(TauriNotesEventSink(app.handle().clone())),
+                ));
                 setup_search(app, sessions.clone())?;
                 let terminal =
                     setup_terminal(app, &sessions, content_router, native_terminal_interactions)?;
@@ -699,6 +721,9 @@ fn setup_data_management<R: Runtime>(
     notifications: NotificationService,
 ) {
     let participants = DataParticipants {
+        notes: crate::app::data_participants::NotesDataParticipant::new(
+            app.state::<crate::notes::NotesService>().inner().clone(),
+        ),
         projects: app.state::<ProjectsDataParticipant>().inner().clone(),
         settings: app.state::<SettingsDataParticipant>().inner().clone(),
         cli_profiles: app.state::<CliProfilesDataParticipant>().inner().clone(),
@@ -726,13 +751,17 @@ fn setup_search<R: Runtime>(
     app: &mut App<R>,
     sessions: Arc<SessionManager>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let service = SearchService::new_with_files(
+    let service = SearchService::new_with_notes(
         Arc::new(AppProjectSearchSource::new(
             app.state::<ProjectService>().inner().clone(),
         )),
         Arc::new(AppSessionSearchSource::new(sessions)),
         Arc::new(AppFileSearchSource::new(
             app.state::<FilesService>().inner().clone(),
+            app.state::<ProjectService>().inner().clone(),
+        )),
+        Arc::new(AppNoteSearchSource::new(
+            app.state::<NotesService>().inner().clone(),
             app.state::<ProjectService>().inner().clone(),
         )),
         Arc::new(AppShortcutCatalogSource::new(
