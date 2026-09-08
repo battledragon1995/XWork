@@ -27,7 +27,29 @@ export interface NoteDraft {
   message: string | null;
   identity: number;
 }
+export interface QuickNoteState {
+  title: string;
+  contentMarkdown: string;
+  projectId: string | null;
+  phase: "empty" | "editing" | "saving" | "error" | "uncertain" | "saved";
+  message: string | null;
+  savedNote: NoteDto | null;
+  identity: number;
+}
+/** Create an empty manual lifetime without touching the autosave editor. */
+function emptyQuickNote(identity: number): QuickNoteState {
+  return {
+    title: "",
+    contentMarkdown: "",
+    projectId: null,
+    phase: "empty",
+    message: null,
+    savedNote: null,
+    identity,
+  };
+}
 interface Snapshot {
+  quickNote: QuickNoteState;
   draft: NoteDraft | null;
   epoch: number;
   blocked: boolean;
@@ -37,6 +59,7 @@ interface Snapshot {
 /** Own one retained edit and serialize every backend write against its last acknowledgement. */
 export class NotesOwner {
   state: Snapshot = {
+    quickNote: emptyQuickNote(0),
     draft: null,
     epoch: 0,
     blocked: false,
@@ -46,6 +69,7 @@ export class NotesOwner {
   listeners = new Set<() => void>();
   timer: ReturnType<typeof setTimeout> | undefined;
   flight: Promise<void> | null = null;
+  quickFlight: Promise<void> | null = null;
   actionFlight: Promise<void> | null = null;
   composing = false;
   serial = 0;
@@ -368,11 +392,82 @@ export class NotesOwner {
       this.actionFlight = null;
     }
   }
+  /** Retain manual input without scheduling an autosave. */
+  editQuickNote(patch: Partial<Pick<QuickNoteState, "title" | "contentMarkdown" | "projectId">>) {
+    if (this.state.blocked || this.quickFlight || this.state.quickNote.phase === "uncertain")
+      return;
+    this.publish({
+      quickNote: {
+        ...this.state.quickNote,
+        ...patch,
+        phase: "editing",
+        message: null,
+        savedNote: null,
+      },
+    });
+  }
+  /** Abandon only local manual intent, never a possibly persisted record. */
+  cancelQuickNote = () => {
+    if (this.state.blocked || this.quickFlight) return;
+    this.publish({ quickNote: emptyQuickNote(++this.serial) });
+  };
+  /** Claim one explicit create synchronously before returning to the event loop. */
+  saveQuickNote = (): Promise<void> => {
+    if (this.state.blocked || this.quickFlight || this.state.quickNote.phase === "uncertain")
+      return this.quickFlight ?? Promise.resolve();
+    const draft = this.state.quickNote;
+    if (!draft.contentMarkdown.trim()) return Promise.resolve();
+    this.publish({ quickNote: { ...draft, phase: "saving", message: null, savedNote: null } });
+    const flight = this.createQuickNote(draft);
+    this.quickFlight = flight;
+    return flight;
+  };
+  /** Publish only acknowledged creation and never replay an unknown transport outcome. */
+  async createQuickNote(draft: QuickNoteState) {
+    try {
+      const savedNote = await ipc.createNote({
+        title: draft.title || null,
+        contentMarkdown: draft.contentMarkdown,
+        projectId: draft.projectId,
+      });
+      if (this.state.quickNote.identity !== draft.identity) return;
+      this.publish({ quickNote: { ...emptyQuickNote(++this.serial), phase: "saved", savedNote } });
+      this.invalidate();
+    } catch (error) {
+      if (this.state.quickNote.identity !== draft.identity) return;
+      const known = error instanceof IpcCallError && error.payload;
+      this.publish({
+        quickNote: {
+          ...draft,
+          phase: known ? "error" : "uncertain",
+          message: known
+            ? noteErrorCopy(error)
+            : "Could not confirm creation. Check Notes before creating another note.",
+        },
+      });
+      if (!known) this.invalidate();
+    } finally {
+      this.quickFlight = null;
+    }
+  }
   /** Claim admission synchronously before waiting for existing writes. */
   settleBeforeDataChange = async () => {
     this.publish({ blocked: true });
     ++this.selection;
     clearTimeout(this.timer);
+    if (this.quickFlight) await this.quickFlight;
+    const quick = this.state.quickNote;
+    if (
+      quick.title ||
+      quick.contentMarkdown ||
+      quick.projectId ||
+      quick.phase === "uncertain" ||
+      quick.phase === "error"
+    ) {
+      const message = "Save or cancel the Quick Note on Home before changing app data.";
+      this.publish({ quickNote: { ...quick, message } });
+      throw new Error(message);
+    }
     if (this.actionFlight) await this.actionFlight;
     if (this.state.actionBusy) throw new Error("A Trash confirmation is pending");
     await this.flush(true);
@@ -387,7 +482,11 @@ export class NotesOwner {
     clearTimeout(this.timer);
     this.editorState = undefined;
     this.maintenanceNoteId = null;
-    this.publish({ draft: null, epoch: this.state.epoch + 1 });
+    this.publish({
+      draft: null,
+      quickNote: emptyQuickNote(++this.serial),
+      epoch: this.state.epoch + 1,
+    });
   };
   /** Re-read imported or uncertain data without replaying the old draft. */
   refreshAfterDataChange = async () => {

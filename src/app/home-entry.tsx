@@ -1,4 +1,4 @@
-import { HomeNoteSections, useNotesPresence } from "@/features/notes";
+import { HomeNoteSections, QuickNoteComposer, useNotesPresence } from "@/features/notes";
 import { useCallback } from "react";
 import { HomeRoute } from "@/features/home/home-route";
 import { useDataManagement } from "@/features/settings/data-management-provider";
@@ -20,6 +20,14 @@ export function HomeEntry() {
   }, [getCurrent]);
   return (
     <HomeRoute
+      quickNoteSlot={
+        <QuickNoteComposer
+          suspended={busy || (phase !== "idle" && phase !== "snapshot-failed")}
+          readSuspended={
+            /** Read live admission immediately before mutations. */ () => readBoundary().suspended
+          }
+        />
+      }
       notesSection={<HomeNoteSections />}
       notesPresence={notes.status}
       onRetryNotesPresence={notes.retry}

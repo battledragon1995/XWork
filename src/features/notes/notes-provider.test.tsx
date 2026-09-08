@@ -245,3 +245,125 @@ it("retries a failed imported detail read without replaying writes", async () =>
   expect(owner.state.draft?.contentMarkdown).toBe("imported");
   expect(ipc.autosaveNote).not.toHaveBeenCalled();
 });
+/** The manual Home owner is a distinct public capability of the retained Notes lifetime. */
+it("exposes manual quick actions", () => {
+  const owner = new NotesOwner();
+  expect(owner.saveQuickNote).toBeTypeOf("function");
+});
+/** Manual edits cannot overwrite or autosave the Notes editor draft. */
+it("keeps quick input independent of autosave and query invalidation", async () => {
+  const owner = new NotesOwner();
+  owner.install(base);
+  const retained = owner.state.draft;
+  owner.editQuickNote({ contentMarkdown: "manual" });
+  owner.invalidate();
+  await vi.advanceTimersByTimeAsync(1000);
+  expect(ipc.createNote).not.toHaveBeenCalled();
+  expect(owner.state.draft?.contentMarkdown).toBe(retained?.contentMarkdown);
+  expect(owner.state.quickNote.contentMarkdown).toBe("manual");
+});
+/** Duplicate saves and maintenance share one admitted manual flight. */
+it("drains the accepted quick flight through a same-tick barrier", async () => {
+  const pending = deferred<NoteDto>();
+  vi.mocked(ipc.createNote).mockReturnValue(pending.promise);
+  const owner = new NotesOwner();
+  owner.editQuickNote({ title: " raw ", contentMarkdown: "\nbody\n", projectId: "p" });
+  const save = owner.saveQuickNote();
+  const duplicate = owner.saveQuickNote();
+  const settle = owner.settleBeforeDataChange();
+  owner.editQuickNote({ contentMarkdown: "lost" });
+  owner.cancelQuickNote();
+  expect(owner.state.blocked).toBe(true);
+  expect(ipc.createNote).toHaveBeenCalledTimes(1);
+  expect(ipc.createNote).toHaveBeenCalledWith({
+    title: " raw ",
+    contentMarkdown: "\nbody\n",
+    projectId: "p",
+  });
+  pending.resolve(base);
+  await Promise.all([save, duplicate, settle]);
+  expect(owner.state.quickNote.savedNote).toEqual(base);
+  expect(owner.state.quickNote.projectId).toBeNull();
+  expect(owner.state.blocked).toBe(true);
+});
+/** Every retained manual input must be explicitly resolved before maintenance. */
+it.each([{ title: "title" }, { contentMarkdown: " \n " }, { projectId: "p" }])(
+  "blocks maintenance for %j without saving",
+  async (patch) => {
+    const owner = new NotesOwner();
+    owner.editQuickNote(patch);
+    await expect(owner.settleBeforeDataChange()).rejects.toThrow("Quick Note on Home");
+    await owner.saveQuickNote();
+    expect(ipc.createNote).not.toHaveBeenCalled();
+    owner.cancelQuickNote();
+    expect(owner.state.quickNote.phase).not.toBe("empty");
+    owner.releaseDataChangeBarrier();
+    owner.cancelQuickNote();
+    await owner.settleBeforeDataChange();
+  },
+);
+/** Unknown creation stays copyable and cannot be retried by ordinary owner activity. */
+it("preserves uncertain quick intent until explicit Cancel", async () => {
+  vi.mocked(ipc.createNote).mockRejectedValue(new IpcCallError("create_note", null));
+  const owner = new NotesOwner();
+  owner.editQuickNote({ contentMarkdown: "unknown" });
+  await owner.saveQuickNote();
+  const epoch = owner.state.epoch;
+  owner.editQuickNote({ contentMarkdown: "new" });
+  owner.invalidate();
+  await owner.flush();
+  await owner.saveQuickNote();
+  await vi.advanceTimersByTimeAsync(1000);
+  expect(owner.state.quickNote.contentMarkdown).toBe("unknown");
+  expect(owner.state.quickNote.phase).toBe("uncertain");
+  expect(epoch).toBeGreaterThan(0);
+  expect(ipc.createNote).toHaveBeenCalledTimes(1);
+  await expect(owner.settleBeforeDataChange()).rejects.toThrow("Quick Note");
+  owner.releaseDataChangeBarrier();
+  owner.cancelQuickNote();
+  expect(owner.state.quickNote.phase).toBe("empty");
+});
+/** Failed admitted creates release only through the public maintenance bridge protocol. */
+it("rejects the barrier after a known failed quick flight and allows explicit recovery", async () => {
+  const pending = deferred<NoteDto>();
+  vi.mocked(ipc.createNote).mockReturnValue(pending.promise);
+  const owner = new NotesOwner();
+  owner.editQuickNote({ contentMarkdown: "body" });
+  const save = owner.saveQuickNote();
+  const settled = expect(owner.settleBeforeDataChange()).rejects.toThrow("Quick Note");
+  pending.reject(new IpcCallError("create_note", { code: "persistence_failed" }));
+  await save;
+  await settled;
+  expect(owner.state.blocked).toBe(true);
+  expect(owner.state.quickNote.phase).toBe("error");
+  owner.releaseDataChangeBarrier();
+  vi.mocked(ipc.createNote).mockResolvedValue(base);
+  await owner.saveQuickNote();
+  expect(owner.state.quickNote.phase).toBe("saved");
+});
+/** Retired lifetimes cannot republish success or failure after data replacement. */
+it.each(["reset", "refresh"])("retires quick responses across %s", async (operation) => {
+  const pending = deferred<NoteDto>();
+  vi.mocked(ipc.createNote).mockReturnValue(pending.promise);
+  const owner = new NotesOwner();
+  owner.editQuickNote({ contentMarkdown: "old" });
+  const save = owner.saveQuickNote();
+  if (operation === "reset") owner.clearAfterReset();
+  else await owner.refreshAfterDataChange();
+  pending.resolve(base);
+  await save;
+  expect(owner.state.quickNote.phase).toBe("empty");
+  expect(owner.state.quickNote.savedNote).toBeNull();
+});
+/** Independent editor generations still autosave while the manual capture remains unsubmitted. */
+it("autosaves the Notes editor without submitting its separate quick draft", async () => {
+  vi.mocked(ipc.autosaveNote).mockResolvedValue({ ...base, contentMarkdown: "editor change" });
+  const owner = new NotesOwner();
+  owner.install(base);
+  owner.edit({ contentMarkdown: "editor change" });
+  owner.editQuickNote({ contentMarkdown: "manual capture" });
+  await vi.advanceTimersByTimeAsync(500);
+  expect(ipc.autosaveNote).toHaveBeenCalledTimes(1);
+  expect(ipc.createNote).not.toHaveBeenCalled();
+  expect(owner.state.quickNote.contentMarkdown).toBe("manual capture");
+});

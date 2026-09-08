@@ -275,3 +275,7 @@ Không có. Các quyết định giới hạn autosave trước backend ack và 
 - Bổ sung file test `src/features/notes/notes-test-fixture.tsx` cho DTO/probe cô lập và cập nhật fixture `src/app/app-topbar.test.tsx` để lỗi query Notes không xen vào kiểm thử window controls. Không có runtime fixture.
 - Trong lúc Empty Trash đang confirm, Data confirmation đồng thời bị chặn và có thể thử lại sau khi Trash settle; autosave và mutation theo note đang chạy được đợi. Đây là lựa chọn bảo thủ để không chồng destructive operation, không replay command.
 - Native smoke còn pending; build/test tự động không thay cho vận hành Windows trên dữ liệu dùng một lần. Giới hạn tray Quit trước autosave acknowledgement giữ nguyên như quyết định thiết kế.
+
+## Mở rộng giai đoạn 18 — Ownership của Quick Note
+
+Contract `FE-020-quick-note.md` bổ sung public `QuickNoteComposer` tại index và quick draft riêng trong NotesProvider. Draft manual không dùng NoteDraft/autosave/select/install, không thay note đang sửa. Public useNotesDataBoundary giữ nguyên chữ ký nhưng claim/settle cả quick flight; quick draft chưa Save/Cancel hoặc unknown create chặn Data confirm với hướng dẫn về Home, không được autosave do maintenance/hidden. Reset/import retire quick lifetime và feedback trước refresh/navigation. Command result invalidate projections như FE-019; không thêm listener/backend API. Inventory source/test đầy đủ cho extension nằm trong FE-020; plan FE-019 đã hoàn thành không được sửa.

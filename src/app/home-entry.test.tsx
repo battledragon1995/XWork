@@ -8,7 +8,12 @@ vi.mock("@/lib/ipc/notes", () => ({
     hasMore: false,
     counts: { active: 0, archived: 0, trash: 0 },
   })),
+  onNotesChanged: vi.fn(async () => () => {}),
+  createNote: vi.fn(),
+  getNote: vi.fn(),
 }));
+import { NotesProvider } from "@/features/notes";
+import { note } from "@/features/notes/notes-test-fixture";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { useEffect } from "react";
 import { createMemoryRouter, Link, Outlet, RouterProvider } from "react-router";
@@ -153,9 +158,11 @@ function Host() {
     <TooltipProvider>
       {/* The application mounts this registry once, above every Data owner. */}
       <FileHandleProvider createRegistry={() => new FileHandleRegistry(inertFileTransport)}>
-        <DataManagementHost>
-          <Probe />
-        </DataManagementHost>
+        <NotesProvider>
+          <DataManagementHost>
+            <Probe />
+          </DataManagementHost>
+        </NotesProvider>
       </FileHandleProvider>
     </TooltipProvider>
   );
@@ -169,6 +176,7 @@ async function mount(path = "/") {
         children: [
           { path: "/", element: <HomeEntry /> },
           { path: "/settings", element: <h1>Settings fixture</h1> },
+          { path: "/notes", element: <h1>Notes destination</h1> },
           { path: "/projects/:id", element: <h1>Project destination</h1> },
           { path: "/sessions/:id", element: <h1>Session destination</h1> },
         ],
@@ -183,6 +191,7 @@ async function mount(path = "/") {
 // Establish complete DTOs and clean public stores before each isolated app composition.
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.mocked(notesIpc.createNote).mockReset().mockResolvedValue(note);
   resetProjectsStore();
   resetSessionsStore();
   resetSettingsStore();
@@ -359,7 +368,8 @@ it("does not query sessions for Welcome", async () => {
   await mount();
   await screen.findByRole("button", { name: "Add Project" });
   expect(listSessions).not.toHaveBeenCalled();
-  expect(onProjectsChanged).toHaveBeenCalledOnce();
+  // Home query ownership and the persistent Notes owner each subscribe once.
+  expect(onProjectsChanged).toHaveBeenCalledTimes(2);
 });
 
 /** Notes across all lifecycle counts keep a projectless Home out of Welcome. */
@@ -375,4 +385,167 @@ it("shows Notes-only Home for archived records", async () => {
   await mount();
   expect(await screen.findByRole("link", { name: "Open Notes" })).toBeVisible();
   expect(screen.queryByRole("button", { name: "Add Project" })).toBeNull();
+});
+/** Home mounts the real manual composer before persisted Notes projections. */
+it("composes Quick Note before Notes and opens only its acknowledged id", async () => {
+  const { router } = await mount();
+  const title = await screen.findByLabelText("Title (optional)");
+  const quick = screen.getByRole("heading", { name: "Quick Note" });
+  const pinned = screen.getByRole("heading", { name: "Pinned notes" });
+  expect(quick.compareDocumentPosition(pinned) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  fireEvent.change(title, { target: { value: "Captured" } });
+  fireEvent.change(screen.getByLabelText("Markdown"), { target: { value: "body" } });
+  fireEvent.change(screen.getByLabelText("Project"), { target: { value: PROJECT.id } });
+  const before = vi.mocked(notesIpc.listNotes).mock.calls.length;
+  fireEvent.click(screen.getByRole("button", { name: "Save" }));
+  const open = await screen.findByRole("link", { name: "Open note" });
+  expect(notesIpc.createNote).toHaveBeenCalledExactlyOnceWith({
+    title: "Captured",
+    contentMarkdown: "body",
+    projectId: PROJECT.id,
+  });
+  expect(screen.getByLabelText("Project")).toHaveValue("");
+  expect(vi.mocked(notesIpc.listNotes).mock.calls.length).toBeGreaterThan(before);
+  fireEvent.click(open);
+  await screen.findByRole("heading", { name: "Notes destination" });
+  expect(router.state.location.search).toBe("?noteId=n&view=active");
+});
+/** A retained draft blocks real Data confirmation after Home has unmounted. */
+it.each(["body", "", " \n "])(
+  "blocks reset for retained Home draft %j and releases recovery",
+  async (body) => {
+    const { router } = await mount();
+    fireEvent.change(await screen.findByLabelText("Title (optional)"), {
+      target: { value: "Retained" },
+    });
+    fireEvent.change(screen.getByLabelText("Markdown"), { target: { value: body } });
+    await act(async () => router.navigate("/settings"));
+    await act(async () => data.prepare("reset"));
+    act(() => data.setConfirmation("RESET"));
+    await act(async () => data.confirm());
+    expect(dataIpc.confirmResetXwork).not.toHaveBeenCalled();
+    expect(notesIpc.createNote).not.toHaveBeenCalled();
+    await act(async () => router.navigate("/"));
+    expect(await screen.findByLabelText("Title (optional)")).toHaveValue("Retained");
+    expect(
+      screen.getByText("Save or cancel the Quick Note on Home before changing app data."),
+    ).toBeInTheDocument();
+  },
+);
+/** The live Quit store closes admission before React can render its disabled state. */
+it("blocks same-tick Quick Note Save and Cancel during Quit", async () => {
+  await mount();
+  fireEvent.change(await screen.findByLabelText("Markdown"), { target: { value: "retained" } });
+  const save = screen.getByRole("button", { name: "Save" });
+  const cancel = screen.getByRole("button", { name: "Cancel" });
+  act(() => {
+    useQuitStore.setState({ phase: "requesting" });
+    fireEvent.click(save);
+    fireEvent.click(cancel);
+  });
+  expect(notesIpc.createNote).not.toHaveBeenCalled();
+  expect(screen.getByLabelText("Markdown")).toHaveValue("retained");
+});
+/** Accepted creation drains before reset confirmation even after navigation away from Home. */
+it("waits for an admitted quick save before issuing reset", async () => {
+  const pending = deferred<Awaited<ReturnType<typeof notesIpc.createNote>>>();
+  vi.mocked(notesIpc.createNote).mockReturnValue(pending.promise);
+  vi.mocked(dataIpc.confirmResetXwork).mockResolvedValue(
+    {} as Awaited<ReturnType<typeof dataIpc.confirmResetXwork>>,
+  );
+  const { router } = await mount();
+  fireEvent.change(await screen.findByLabelText("Markdown"), { target: { value: "accepted" } });
+  fireEvent.click(screen.getByRole("button", { name: "Save" }));
+  await act(async () => router.navigate("/settings"));
+  await act(async () => data.prepare("reset"));
+  act(() => data.setConfirmation("RESET"));
+  let confirming!: Promise<void>;
+  act(() => {
+    confirming = data.confirm();
+  });
+  expect(dataIpc.confirmResetXwork).not.toHaveBeenCalled();
+  await act(async () => {
+    pending.resolve(note);
+    await confirming;
+  });
+  expect(dataIpc.confirmResetXwork).toHaveBeenCalledTimes(1);
+  expect(notesIpc.createNote).toHaveBeenCalledTimes(1);
+  expect(await screen.findByLabelText("Markdown")).toHaveValue("");
+  expect(screen.queryByRole("link", { name: "Open note" })).toBeNull();
+});
+/** An uncertain create cannot be replayed or bypassed by maintenance after Home unmount. */
+it("retains uncertain quick text through navigation and rejected Data confirmation", async () => {
+  vi.mocked(notesIpc.createNote).mockRejectedValueOnce(new IpcCallError("create_note", null));
+  const { router } = await mount();
+  fireEvent.change(await screen.findByLabelText("Markdown"), { target: { value: "uncertain" } });
+  fireEvent.click(screen.getByRole("button", { name: "Save" }));
+  await screen.findByRole("link", { name: "Open Notes" });
+  await act(async () => router.navigate("/settings"));
+  await act(async () => data.prepare("reset"));
+  act(() => data.setConfirmation("RESET"));
+  await act(async () => data.confirm());
+  expect(dataIpc.confirmResetXwork).not.toHaveBeenCalled();
+  await act(async () => data.cancel());
+  await act(async () => router.navigate("/"));
+  expect(await screen.findByLabelText("Markdown")).toHaveValue("uncertain");
+  expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+  fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+  expect(screen.getByLabelText("Markdown")).toHaveValue("");
+  expect(notesIpc.createNote).toHaveBeenCalledTimes(1);
+});
+/** Data admission is read synchronously even before the disabled render commits. */
+it("blocks same-tick Quick Note mutations while Data starts", async () => {
+  await mount();
+  fireEvent.change(await screen.findByLabelText("Markdown"), { target: { value: "retained" } });
+  const save = screen.getByRole("button", { name: "Save" });
+  const cancel = screen.getByRole("button", { name: "Cancel" });
+  let preparing!: Promise<void>;
+  act(() => {
+    preparing = data.prepare("reset");
+    fireEvent.click(save);
+    fireEvent.click(cancel);
+  });
+  await act(async () => preparing);
+  expect(notesIpc.createNote).not.toHaveBeenCalled();
+  expect(screen.getByLabelText("Markdown")).toHaveValue("retained");
+});
+/** Listener failure cannot hide an acknowledged Save or require replaying persistence. */
+it("refreshes projections from acknowledgement when native listening fails", async () => {
+  vi.mocked(notesIpc.onNotesChanged).mockRejectedValueOnce(new Error("listener unavailable"));
+  const { router } = await mount();
+  fireEvent.change(await screen.findByLabelText("Markdown"), { target: { value: "accepted" } });
+  const before = vi.mocked(notesIpc.listNotes).mock.calls.length;
+  fireEvent.click(screen.getByRole("button", { name: "Save" }));
+  await screen.findByRole("link", { name: "Open note" });
+  expect(vi.mocked(notesIpc.listNotes).mock.calls.length).toBeGreaterThan(before);
+  await act(async () => router.navigate("/settings"));
+  await act(async () => router.navigate("/"));
+  expect(await screen.findByRole("link", { name: "Open note" })).toBeInTheDocument();
+  expect(notesIpc.createNote).toHaveBeenCalledTimes(1);
+});
+/** Hidden-window events never turn the manual capture into an implicit Save. */
+it("retains the quick draft across hidden events without creating", async () => {
+  const { router } = await mount();
+  fireEvent.change(await screen.findByLabelText("Markdown"), { target: { value: "manual" } });
+  const hidden = vi.spyOn(document, "hidden", "get").mockReturnValue(true);
+  act(() => document.dispatchEvent(new Event("visibilitychange")));
+  await act(async () => router.navigate("/settings"));
+  await act(async () => router.navigate("/"));
+  expect(await screen.findByLabelText("Markdown")).toHaveValue("manual");
+  expect(notesIpc.createNote).not.toHaveBeenCalled();
+  hidden.mockRestore();
+});
+/** A late acknowledgement refreshes retained state without navigating back to Home. */
+it("accepts a Save after Home unmount without changing the current route", async () => {
+  const pending = deferred<Awaited<ReturnType<typeof notesIpc.createNote>>>();
+  vi.mocked(notesIpc.createNote).mockReturnValue(pending.promise);
+  const { router } = await mount();
+  fireEvent.change(await screen.findByLabelText("Markdown"), { target: { value: "manual" } });
+  fireEvent.click(screen.getByRole("button", { name: "Save" }));
+  await act(async () => router.navigate("/settings"));
+  await act(async () => pending.resolve(note));
+  expect(router.state.location.pathname).toBe("/settings");
+  await act(async () => router.navigate("/"));
+  expect(await screen.findByRole("link", { name: "Open note" })).toBeInTheDocument();
+  expect(notesIpc.createNote).toHaveBeenCalledTimes(1);
 });

@@ -9,35 +9,42 @@ import { listProjects } from "@/lib/ipc/projects";
 import { noteErrorCopy } from "./note-error-copy";
 import { useNotes } from "./notes-provider";
 /** Read project choices by public identity without dropping unavailable projects. */
-export function useNoteProjects() {
+export function useNoteProjects(suspended = false) {
   const { epoch } = useNotes();
   const [projects, setProjects] = useState<ProjectDto[]>([]);
   const [error, setError] = useState(false);
+  const [loading, setLoading] = useState(true);
   // biome-ignore lint/correctness/useExhaustiveDependencies: epoch invalidates project labels and FK links.
   useEffect(
     /** Retire project reads on Notes or FK invalidation. */ () => {
+      if (suspended) return;
       let live = true;
+      setLoading(true);
       void listProjects()
         .then(
           /** Publish the current project choices. */ (result) => {
             if (live) {
               setProjects(result);
               setError(false);
+              setLoading(false);
             }
           },
         )
         .catch(
           /** Keep the current selection recoverable. */ () => {
-            if (live) setError(true);
+            if (live) {
+              setError(true);
+              setLoading(false);
+            }
           },
         );
       return () => {
         live = false;
       };
     },
-    [epoch],
+    [epoch, suspended],
   );
-  return { projects, error };
+  return { projects, error, loading };
 }
 /** Apply revision-checked lifecycle and metadata actions after the latest text flush. */
 export function NoteActions() {
