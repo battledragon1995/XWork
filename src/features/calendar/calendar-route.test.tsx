@@ -36,6 +36,28 @@ beforeEach(
   },
 );
 describe("Calendar route", /** Verify navigation against exact backend read contracts. */ () => {
+  it("denies create while project scope is unverified or date intent is invalid", /** Do not turn a failed project lookup into an unscoped event. */ async () => {
+    const create = vi.fn();
+    vi.mocked(getProject).mockReturnValue(
+      new Promise(/** Keep project verification pending. */ () => {}),
+    );
+    const view = render(
+      <MemoryRouter initialEntries={["/calendar?project=p&date=2026-09-09"]}>
+        <CalendarRoute onCreateEvent={create} />
+      </MemoryRouter>,
+    );
+    expect(screen.getByRole("button", { name: "New Event" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "New event this day" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "New Event" }));
+    expect(create).not.toHaveBeenCalled();
+    view.unmount();
+    render(
+      <MemoryRouter initialEntries={["/calendar?date=invalid"]}>
+        <CalendarRoute onCreateEvent={create} />
+      </MemoryRouter>,
+    );
+    expect(screen.getByRole("button", { name: "New Event" })).toBeDisabled();
+  });
   it("uses separate grid/day and bounded Upcoming reads with date prefill", /** Query overlap days rather than filtering a month response. */ async () => {
     const create = vi.fn();
     render(
@@ -54,6 +76,8 @@ describe("Calendar route", /** Verify navigation against exact backend read cont
     ).toBe(true);
     fireEvent.click(screen.getByRole("button", { name: "New event this day" }));
     expect(create).toHaveBeenCalledWith({ date: "2026-09-09", projectId: null });
+    fireEvent.click(screen.getByRole("button", { name: "New Event" }));
+    expect(create).toHaveBeenCalledTimes(2);
     fireEvent.click(screen.getByRole("button", { name: "Upcoming" }));
     expect(await screen.findByText("No events in the next 14 days")).toBeVisible();
     expect(screen.queryByRole("button", { name: "Missed" })).not.toBeInTheDocument();
@@ -83,6 +107,8 @@ describe("Calendar route", /** Verify navigation against exact backend read cont
     );
     expect(await screen.findByRole("heading", { name: "Historical event" })).toBeVisible();
     expect(getCalendarEvent).toHaveBeenCalledWith("old");
+    expect(screen.getByRole("button", { name: "Edit" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Delete Event" })).toBeVisible();
     expect(screen.queryByRole("button", { name: "New Event" })).not.toBeInTheDocument();
   });
   it("rejects invalid dates without sending invalid ranges", /** Give malformed URL input a recoverable Today path. */ async () => {

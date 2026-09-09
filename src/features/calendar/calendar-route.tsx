@@ -170,7 +170,7 @@ export function CalendarRoute({
     [projectIntent, boundary.suspended, admitted],
   );
   const days = monthGrid(month);
-  const enabled = project.ready && !invalidDate;
+  const enabled = project.ready && project.id === projectIntent && !invalidDate;
   const monthQuery = useCalendarQuery(
     enabled
       ? {
@@ -252,10 +252,10 @@ export function CalendarRoute({
         {onCreateEvent && (
           <button
             type="button"
-            disabled={boundary.suspended}
+            disabled={boundary.suspended || !enabled}
             onClick={
               /** Delegate creation to the installed event owner. */ () => {
-                if (admitted()) onCreateEvent({ date: selected, projectId: project.id });
+                if (admitted() && enabled) onCreateEvent({ date: selected, projectId: project.id });
               }
             }
           >
@@ -391,10 +391,11 @@ export function CalendarRoute({
           {panel === "day" && onCreateEvent && (
             <button
               type="button"
-              disabled={boundary.suspended}
+              disabled={boundary.suspended || !enabled}
               onClick={
                 /** Preserve the selected date and validated project prefill. */ () => {
-                  if (admitted()) onCreateEvent({ date: selected, projectId: project.id });
+                  if (admitted() && enabled)
+                    onCreateEvent({ date: selected, projectId: project.id });
                 }
               }
             >
