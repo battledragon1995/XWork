@@ -118,6 +118,7 @@ fn shortcuts_prepare_rejects_unknown_duplicate_and_invalid_overrides() {
 #[test]
 fn shortcuts_coordinator_rollback_publishes_nothing() {
     let h = ShortcutsHarness::new();
+    let snapshot_watch = h.service.subscribe_snapshot();
     let before = h.service.snapshot().unwrap();
     let result = h.storage.with_transaction::<(), KeyboardShortcutsError>(
         // Simulates a later participant failing after shortcuts have applied successfully.
@@ -128,6 +129,8 @@ fn shortcuts_coordinator_rollback_publishes_nothing() {
         });
     assert_eq!(result, Err(KeyboardShortcutsError::PersistenceFailed));
     assert_eq!(h.service.snapshot().unwrap(), before);
+    assert!(!snapshot_watch.has_changed().unwrap());
+    assert_eq!(*snapshot_watch.borrow(), before);
     h.storage
         .with_transaction::<_, KeyboardShortcutsError>(
             // Confirms rollback removed the tentative durable override.
@@ -143,6 +146,7 @@ fn shortcuts_coordinator_rollback_publishes_nothing() {
 #[test]
 fn shortcuts_commit_publishes_prepared_projection() {
     let h = ShortcutsHarness::new();
+    let snapshot_watch = h.service.subscribe_snapshot();
     let subscription = h.service.subscribe();
     let before = h.service.snapshot().unwrap();
     let _permit = tauri::async_runtime::block_on(h.gate.write_permit());
@@ -170,6 +174,8 @@ fn shortcuts_commit_publishes_prepared_projection() {
             .expect("sender should remain open")
     );
     let after = h.service.snapshot().unwrap();
+    assert!(snapshot_watch.has_changed().unwrap());
+    assert_eq!(*snapshot_watch.borrow(), after);
     assert_eq!(after.actions[7].conflicts_with, ["tabs.close"]);
     assert!(!after.actions[8].is_dispatchable);
 }
@@ -196,7 +202,10 @@ fn shortcuts_reset_clears_all_rows_including_orphans() {
             assert_eq!(count, 0);
             Ok(projection)
         }).unwrap();
+    let snapshot_watch = h.service.subscribe_snapshot();
     h.participant.publish_after_commit(projection);
+    assert!(snapshot_watch.has_changed().unwrap());
+    assert_eq!(*snapshot_watch.borrow(), h.service.snapshot().unwrap());
     assert!(h.service.snapshot().unwrap().actions.iter().all(
         // Default state is fully dispatchable and has no custom overrides.
         |action| action.is_dispatchable && !action.is_custom

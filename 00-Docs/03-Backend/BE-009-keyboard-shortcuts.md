@@ -248,7 +248,7 @@ impl KeyboardShortcutsService {
 
 `prepare_replace_overrides_in` từ chối action lạ, duplicate `action_id` hoặc chord không hợp lệ và dựng sẵn toàn bộ operations/conflict projection; apply sau đó xóa và insert candidate atomically. `export_overrides_in` sort theo thứ tự catalog và không xuất default; reset dùng `reset_overrides_in`. Mọi plan/projection phải owned, `Send + 'static`, không giữ connection/transaction/row borrow/lock guard hoặc callback. API `_in` chỉ dùng transaction do coordinator truyền, không lấy `DataReadPermit`, service write gate hoặc gọi Storage lồng. Sau commit, `publish_data_change` consume projection, thay cache rồi publish internal watch no-fail; Tauri side effect nếu có chỉ best-effort và không biến commit thành typed failure. Đây là Rust API, không phải Tauri command.
 
-Ở Phase 3, service bổ sung `subscribe() -> tokio::sync::watch::Receiver<KeyboardShortcutsDto>`. BE-017 nhận snapshot hiện tại ngay khi subscribe và reconcile duy nhất `quick_note.open_global`; publish diễn ra sau commit/cache replace. Scope/application shortcut vẫn do frontend dispatch, và không có consumer nào được đọc bảng trực tiếp. Chi tiết đăng ký/unregister OS, lỗi chord bị ứng dụng khác chiếm và vòng đời cửa sổ thuộc contract BE-017.
+Ở Phase 3, service bổ sung `subscribe_snapshot() -> tokio::sync::watch::Receiver<KeyboardShortcutsDto>`. BE-017 nhận snapshot hiện tại ngay khi subscribe và reconcile duy nhất `quick_note.open_global`; publish diễn ra sau commit/cache replace. Scope/application shortcut vẫn do frontend dispatch, và không có consumer nào được đọc bảng trực tiếp. Chi tiết đăng ký/unregister OS, lỗi chord bị ứng dụng khác chiếm và vòng đời cửa sổ thuộc contract BE-017.
 
 ## Tauri command
 
@@ -452,3 +452,7 @@ Test database dùng temporary directory/file riêng, không chạm app data th�
 ## Câu hỏi mở
 
 - Không có.
+
+## Quyết định triển khai giai đoạn 19 — 2026-09-09
+
+Source hiện hữu đã có subscribe() trả watch::Receiver<u64> cho revision. Giữ nguyên API đó; bổ sung subscribe_snapshot() trả watch::Receiver<KeyboardShortcutsDto> cho BE-017. Snapshot mới được giữ cả khi chưa có subscriber và chỉ publish sau commit/cache replace; không thay đổi contract IPC hoặc schema.

@@ -68,7 +68,7 @@ fn chord(code: &str) -> ShortcutChordDto {
 fn startup_returns_the_default_snapshot_from_an_empty_table() {
     let h = Harness::new();
     let snapshot = h.service.snapshot().unwrap();
-    assert_eq!(snapshot.actions.len(), 18);
+    assert_eq!(snapshot.actions.len(), 19);
     assert!(snapshot.actions.iter().all(
         // Every default is unique and dispatchable.
         |action| !action.is_custom && action.is_dispatchable && action.conflicts_with.is_empty()
@@ -170,7 +170,7 @@ fn unknown_action_rows_are_preserved_but_hidden() {
     );
     let service =
         KeyboardShortcutsService::new(h.storage.clone(), DataMaintenanceGate::new()).unwrap();
-    assert_eq!(service.snapshot().unwrap().actions.len(), 18);
+    assert_eq!(service.snapshot().unwrap().actions.len(), 19);
     service.set_shortcut("tabs.create", &chord("KeyY")).unwrap();
     assert_eq!(h.count(), 2);
     service.reset_shortcut("tabs.create").unwrap();
@@ -423,7 +423,7 @@ fn get_returns_the_cached_snapshot_from_any_window() {
     let app = TestApplication::new();
     app.sql("DROP TABLE keyboard_shortcut_overrides");
     let main = invoke(&app.window("main"), "get_keyboard_shortcuts", json!({})).unwrap();
-    assert_eq!(main["actions"].as_array().unwrap().len(), 18);
+    assert_eq!(main["actions"].as_array().unwrap().len(), 19);
     assert_eq!(
         invoke(
             &app.window("secondary"),
@@ -544,4 +544,38 @@ fn commands_return_unavailable_after_shutdown_begins() {
         );
     }
     assert_eq!(app.count(), 0);
+}
+
+/// Keeps complete snapshots current across no-op edits, conflicts, failures, and late subscribers.
+#[test]
+fn global_action_publishes_only_committed_snapshot_changes() {
+    let h = Harness::new();
+    let mut watch = h.service.subscribe_snapshot();
+    let initial = watch.borrow_and_update().clone();
+    let global = initial.actions.last().unwrap();
+    assert_eq!(global.action_id, "quick_note.open_global");
+    assert_eq!(global.scope, xwork_lib::settings::ShortcutScopeDto::Global);
+    assert_eq!(global.current_chord.key_code, "KeyN");
+    assert!(global.current_chord.shift);
+    h.service
+        .set_shortcut("quick_note.open_global", &global.current_chord)
+        .unwrap();
+    assert!(!watch.has_changed().unwrap());
+    let changed = h
+        .service
+        .set_shortcut("quick_note.open_global", &chord("KeyT"))
+        .unwrap();
+    assert!(watch.has_changed().unwrap());
+    assert_eq!(*watch.borrow_and_update(), changed);
+    assert!(!changed.actions.last().unwrap().is_dispatchable);
+    assert_eq!(
+        changed.actions.last().unwrap().conflicts_with,
+        ["tabs.create"]
+    );
+    assert!(!changed.actions[7].is_dispatchable);
+    assert_eq!(*h.service.subscribe_snapshot().borrow(), changed);
+    h.sql("CREATE TRIGGER reject_shortcut BEFORE DELETE ON keyboard_shortcut_overrides BEGIN SELECT RAISE(ABORT, 'test'); END");
+    assert!(h.service.reset_shortcut("quick_note.open_global").is_err());
+    assert!(!watch.has_changed().unwrap());
+    assert_eq!(*watch.borrow(), changed);
 }

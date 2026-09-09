@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "quick-note",
+  "description": "Keeps the Quick Note window on custom, caller-authorized commands only.",
+  "windows": ["quick-note"],
+  "permissions": []
+}

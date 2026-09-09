@@ -53,13 +53,13 @@ XWork có đúng một cửa sổ `quick-note` tạo lười, đưa ra trước 
 | `src-tauri/src/platform/mod.rs` | Export adapter global shortcut dùng bởi app composition |
 | `src-tauri/src/platform/global_shortcut.rs` | Chuyển `ShortcutChordDto` sang OS shortcut, register/unregister và seam test không chứa rule Quick Note |
 | `src-tauri/src/settings/mod.rs` | Re-export public snapshot/watch của Keyboard Shortcuts cho app composition |
-| `src-tauri/src/settings/keyboard_shortcuts.rs` | Thêm catalog action Phase 3 `quick_note.open_global` và `subscribe()` đúng contract BE-009; không đổi schema |
+| `src-tauri/src/settings/keyboard_shortcuts.rs` | Thêm catalog action Phase 3 `quick_note.open_global` và `subscribe_snapshot()` đúng contract BE-009; không đổi schema |
 | `src-tauri/src/notes/commands.rs` | Giữ authorization `create_note` cho đúng caller `main` hoặc `quick-note`; mọi command Notes khác vẫn từ chối window này |
 | `src-tauri/tauri.conf.json` | Giữ static window duy nhất là `main`, thêm capability identifier `quick-note` vào security list |
 | `src-tauri/capabilities/main.json` | Giữ permission list hiện hành, không cấp global-shortcut hoặc window plugin API cho main WebView |
 | `src-tauri/capabilities/quick-note.json` | Capability rỗng, scope đúng window label `quick-note`; custom commands vẫn tự authorize caller |
 | `package.json` | Giữ frontend dependency không có guest package global-shortcut vì plugin chỉ được gọi từ Rust |
-| `src-tauri/src/bin/export_bindings.rs` | Đăng ký status/error DTO BE-017 với binding generator |
+| `src-tauri/tests/export_bindings.rs` | Đăng ký status/error DTO BE-017 với binding generator |
 | `src/bindings/quick-note-window.ts` | Binding TypeScript aggregate sinh từ Rust; không sửa thủ công |
 | `src-tauri/tests/quick_note_window.rs` | Integration test window command, singleton, caller boundary, status/event và Notes save-close bằng test runtime |
 | `src-tauri/tests/keyboard_shortcuts_contract.rs` | Mở rộng Phase 3 cho catalog/watch `quick_note.open_global` và conflict projection |
@@ -167,7 +167,7 @@ pub(crate) trait GlobalShortcutPlatform: Send + Sync {
 
 `PlatformShortcutCode` bao phủ chính xác allowlist `key_code` của BE-009; conversion là exhaustive và phân biệt casing. `primary` map sang `CONTROL` trên Windows, `SUPER` trên macOS; `alt`/`shift` map trực tiếp. Adapter thật dùng `tauri_plugin_global_shortcut::GlobalShortcutExt`; handler builder nhận `ShortcutEvent` và chỉ chuyển trạng thái `Pressed` đến controller.
 
-BE-009 `subscribe()` trả ngay snapshot hiện hành rồi dùng `tokio::sync::watch`. App composition chỉ tìm exact action ID `quick_note.open_global`; thiếu action ở binary Phase 3 là lỗi cấu hình startup, không âm thầm dựng default khác trong BE-017.
+BE-009 `subscribe_snapshot()` trả ngay snapshot hiện hành rồi dùng `tokio::sync::watch`. App composition chỉ tìm exact action ID `quick_note.open_global`; thiếu action ở binary Phase 3 là lỗi cấu hình startup, không âm thầm dựng default khác trong BE-017.
 
 Reconcile được serialize và có thứ tự:
 
@@ -409,3 +409,17 @@ Window/plugin/platform test dùng adapter và mock runtime deterministic, không
 ## Câu hỏi mở
 
 - Không có.
+
+## Quyết định triển khai giai đoạn 19 — 2026-09-09
+
+BE-009 đã có subscribe() trả revision watch<u64>; BE-017 dùng subscribe_snapshot() mới để giữ tương thích. Generator thực tế nằm trong tests/export_bindings.rs, tự sinh file rồi báo stale-output để lần chạy kế tiếp xác nhận; không tạo binary generator khác. Kiểm chứng native Windows được ghi riêng, giữ pending khi chưa có môi trường disposable/operator; build và mock runtime không thay thế smoke native.
+
+
+## Quyết định triển khai 2026-09-09
+
+- Controller dùng async gate riêng cho window operations và reconcile; mọi native window operation được dispatch lên main thread qua oneshot. Không giữ blocking mutex qua dispatch. Native plugin register/unregister chạy từ blocking pool vì API plugin tự dispatch và chờ main thread.
+- Handler gắn theo từng registration bằng Rust `on_shortcut`, capture generation tại lúc đăng ký. Đây là cách hiện thực kiểm tra callback stale; không cần global handler nhận mọi chord và không thêm guest package hay permission.
+- Initial snapshot được kiểm tra có action trước khi setup hoàn tất; initial reconcile chạy sau setup để không chặn event loop. Trong khoảng ngắn chưa có status, getter trả `Unavailable`; tray đã có controller nên vẫn mở được cửa sổ và chưa hiển thị accelerator.
+- Close admission capture generation và native handle identity cùng một state snapshot. Handle của renderer cũ bị từ chối nếu label `quick-note` đã được tái sử dụng; callback `Destroyed` cũng chỉ clear generation tương ứng. Test adapter không cần native handle và không truy cập OS.
+- Shutdown vô hiệu handler, unregister best-effort trước runtime cleanup; cleanup lỗi thì reconcile lại snapshot mới nhất sau khi lifecycle khôi phục admission. Draft không tham gia Notes persistence hoặc Quit summary.
+- Native Windows smoke và số đo p95 chưa thực hiện vì môi trường không có native app-control. Test mock runtime, Rust integration và Tauri build không thay thế native acceptance. macOS tiếp tục chờ chuẩn bị release.

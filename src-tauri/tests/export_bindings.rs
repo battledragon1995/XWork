@@ -511,3 +511,19 @@ fn notes_binding_matches_rust_contract() {
     assert!(!generated.contains("bigint"));
     assert_binding_is_current(binding_path(&["notes.ts"]), generated);
 }
+
+/// Generates the caller-scoped Quick Note window contract from Rust declarations.
+#[test]
+fn quick_note_binding_matches_rust_contract() {
+    use xwork_lib::app::quick_note::*;
+    let config = Config::default();
+    let generated = [
+        QuickNoteGlobalShortcutStateDto::export_to_string(&config).unwrap(),
+        QuickNoteGlobalShortcutStatusDto::export_to_string(&config).unwrap(),
+        QuickNoteWindowOperation::export_to_string(&config).unwrap(),
+        QuickNoteWindowError::export_to_string(&config).unwrap(),
+    ]
+    .join("\n");
+    assert!(generated.contains("sequence: string"));
+    assert_binding_is_current(binding_path(&["quick-note-window.ts"]), generated);
+}

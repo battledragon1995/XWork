@@ -15,6 +15,7 @@ use super::lifecycle::{
 
 pub(crate) const TRAY_ID: &str = "xwork.tray";
 pub(crate) const OPEN_MENU_ID: &str = "xwork.tray.open";
+pub(crate) const QUICK_NOTE_MENU_ID: &str = "quick_note";
 pub(crate) const QUIT_MENU_ID: &str = "xwork.tray.quit";
 pub(crate) const ATTENTION_GROUP_LABEL: &str = "Needs attention";
 const ATTENTION_HEADER_ID: &str = "xwork.tray.attention";
@@ -26,6 +27,7 @@ const NAVIGATE_SESSION_EVENT: &str = "app-navigate-session";
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum TrayEntry {
     Open,
+    QuickNote { accelerator: Option<String> },
     AttentionHeader,
     Session { menu_id: String, label: String },
     Separator,
@@ -36,6 +38,7 @@ pub(crate) enum TrayEntry {
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum TrayAction {
     Open,
+    QuickNote,
     Session(String),
     Quit,
     Unknown,
@@ -142,6 +145,14 @@ fn resolve_menu_action(entries: &[TrayEntry], menu_id: &str) -> TrayAction {
     if menu_id == OPEN_MENU_ID {
         return TrayAction::Open;
     }
+    if menu_id == QUICK_NOTE_MENU_ID
+        && entries.iter().any(
+            // Accepts Quick Note only after controller readiness adds its model entry.
+            |entry| matches!(entry, TrayEntry::QuickNote { .. }),
+        )
+    {
+        return TrayAction::QuickNote;
+    }
     if menu_id == QUIT_MENU_ID {
         return TrayAction::Quit;
     }
@@ -193,7 +204,7 @@ pub async fn tray_quit<R: Runtime>(
             Ok(TrayQuitOutcome::DialogShown(request))
         }
         QuitFlow::ProceedShutdown => {
-            state.finish_shutdown().await?;
+            super::quick_note::finish_shutdown(app).await?;
             Ok(TrayQuitOutcome::ReadyToExit)
         }
     }
@@ -265,12 +276,15 @@ async fn attention_menu_snapshot<R: Runtime>(
         .transpose()?;
     let state = app.state::<AppLifecycleState>();
     let sessions = state.attention_sessions().await?;
-    Ok((refresh_ticket, build_tray_menu_model(&sessions)))
+    Ok((
+        refresh_ticket,
+        with_quick_note(app, build_tray_menu_model(&sessions)),
+    ))
 }
 
 /// Attaches the Phase 1 native tray using the existing application icon.
 pub(crate) fn attach_native_tray<R: Runtime>(app: &AppHandle<R>) -> Result<(), AppLifecycleError> {
-    let model = build_tray_menu_model(&[]);
+    let model = with_quick_note(app, build_tray_menu_model(&[]));
     let menu = build_native_menu(app, &model)?;
     let icon =
         app.default_window_icon()
@@ -370,6 +384,22 @@ fn build_native_menu<R: Runtime>(
     for entry in model {
         builder = match entry {
             TrayEntry::Open => builder.text(OPEN_MENU_ID, "Open XWork"),
+            TrayEntry::QuickNote { accelerator } => {
+                let item = MenuItem::with_id(
+                    app,
+                    QUICK_NOTE_MENU_ID,
+                    "Quick Note",
+                    true,
+                    accelerator.as_deref(),
+                )
+                .map_err(
+                    // Keeps accelerator/menu construction errors in the tray category.
+                    |_| AppLifecycleError::TrayOperationFailed {
+                        operation: TrayOperation::BuildMenu,
+                    },
+                )?;
+                builder.item(&item)
+            }
             TrayEntry::AttentionHeader => {
                 let header = MenuItem::with_id(
                     app,
@@ -403,6 +433,20 @@ fn build_native_menu<R: Runtime>(
 async fn dispatch_native_action<R: Runtime>(app: AppHandle<R>, action: TrayAction) {
     let result = match action {
         TrayAction::Open => tray_open(&app),
+        TrayAction::QuickNote => {
+            let controller = app
+                .try_state::<super::quick_note::QuickNoteController>()
+                .map(
+                    // Releases the Tauri state borrow before waiting for native work.
+                    |state| state.inner().clone(),
+                );
+            if let Some(controller) = controller
+                && controller.open().await.is_err()
+            {
+                eprintln!("quick-note tray open failed");
+            }
+            Ok(())
+        }
         TrayAction::Quit => match tray_quit(&app).await {
             Ok(TrayQuitOutcome::ReadyToExit) => {
                 app.exit(0);
@@ -447,6 +491,36 @@ fn format_session_label(session: &AttentionSession) -> String {
     ))
 }
 
+/// Adds the ready singleton entry and displays only an actually registered accelerator.
+fn with_quick_note<R: Runtime>(app: &AppHandle<R>, mut model: Vec<TrayEntry>) -> Vec<TrayEntry> {
+    if let Some(controller) = app.try_state::<super::quick_note::QuickNoteController>() {
+        let accelerator = controller.status().ok().and_then(
+            // No accelerator is advertised for conflicts or failed OS registration.
+            |status| {
+                if status.state != super::quick_note::QuickNoteGlobalShortcutStateDto::Active {
+                    return None;
+                }
+                let key_code = crate::platform::global_shortcut::PlatformShortcutCode::try_from(
+                    status.chord.key_code.as_str(),
+                )
+                .ok()?;
+                Some(
+                    crate::platform::global_shortcut::PlatformShortcut {
+                        primary: status.chord.primary,
+                        alt: status.chord.alt,
+                        shift: status.chord.shift,
+                        key_code,
+                    }
+                    .native()
+                    .to_string(),
+                )
+            },
+        );
+        model.insert(1, TrayEntry::QuickNote { accelerator });
+    }
+    model
+}
+
 #[cfg(test)]
 mod tests {
     use std::{cell::Cell, sync::Mutex};
@@ -466,6 +540,29 @@ mod tests {
             status_label: None,
             attention_sequence: sequence,
         }
+    }
+
+    /// Accepts the stable Quick Note identifier only while its ready entry is attached.
+    #[test]
+    fn quick_note_action_requires_a_ready_menu_entry() {
+        let mut model = build_tray_menu_model(&[]);
+        assert_eq!(
+            resolve_menu_action(&model, super::QUICK_NOTE_MENU_ID),
+            TrayAction::Unknown
+        );
+        model.insert(
+            1,
+            TrayEntry::QuickNote {
+                accelerator: Some("control+shift+KeyN".into()),
+            },
+        );
+        assert_eq!(
+            resolve_menu_action(&model, super::QUICK_NOTE_MENU_ID),
+            TrayAction::QuickNote
+        );
+        assert_eq!(model[0], TrayEntry::Open);
+        assert_eq!(model[2], TrayEntry::Separator);
+        assert_eq!(model[3], TrayEntry::Quit);
     }
 
     /// Verifies that the empty Phase 1 model omits the attention group.

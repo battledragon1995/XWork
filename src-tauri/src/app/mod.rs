@@ -51,6 +51,7 @@ pub mod data_participants;
 pub mod data_runtime;
 pub mod lifecycle;
 mod notification_dependencies;
+pub mod quick_note;
 mod search_sources;
 pub mod tray;
 
@@ -107,6 +108,7 @@ pub fn configure<R: Runtime>(builder: Builder<R>) -> Builder<R> {
     ));
 
     let builder = builder
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_notification::init());
     configure_app(
@@ -382,6 +384,10 @@ fn native_project_collaborators<R: Runtime>(app: &AppHandle<R>) -> ProjectCollab
 /// Creates the single command router shared by production and tests.
 fn app_invoke_handler<R: Runtime>() -> impl Fn(tauri::ipc::Invoke<R>) -> bool + Send + Sync {
     tauri::generate_handler![
+        quick_note::open_quick_note_window,
+        quick_note::close_quick_note_window,
+        quick_note::start_quick_note_window_drag,
+        quick_note::get_quick_note_global_shortcut_status,
         crate::notes::commands::list_notes,
         crate::notes::commands::get_note,
         crate::notes::commands::create_note,
@@ -595,6 +601,12 @@ where
                     },
                 );
                 app.manage(AppLifecycleState::new(runtime));
+                if app
+                    .try_state::<tauri_plugin_global_shortcut::GlobalShortcut<R>>()
+                    .is_some()
+                {
+                    quick_note::setup(app.handle())?;
+                }
                 attach_tray(app.handle())?;
                 Ok(())
             },

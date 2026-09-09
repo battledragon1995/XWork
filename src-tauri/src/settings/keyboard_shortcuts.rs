@@ -298,6 +298,14 @@ const CATALOG: &[CatalogAction] = &[
         shift: true,
         code: "ArrowRight",
     },
+    CatalogAction {
+        id: "quick_note.open_global",
+        label: "Open Quick Note",
+        category: ShortcutCategoryDto::Global,
+        alt: false,
+        shift: true,
+        code: "KeyN",
+    },
 ];
 
 /// Resolves an exact stable action identifier.
@@ -444,7 +452,11 @@ fn project(overrides: HashMap<String, ShortcutChordDto>) -> KeyboardShortcutsCom
             action_id: action.id.into(),
             label: action.label.into(),
             category: action.category,
-            scope: ShortcutScopeDto::Application,
+            scope: if action.category == ShortcutCategoryDto::Global {
+                ShortcutScopeDto::Global
+            } else {
+                ShortcutScopeDto::Application
+            },
             is_custom: current_chord != default_chord,
             default_chord,
             current_chord,
@@ -523,6 +535,7 @@ struct KeyboardShortcutsServiceInner {
     write_gate: Mutex<()>,
     cache: RwLock<KeyboardShortcutsCommittedProjection>,
     revisions: tokio::sync::watch::Sender<u64>,
+    snapshots: tokio::sync::watch::Sender<KeyboardShortcutsDto>,
     shutting_down: AtomicBool,
 }
 
@@ -534,6 +547,7 @@ impl KeyboardShortcutsService {
     ) -> Result<Self, KeyboardShortcutsError> {
         let cache = storage.with_connection(read_projection)?;
         let (revisions, _) = tokio::sync::watch::channel(0);
+        let (snapshots, _) = tokio::sync::watch::channel(cache.snapshot.clone());
         Ok(Self {
             inner: Arc::new(KeyboardShortcutsServiceInner {
                 storage,
@@ -541,6 +555,7 @@ impl KeyboardShortcutsService {
                 write_gate: Mutex::new(()),
                 cache: RwLock::new(cache),
                 revisions,
+                snapshots,
                 shutting_down: AtomicBool::new(false),
             }),
         })
@@ -553,6 +568,10 @@ impl KeyboardShortcutsService {
     /// Subscribes internal consumers to committed shortcut invalidations.
     pub fn subscribe(&self) -> tokio::sync::watch::Receiver<u64> {
         self.inner.revisions.subscribe()
+    }
+    /// Subscribes to the latest committed complete catalog, retaining updates without listeners.
+    pub fn subscribe_snapshot(&self) -> tokio::sync::watch::Receiver<KeyboardShortcutsDto> {
+        self.inner.snapshots.subscribe()
     }
     /// Rejects new work after shutdown begins.
     pub fn begin_shutdown(&self) {
@@ -787,9 +806,13 @@ impl KeyboardShortcutsService {
             // Commit is irreversible; retain poison for subsequent public admission while installing committed state.
             |poison| poison.into_inner(),
         );
+        let changed = cache.snapshot != projection.snapshot;
         *cache = projection;
+        if changed {
+            self.inner.snapshots.send_replace(cache.snapshot.clone());
+        }
         let next = self.inner.revisions.borrow().wrapping_add(1);
-        let _ = self.inner.revisions.send(next);
+        self.inner.revisions.send_replace(next);
     }
 }
 
@@ -818,9 +841,9 @@ fn authorize(label: &str) -> Result<(), KeyboardShortcutsError> {
 mod tests {
     use super::*;
 
-    /// Verifies every catalog field, declaration order, and default against the Phase 1 contract.
+    /// Preserves application action order and defaults when the global action is appended.
     #[test]
-    fn catalog_lists_eighteen_actions_in_contract_order() {
+    fn catalog_preserves_application_actions_before_the_global_action() {
         use ShortcutCategoryDto::{Navigation, Panes, Tabs};
         let expected = [
             (
@@ -948,7 +971,7 @@ mod tests {
             ),
         ];
         let snapshot = project(HashMap::new()).snapshot;
-        assert_eq!(snapshot.actions.len(), expected.len());
+        assert_eq!(snapshot.actions.len(), expected.len() + 1);
         let mut ids = HashSet::new();
         let mut defaults = HashSet::new();
         for (action, (id, label, category, alt, shift, code)) in

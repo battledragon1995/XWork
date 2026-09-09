@@ -390,7 +390,7 @@ fn projects_composition_routes_lifecycle_and_projects_commands() {
         .expect("shortcuts should be routed")
         .deserialize::<serde_json::Value>()
         .unwrap();
-    assert_eq!(shortcuts["actions"].as_array().unwrap().len(), 18);
+    assert_eq!(shortcuts["actions"].as_array().unwrap().len(), 19);
     let search = tauri::test::get_ipc_response(
         &main,
         invoke_request_with_body(
