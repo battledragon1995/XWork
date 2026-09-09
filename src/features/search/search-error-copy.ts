@@ -22,6 +22,7 @@ export function sourceFailureCopy(failure: SearchSourceFailureDto): string {
     sessions: "Sessions",
     files: "Files",
     notes: "Notes",
+    events: "Events",
     commands: "Commands",
   };
   return `${labels[failure.source]}: ${failure.reason === "timeout" ? "Timed out" : "Unavailable"}`;

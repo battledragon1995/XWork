@@ -304,3 +304,70 @@ impl NotesDataParticipant {
         self.service.publish_data_change(projection);
     }
 }
+
+/// Adapts Events to shared transactions and public project remapping.
+#[derive(Clone)]
+pub struct EventsDataParticipant {
+    service: crate::calendar::CalendarService,
+}
+impl EventsDataParticipant {
+    /// Wraps the single managed Events owner.
+    pub fn new(service: crate::calendar::CalendarService) -> Self {
+        Self { service }
+    }
+    /// Exports base definitions in deterministic identity order.
+    pub fn export(
+        &self,
+        tx: &Transaction<'_>,
+    ) -> Result<Vec<crate::calendar::EventBackupRecordV1>, crate::calendar::CalendarError> {
+        self.service.export_events_in(tx)
+    }
+    /// Clones parsed records before resolving nullable source project links.
+    pub fn prepare_import(
+        &self,
+        tx: &Transaction<'_>,
+        records: &[crate::calendar::EventBackupRecordV1],
+        map: &ProjectImportMap,
+    ) -> Result<crate::calendar::PreparedEventMerge, crate::calendar::CalendarError> {
+        let records = records
+            .iter()
+            .cloned()
+            .map(
+                // Leaves the immutable parsed package untouched while mapping owned copies.
+                |mut record| {
+                    record.project_id = record
+                        .project_id
+                        .as_deref()
+                        .and_then(
+                            // Uses only the public Projects mapping authority.
+                            |id| map.resolve(id),
+                        )
+                        .map(str::to_owned);
+                    record
+                },
+            )
+            .collect::<Vec<_>>();
+        self.service.prepare_event_merge_in(tx, &records)
+    }
+    /// Applies a prevalidated plan after Projects in the shared transaction.
+    pub fn apply_import(
+        &self,
+        tx: &Transaction<'_>,
+        plan: &crate::calendar::PreparedEventMerge,
+    ) -> Result<crate::calendar::CalendarMaintenanceProjection, crate::calendar::CalendarError>
+    {
+        self.service.apply_event_merge_in(tx, plan)
+    }
+    /// Deletes Events before Projects in a shared reset transaction.
+    pub fn apply_reset(
+        &self,
+        tx: &Transaction<'_>,
+    ) -> Result<crate::calendar::CalendarMaintenanceProjection, crate::calendar::CalendarError>
+    {
+        self.service.reset_events_in(tx)
+    }
+    /// Consumes committed projections without a database requery.
+    pub fn publish_after_commit(&self, projection: crate::calendar::CalendarMaintenanceProjection) {
+        self.service.publish_event_maintenance(projection);
+    }
+}

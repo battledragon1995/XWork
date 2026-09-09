@@ -39,6 +39,7 @@ pub enum SearchResultKindDto {
     Session,
     File,
     Note,
+    Event,
     Command,
 }
 
@@ -82,6 +83,9 @@ pub enum SearchTargetDto {
     Note {
         note_id: String,
     },
+    Event {
+        event_id: String,
+    },
     Command {
         action_id: String,
         project_id: Option<String>,
@@ -124,6 +128,7 @@ pub enum SearchSourceDto {
     Sessions,
     Files,
     Notes,
+    Events,
     Commands,
 }
 
@@ -317,4 +322,24 @@ pub trait NoteSearchSource: Send + Sync {
         query: &'a str,
         candidate_limit: u32,
     ) -> SearchFuture<'a, Result<SearchCandidates<NoteSearchDocument>, SearchSourceError>>;
+}
+
+/// Carries one base Calendar series through the public Search source boundary.
+#[derive(Clone, Debug)]
+pub struct EventSearchDocument {
+    pub event_id: String,
+    pub title: String,
+    pub matching_description: Option<String>,
+    pub starts_at_ms: i64,
+    pub time_zone_id: String,
+    pub project_name: Option<String>,
+}
+/// Queries base Event definitions without expanding recurrence in Search.
+pub trait EventSearchSource: Send + Sync {
+    /// Returns bounded owner-matched candidates with explicit continuation status.
+    fn search_events<'a>(
+        &'a self,
+        query: &'a str,
+        candidate_limit: u32,
+    ) -> SearchFuture<'a, Result<SearchCandidates<EventSearchDocument>, SearchSourceError>>;
 }

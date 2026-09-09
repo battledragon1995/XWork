@@ -510,3 +510,181 @@ fn notes_commands_and_search_use_the_managed_public_owner() {
     );
     assert_eq!(response["groups"][0]["hasMore"], true);
 }
+
+mod calendar_search_contract {
+    use std::sync::Arc;
+    use xwork_lib::search::*;
+
+    struct OtherSources;
+    impl ProjectSearchSource for OtherSources {
+        /// Supplies an unrelated successful source during Event failures.
+        fn list_projects<'a>(
+            &'a self,
+        ) -> SearchFuture<'a, Result<Vec<ProjectSearchDocument>, SearchSourceError>> {
+            Box::pin(async { Ok(vec![]) })
+        }
+    }
+    impl SessionSearchSource for OtherSources {
+        /// Keeps runtime sessions isolated from this source contract.
+        fn list_sessions<'a>(
+            &'a self,
+        ) -> SearchFuture<'a, Result<Vec<SessionSearchDocument>, SearchSourceError>> {
+            Box::pin(async { Ok(vec![]) })
+        }
+    }
+    impl ShortcutCatalogSource for OtherSources {
+        /// Leaves built-in commands available to verify partial-source success.
+        fn shortcut_actions(&self) -> Result<Vec<ShortcutActionSearchDocument>, SearchSourceError> {
+            Ok(vec![])
+        }
+    }
+
+    enum EventFixture {
+        Ready(Vec<EventSearchDocument>, bool),
+        Unavailable,
+        Pending,
+    }
+    impl EventSearchSource for EventFixture {
+        /// Returns an owned bounded fixture or a controlled failure without OS state.
+        fn search_events<'a>(
+            &'a self,
+            _query: &'a str,
+            candidate_limit: u32,
+        ) -> SearchFuture<'a, Result<SearchCandidates<EventSearchDocument>, SearchSourceError>>
+        {
+            assert_eq!(candidate_limit, 64);
+            Box::pin(async move {
+                match self {
+                    Self::Ready(items, has_more) => Ok(SearchCandidates {
+                        items: items.clone(),
+                        has_more: *has_more,
+                    }),
+                    Self::Unavailable => Err(SearchSourceError::Unavailable),
+                    Self::Pending => std::future::pending().await,
+                }
+            })
+        }
+    }
+
+    /// Creates an Event-enabled service using only deterministic public source ports.
+    fn service(events: EventFixture) -> SearchService {
+        let other = Arc::new(OtherSources);
+        SearchService::new(other.clone(), other.clone(), other)
+            .unwrap()
+            .with_events(Arc::new(events))
+    }
+
+    /// Runs search with an automatically advancing isolated monotonic test clock.
+    fn search(service: SearchService, query: &str) -> UnifiedSearchResponseDto {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_time()
+            .start_paused(true)
+            .build()
+            .unwrap()
+            .block_on(service.search(UnifiedSearchInputDto {
+                query: query.into(),
+                context_project_id: None,
+            }))
+            .unwrap()
+    }
+
+    /// Constructs one base definition candidate without materialized occurrences.
+    fn document(id: u32, title: &str, starts_at_ms: i64) -> EventSearchDocument {
+        EventSearchDocument {
+            event_id: format!("00000000-0000-4000-8000-{id:012}"),
+            title: title.into(),
+            matching_description: None,
+            starts_at_ms,
+            time_zone_id: "UTC".into(),
+            project_name: None,
+        }
+    }
+
+    /// Preserves Unicode-scalar highlights and stable start/identity ranking at the group cap.
+    #[test]
+    fn event_group_has_unicode_highlights_stable_order_and_eight_item_cap() {
+        let mut items = Vec::new();
+        for id in (1..=10).rev() {
+            items.push(document(
+                id,
+                "📅 Họp",
+                if id <= 2 { 0 } else { i64::from(id) },
+            ));
+        }
+        let response = search(service(EventFixture::Ready(items, false)), "họp");
+        let group = response
+            .groups
+            .iter()
+            .find(
+                // Selects the Calendar group independently of built-in command order.
+                |group| group.kind == SearchResultKindDto::Event,
+            )
+            .unwrap();
+        assert_eq!(group.results.len(), 8);
+        assert!(group.has_more);
+        assert_eq!(
+            group.results[0].target,
+            SearchTargetDto::Event {
+                event_id: "00000000-0000-4000-8000-000000000001".into()
+            }
+        );
+        assert_eq!(
+            group.results[1].target,
+            SearchTargetDto::Event {
+                event_id: "00000000-0000-4000-8000-000000000002".into()
+            }
+        );
+        assert_eq!(
+            group.results[0].title_highlights,
+            vec![SearchTextRangeDto {
+                start_scalar: 2,
+                end_scalar: 5
+            }]
+        );
+        assert!(group.results.iter().all(
+            // Calendar details have no file-style split-opening action.
+            |result| !result.supports_open_in_split
+        ));
+    }
+
+    /// Propagates bounded owner continuation even when fewer than eight matches arrive.
+    #[test]
+    fn event_source_continuation_is_not_silently_lost() {
+        let response = search(
+            service(EventFixture::Ready(vec![document(1, "Planning", 0)], true)),
+            "planning",
+        );
+        let group = response
+            .groups
+            .iter()
+            .find(
+                // Retrieves the group whose continuation belongs to the owner.
+                |group| group.kind == SearchResultKindDto::Event,
+            )
+            .unwrap();
+        assert_eq!(group.results.len(), 1);
+        assert!(group.has_more);
+    }
+
+    /// Event timeout/unavailability remain redacted while successful command results survive.
+    #[test]
+    fn event_failure_and_timeout_preserve_other_search_groups() {
+        for (fixture, reason) in [
+            (
+                EventFixture::Unavailable,
+                SearchSourceFailureReasonDto::Unavailable,
+            ),
+            (EventFixture::Pending, SearchSourceFailureReasonDto::Timeout),
+        ] {
+            let response = search(service(fixture), "settings");
+            assert!(response.groups.iter().any(
+                // Built-in Settings commands remain visible on partial source failure.
+                |group| group.kind == SearchResultKindDto::Command && !group.results.is_empty()
+            ));
+            assert!(response.source_failures.contains(&SearchSourceFailureDto {
+                source: SearchSourceDto::Events,
+                reason
+            }));
+        }
+    }
+}

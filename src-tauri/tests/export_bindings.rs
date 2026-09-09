@@ -294,7 +294,7 @@ fn search_binding_matches_rust_contract() {
     assert!(generated.contains("actionId"));
     assert!(generated.contains("relativePath"));
     assert!(generated.contains("noteId"));
-    assert!(!generated.contains("eventId"));
+    assert!(generated.contains("eventId"));
     assert_binding_is_current(binding_path(&["search.ts"]), generated);
 }
 
@@ -526,4 +526,38 @@ fn quick_note_binding_matches_rust_contract() {
     .join("\n");
     assert!(generated.contains("sequence: string"));
     assert_binding_is_current(binding_path(&["quick-note-window.ts"]), generated);
+}
+
+/// Generates Calendar's public IPC declarations from their Rust source of truth.
+#[test]
+fn calendar_binding_matches_rust_contract() {
+    use xwork_lib::calendar::*;
+    let config = Config::default();
+    let generated = [
+        CalendarWeekdayDto::export_to_string(&config).unwrap(),
+        EventRecurrenceEndDto::export_to_string(&config).unwrap(),
+        EventRecurrenceDto::export_to_string(&config).unwrap(),
+        EventTimeInputDto::export_to_string(&config).unwrap(),
+        EventTimeDto::export_to_string(&config).unwrap(),
+        EventInputDto::export_to_string(&config).unwrap(),
+        EventReminderDto::export_to_string(&config).unwrap(),
+        CalendarEventDto::export_to_string(&config).unwrap(),
+        CalendarRangeInputDto::export_to_string(&config).unwrap(),
+        CalendarOccurrenceDto::export_to_string(&config).unwrap(),
+        CalendarOccurrenceListDto::export_to_string(&config).unwrap(),
+        EventRevisionInputDto::export_to_string(&config).unwrap(),
+        UpdateCalendarEventInputDto::export_to_string(&config).unwrap(),
+        DeleteCalendarEventImpactDto::export_to_string(&config).unwrap(),
+        ConfirmDeleteCalendarEventInputDto::export_to_string(&config).unwrap(),
+        DeletedCalendarEventDto::export_to_string(&config).unwrap(),
+        CalendarChangeKindDto::export_to_string(&config).unwrap(),
+        CalendarChangedEventDto::export_to_string(&config).unwrap(),
+        CalendarError::export_to_string(&config).unwrap(),
+    ]
+    .join("\n");
+    assert!(generated.contains("createdAtMs: number"));
+    assert!(generated.contains("revision: string"));
+    assert!(!generated.contains("bigint"));
+    assert!(!generated.contains("BackupRecord"));
+    assert_binding_is_current(binding_path(&["calendar.ts"]), generated);
 }

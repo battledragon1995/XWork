@@ -1,3 +1,4 @@
+use super::{EventSearchDocument, EventSearchSource};
 use super::{NoteSearchDocument, NoteSearchSource};
 use std::{
     collections::{HashMap, HashSet},
@@ -74,6 +75,7 @@ pub struct SearchService {
     shortcuts: Arc<dyn ShortcutCatalogSource>,
     files: Arc<dyn FileSearchSource>,
     notes: Arc<dyn NoteSearchSource>,
+    events: Arc<dyn EventSearchSource>,
 }
 
 /// Retains ranking metadata until one group has been sorted and capped.
@@ -127,6 +129,7 @@ impl SearchService {
             shortcuts,
             files,
             notes: Arc::new(EmptyNoteSearchSource),
+            events: Arc::new(EmptyEventSearchSource),
         })
     }
 
@@ -141,6 +144,12 @@ impl SearchService {
         let mut service = Self::new_with_files(projects, sessions, files, shortcuts)?;
         service.notes = notes;
         Ok(service)
+    }
+
+    /// Adds the real Calendar source while keeping historical constructors usable.
+    pub fn with_events(mut self, events: Arc<dyn EventSearchSource>) -> Self {
+        self.events = events;
+        self
     }
 
     /// Validates input, queries active sources, and builds one partial response.
@@ -166,16 +175,23 @@ impl SearchService {
                     timeout(SOURCE_TIMEOUT, self.sessions.list_sessions()),
                     timeout(SOURCE_TIMEOUT, self.files.search_files(&query, 64)),
                 ),
-                timeout(SOURCE_TIMEOUT, self.notes.search_notes(&query, 64)),
+                join_two(
+                    timeout(SOURCE_TIMEOUT, self.notes.search_notes(&query, 64)),
+                    timeout(SOURCE_TIMEOUT, self.events.search_events(&query, 64)),
+                ),
             ),
         )
         .await;
-        let (projects, sessions, files, notes) = match joined {
-            Ok(((project_outcome, session_outcome, file_outcome), note_outcome)) => (
+        let (projects, sessions, files, notes, events) = match joined {
+            Ok((
+                (project_outcome, session_outcome, file_outcome),
+                (note_outcome, event_outcome),
+            )) => (
                 source_outcome(project_outcome, SearchSourceDto::Projects, &mut failures),
                 source_outcome(session_outcome, SearchSourceDto::Sessions, &mut failures),
                 candidate_outcome(file_outcome, SearchSourceDto::Files, &mut failures),
                 candidate_outcome(note_outcome, SearchSourceDto::Notes, &mut failures),
+                candidate_outcome(event_outcome, SearchSourceDto::Events, &mut failures),
             ),
             Err(_) => {
                 failures.push(failure(
@@ -194,7 +210,11 @@ impl SearchService {
                     SearchSourceDto::Notes,
                     SearchSourceFailureReasonDto::Timeout,
                 ));
-                (None, None, None, None)
+                failures.push(failure(
+                    SearchSourceDto::Events,
+                    SearchSourceFailureReasonDto::Timeout,
+                ));
+                (None, None, None, None, None)
             }
         };
         let shortcut_outcome = self.shortcuts.shortcut_actions();
@@ -253,6 +273,18 @@ impl SearchService {
             )) {
                 replace_failure(&mut failures, SearchSourceDto::Notes);
             } else if let Some(group) = note_group(&query, candidates) {
+                groups.push(group);
+            }
+        }
+        if let Some(candidates) = events {
+            if candidates.items.len() > 64
+                || has_duplicate(candidates.items.iter().map(
+                    // Rejects source identity duplication before presenting Events.
+                    |event| event.event_id.as_str(),
+                ))
+            {
+                replace_failure(&mut failures, SearchSourceDto::Events);
+            } else if let Some(group) = event_group(&query, candidates) {
                 groups.push(group);
             }
         }
@@ -472,6 +504,7 @@ fn source_order(source: SearchSourceDto) -> u8 {
         SearchSourceDto::Sessions => 1,
         SearchSourceDto::Files => 2,
         SearchSourceDto::Notes => 3,
+        SearchSourceDto::Events => 4,
         SearchSourceDto::Commands => 5,
     }
 }
@@ -861,6 +894,84 @@ fn note_group(
         Some(SearchGroupDto {
             kind: SearchResultKindDto::Note,
             label: "Notes".into(),
+            has_more,
+            results: scored
+                .into_iter()
+                .map(
+                    // Removes internal ranking metadata.
+                    |(_, _, result)| result,
+                )
+                .collect(),
+        })
+    }
+}
+
+/// Leaves Events inactive only for historical isolated constructors.
+struct EmptyEventSearchSource;
+impl EventSearchSource for EmptyEventSearchSource {
+    /// Returns no Calendar candidates until a real owner is composed.
+    fn search_events<'a>(
+        &'a self,
+        _query: &'a str,
+        _limit: u32,
+    ) -> super::SearchFuture<'a, Result<SearchCandidates<EventSearchDocument>, SearchSourceError>>
+    {
+        Box::pin(async {
+            Ok(SearchCandidates {
+                items: Vec::new(),
+                has_more: false,
+            })
+        })
+    }
+}
+/// Ranks one base series per owner result with stable start/identity tie breaking.
+fn event_group(
+    query: &str,
+    candidates: SearchCandidates<EventSearchDocument>,
+) -> Option<SearchGroupDto> {
+    let mut scored = Vec::new();
+    for event in candidates.items {
+        let context = match (&event.project_name, &event.matching_description) {
+            (Some(project), Some(description)) => Some(format!("{project} › {description}")),
+            (Some(project), None) => Some(project.clone()),
+            (None, description) => description.clone(),
+        };
+        let ranked = rank_text(query, &event.title, context.as_deref(), &[query.to_owned()])
+            .expect("owner-matched query remains a keyword match");
+        scored.push((
+            ranked.score,
+            event.starts_at_ms,
+            SearchResultDto {
+                key: format!("event:{}", event.event_id),
+                kind: SearchResultKindDto::Event,
+                title: ranked.title,
+                context: ranked.context,
+                title_highlights: ranked.title_highlights,
+                context_highlights: ranked.context_highlights,
+                target: SearchTargetDto::Event {
+                    event_id: event.event_id,
+                },
+                shortcut: None,
+                supports_open_in_split: false,
+            },
+        ));
+    }
+    scored.sort_by(
+        // Orders shared rank first, then earliest base start and stable identity.
+        |a, b| {
+            b.0.cmp(&a.0)
+                .then(a.1.cmp(&b.1))
+                .then(a.2.key.cmp(&b.2.key))
+        },
+    );
+    let has_more = candidates.has_more || scored.len() > GROUP_LIMIT;
+    scored.truncate(GROUP_LIMIT);
+    if scored.is_empty() {
+        None
+    } else {
+        Some(SearchGroupDto {
+            kind: SearchResultKindDto::Event,
+            label: "Events".into(),
             has_more,
             results: scored
                 .into_iter()

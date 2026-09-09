@@ -2213,6 +2213,11 @@ fn phase_one_service_round_trips_and_resets_temp_storage() {
     .expect("CLI profile fixtures should finish hydration before import");
 
     let participants = DataParticipants {
+        events: xwork_lib::app::data_participants::EventsDataParticipant::new(
+            app.state::<xwork_lib::calendar::CalendarService>()
+                .inner()
+                .clone(),
+        ),
         notes: xwork_lib::app::data_participants::NotesDataParticipant::new(
             app.state::<xwork_lib::notes::NotesService>()
                 .inner()
@@ -2297,7 +2302,7 @@ fn phase_one_service_round_trips_and_resets_temp_storage() {
         assert!(matches!(
             outcome,
             BackupExportOutcomeDto::Exported {
-                schema_version: 2,
+                schema_version: 3,
                 ..
             }
         ));
@@ -2317,7 +2322,11 @@ fn phase_one_service_round_trips_and_resets_temp_storage() {
         );
 
         let mut v2: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
-        assert_eq!(v2["schemaVersion"], 2);
+        assert_eq!(v2["schemaVersion"], 3);
+        assert_eq!(v2["data"]["events"], serde_json::json!([]));
+        assert!(v2["data"].get("notificationSettings").is_none());
+        v2["schemaVersion"] = serde_json::json!(2);
+        v2["data"].as_object_mut().unwrap().remove("events");
         assert!(v2["data"]["notes"][0].get("revision").is_none());
         v2["data"]["notes"][0]["contentMarkdown"] = serde_json::json!("incoming v2");
         v2["data"]["notes"][0]["projectId"] =
@@ -2374,12 +2383,195 @@ fn phase_one_service_round_trips_and_resets_temp_storage() {
             std::fs::read(&import_path).unwrap(),
             serde_json::to_vec(&v2).unwrap()
         );
+        let mut v3 = v2.clone();
+        v3["schemaVersion"] = serde_json::json!(3);
+        v3["data"]["events"] = serde_json::json!([{
+            "id": "70000000-0000-4000-8000-000000000001", "title": "Backup event", "description": "Round-trip",
+            "projectId": "10000000-0000-4000-8000-000000000001",
+            "time": { "kind": "timed", "startLocal": "2026-09-09T10:00", "endLocal": "2026-09-09T11:00", "timeZoneId": "Asia/Bangkok" },
+            "recurrence": { "kind": "none" },
+            "reminders": [{ "id": "80000000-0000-4000-8000-000000000001", "minutesBefore": 15 }],
+            "createdAtMs": 1, "updatedAtMs": 2
+        }]);
+        v3["data"]["notificationSettings"] = serde_json::Value::Null;
+        std::fs::write(&import_path, serde_json::to_vec(&v3).unwrap()).unwrap();
+        assert!(matches!(
+            service.prepare_import_backup().await,
+            Err(
+                xwork_lib::settings::DataManagementError::DomainValidationFailed {
+                    domain: xwork_lib::settings::BackupDomainDto::Settings
+                }
+            )
+        ));
+        v3["data"]
+            .as_object_mut()
+            .unwrap()
+            .remove("notificationSettings");
+        std::fs::write(&import_path, serde_json::to_vec(&v3).unwrap()).unwrap();
+        let PrepareBackupImportOutcomeDto::Ready { preview } =
+            service.prepare_import_backup().await.unwrap()
+        else {
+            panic!("selected fixture")
+        };
+        assert_eq!(preview.counts.events, Some(1));
+        app.state::<Storage>().with_connection(
+            // Fails Calendar insertion after earlier owner writes to verify atomic rollback.
+            |db| { db.execute_batch("CREATE TRIGGER reject_event_import BEFORE INSERT ON calendar_events BEGIN SELECT RAISE(ABORT,'injected'); END;").unwrap(); Ok::<_, xwork_lib::storage::StorageError>(()) }
+        ).unwrap();
+        assert!(
+            service
+                .confirm_import_backup(preview.request_id)
+                .await
+                .is_err()
+        );
+        app.state::<Storage>()
+            .with_connection(
+                // Removes the isolated Calendar write failure before retrying the same prepared import.
+                |db| {
+                    db.execute_batch("DROP TRIGGER reject_event_import;")
+                        .unwrap();
+                    Ok::<_, xwork_lib::storage::StorageError>(())
+                },
+            )
+            .unwrap();
+        service
+            .confirm_import_backup(preview.request_id)
+            .await
+            .unwrap();
+        let calendar = app.state::<xwork_lib::calendar::CalendarService>();
+        let stored = app
+            .state::<Storage>()
+            .with_transaction(
+                // Uses the public maintenance snapshot to check persisted backup identities.
+                |tx| calendar.export_events_in(tx),
+            )
+            .unwrap();
+        assert_eq!(stored.len(), 1);
+        assert_eq!(
+            stored[0].project_id.as_deref(),
+            Some("10000000-0000-4000-8000-000000000001")
+        );
+        service.export_backup().await.unwrap();
+        let exported: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&export_path).unwrap()).unwrap();
+        assert_eq!(exported["data"]["events"], v3["data"]["events"]);
+        assert!(exported["data"]["events"][0].get("revision").is_none());
+        assert!(
+            exported["data"]["events"][0]["time"]
+                .get("startAtMs")
+                .is_none()
+        );
+        let events_adapter =
+            xwork_lib::app::data_participants::EventsDataParticipant::new(calendar.inner().clone());
+        let projects_adapter = app.state::<ProjectsDataParticipant>();
+        let mut dangling = stored.clone();
+        dangling[0].project_id = Some("90000000-0000-4000-8000-000000000099".into());
+        let result = app.state::<Storage>().with_transaction(
+            // Resolves both local-only and dangling project links using the public map, then rolls back.
+            |tx| {
+                let projects = projects_adapter.prepare_import(tx, &[]).unwrap();
+                let local_plan =
+                    events_adapter.prepare_import(tx, &stored, &projects.import_map)?;
+                events_adapter.apply_import(tx, &local_plan)?;
+                assert_eq!(
+                    calendar.export_events_in(tx)?[0].project_id,
+                    stored[0].project_id
+                );
+                let dangling_plan =
+                    events_adapter.prepare_import(tx, &dangling, &projects.import_map)?;
+                events_adapter.apply_import(tx, &dangling_plan)?;
+                assert_eq!(calendar.export_events_in(tx)?[0].project_id, None);
+                Err::<(), _>(xwork_lib::calendar::CalendarError::StorageUnavailable)
+            },
+        );
+        assert!(result.is_err());
+        assert_eq!(
+            dangling[0].project_id.as_deref(),
+            Some("90000000-0000-4000-8000-000000000099")
+        );
+        let mut incoming = stored.clone();
+        incoming[0].reminders[0].minutes_before = 30;
+        let (first, second) = app
+            .state::<Storage>()
+            .with_transaction(
+                // Preparing twice against the same snapshot must reserve identical semantic remaps.
+                |tx| {
+                    Ok::<_, xwork_lib::calendar::CalendarError>((
+                        calendar.prepare_event_merge_in(tx, &incoming)?,
+                        calendar.prepare_event_merge_in(tx, &incoming)?,
+                    ))
+                },
+            )
+            .unwrap();
+        let expected = uuid::Uuid::new_v5(&uuid::Uuid::NAMESPACE_OID,
+            b"xwork:event-reminder-import:70000000-0000-4000-8000-000000000001:80000000-0000-4000-8000-000000000001:30:0").to_string();
+        assert_eq!(first.reminder_id_remaps[0].effective_reminder_id, expected);
+        assert_eq!(second.reminder_id_remaps[0].effective_reminder_id, expected);
+        let mut duplicate = incoming.clone();
+        let duplicate_reminder = duplicate[0].reminders[0].clone();
+        duplicate[0].reminders.push(duplicate_reminder);
+        assert!(
+            app.state::<Storage>()
+                .with_transaction(
+                    // Duplicate source reminder identities must be rejected before any mutation.
+                    |tx| calendar.prepare_event_merge_in(tx, &duplicate)
+                )
+                .is_err()
+        );
+        let mut other_event = stored.clone();
+        other_event[0].id = "70000000-0000-4000-8000-000000000002".into();
+        let cross_event = app
+            .state::<Storage>()
+            .with_transaction(
+                // A reminder owned by another local event must receive a fresh deterministic identity.
+                |tx| calendar.prepare_event_merge_in(tx, &other_event),
+            )
+            .unwrap();
+        assert_eq!(cross_event.counts.inserts, 1);
+        assert_eq!(cross_event.reminder_id_remaps.len(), 1);
+        assert_ne!(
+            cross_event.reminder_id_remaps[0].effective_reminder_id,
+            stored[0].reminders[0].id
+        );
+        let mut invalid = stored.clone();
+        invalid[0].updated_at_ms = -1;
+        assert!(
+            app.state::<Storage>()
+                .with_transaction(
+                    // Invalid backup timestamps fail before row operations are constructed.
+                    |tx| calendar.prepare_event_merge_in(tx, &invalid)
+                )
+                .is_err()
+        );
+        // Re-importing v2 must leave the Calendar owner entirely untouched.
+        std::fs::write(&import_path, serde_json::to_vec(&v2).unwrap()).unwrap();
+        let PrepareBackupImportOutcomeDto::Ready { preview } =
+            service.prepare_import_backup().await.unwrap()
+        else {
+            panic!("selected fixture")
+        };
+        assert_eq!(preview.counts.events, None);
+        service
+            .confirm_import_backup(preview.request_id)
+            .await
+            .unwrap();
+        assert_eq!(
+            app.state::<Storage>()
+                .with_transaction(
+                    // Confirms old-version import did not change persisted Calendar definitions.
+                    |tx| calendar.export_events_in(tx)
+                )
+                .unwrap(),
+            stored
+        );
+        let merged = notes.get_note(original.id.clone()).await.unwrap();
         let impact = service
             .prepare_reset_xwork()
             .await
             .expect("reset preview should succeed");
         assert_eq!(impact.projects, 1);
         assert_eq!(impact.notes, 1);
+        assert_eq!(impact.events, 1);
         assert_eq!(
             service
                 .confirm_reset_xwork(impact.request_id, "reset")
@@ -2421,10 +2613,20 @@ fn phase_one_service_round_trips_and_resets_temp_storage() {
                 },
             )
             .unwrap();
-        service
+        let reset = service
             .confirm_reset_xwork(impact.request_id, "RESET")
             .await
             .expect("reset should commit");
+        assert_eq!(reset.events_removed, 1);
+        assert!(
+            app.state::<Storage>()
+                .with_transaction(
+                    // Successful reset leaves no Calendar definitions or cascading reminders.
+                    |tx| calendar.export_events_in(tx)
+                )
+                .unwrap()
+                .is_empty()
+        );
         assert_eq!(
             service
                 .confirm_reset_xwork(impact.request_id, "RESET")

@@ -46,6 +46,11 @@ pub(crate) const MIGRATIONS: &[Migration] = &[
         name: "create_notes",
         sql: include_str!("../../migrations/0007_create_notes.sql"),
     },
+    Migration {
+        version: 8,
+        name: "create_calendar_events",
+        sql: include_str!("../../migrations/0008_create_calendar_events.sql"),
+    },
 ];
 
 /// Applies every missing migration after validating the complete registry.

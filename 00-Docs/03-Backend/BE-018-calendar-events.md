@@ -37,6 +37,20 @@ Cung cấp CRUD bền vững cho event timed/all-day, timezone IANA, recurrence 
 10. Backup schema v3 giữ event/reminder identity khi semantic `(eventId, minutesBefore)` không đổi, nhưng không giữ search projection, runtime revision, occurrence hay delivery state. Khi incoming event thắng mà cùng reminder ID đổi `minutesBefore`, prepare cấp UUID v5 xác định và lưu remap trong plan để identity delivery cũ không bị tái sử dụng cho semantic mới; event cùng ID vẫn ghi đè record local theo merge policy `BE-012` và được cấp revision mới.
 11. `chrono`, `chrono-tz` và `rrule` được khai báo trực tiếp đúng version Tech Stack; dependency `uuid` hiện có bật thêm feature `v5` cho remap deterministic. Mọi phép parse/expand nằm trong Rust capability, không lệ thuộc timezone của OS.
 
+### Quyết định triển khai theo source — 2026-09-09
+
+- Backup Events bật v3 ngay GĐ20 sau migration `0008`, theo mục staging GĐ20/GĐ21 của BE-012. `notificationSettings` vắng trong export GĐ20; package có key này bị từ chối toàn bộ bằng `DomainValidationFailed { domain: Settings }` trước preview/write. GĐ21 đọc được v3 cũ thiếu settings và giữ settings local; không dựng scheduler hoặc migration `0009`/`0010` sớm.
+- Binding generator hiện hữu nằm tại `src-tauri/tests/export_bindings.rs`, không có binary `src/bin/export_bindings.rs`. Dùng cơ chế generate-then-rerun hiện tại, không thêm binary mới.
+- BE-012 hiện dùng concrete `DataParticipants`, `PreparedImportPlans`, `ImportCommittedProjections`, `ResetCommittedProjections`. Thêm typed Events field/adapter cùng public owner contract tương ứng; không bắt buộc refactor sang trait registry/tagged enums chỉ để thêm một owner. Private prepared operations và no-fail post-commit projection vẫn bắt buộc.
+- Seam Calendar: `CalendarClock: Send + Sync` với `now_ms() -> Result<i64, CalendarError>` và `elapsed() -> Duration`; `CalendarEventSink: Send + Sync` với `emit(CalendarChangedEventDto) -> Result<(), CalendarError>`. `CalendarService::with_seams(storage: Storage, projects: ProjectService, clock: Arc<dyn CalendarClock>, events: Arc<dyn CalendarEventSink>, maintenance: DataMaintenanceGate) -> Self` và `maintenance_gate() -> DataMaintenanceGate`. `SystemCalendarClock` cung cấp production wall/monotonic clock; clock ngoài giới hạn trả `DateOutOfRange`. Test inject atomic clocks và recording/failing sink; `elapsed` điều khiển TTL không sleep. Project lookup dùng public `get_project`; test dùng ProjectService có seam hiện hữu và project temp. Không IPC hóa seams.
+- Calendar command dùng generic `R: tauri::Runtime` theo pattern source để Tauri mock runtime test caller `main` và `quick-note`; wire signature/DTO không đổi. Mutation emit sau commit, failing sink không biến commit thành lỗi command.
+### Ghi chú implementation — 2026-09-09
+
+- `None`/`Never` giữ nguyên enum Rust public; deserialize qua wire variant rỗng có `deny_unknown_fields` để từ chối field thừa mà serde mặc định bỏ qua ở unit variant. DTO và backup có regression test chung cho ranh giới này.
+- Bulk import/reset hủy pending delete preview trong memory sau commit; token cũ không thể được dùng lại sau reset rồi import cùng identity/revision.
+- Base all-day thuộc ngày bị timezone skip không có instant nên không tạo Search candidate; các event hợp lệ khác vẫn được trả. Range và scheduler tiếp tục bỏ occurrence không có instant theo resolver chung.
+- BE018 chỉ thêm exhaustive handling tối thiểu ở frontend cho Search Events: label lỗi source và trạng thái chưa có handler. FE021/FE022 sẽ bật điều hướng Event thật khi triển khai detail, không thêm command điều hướng giả.
+- Test helper dùng `src-tauri/tests/calendar_support/mod.rs` để chia sẻ fixture Storage/ProjectService/mock runtime/clock/sink cô lập cho ba target Calendar. Khởi tạo mock app trước khi vào async runtime để tránh nested runtime.
 ## File liên quan
 
 | Đường dẫn | Vai trò trong chức năng |
@@ -57,7 +71,10 @@ Cung cấp CRUD bền vững cho event timed/all-day, timezone IANA, recurrence 
 | `src-tauri/src/app/search_sources.rs` | Adapter `CalendarService` sang `EventSearchSource` của BE-010 và resolve project name qua BE-003 |
 | `src-tauri/src/app/data_participants.rs` | Adapter clone Event backup record, remap link bằng public `ProjectImportMap::resolve`, rồi gọi Calendar maintenance API |
 | `src-tauri/src/settings/data.rs` | Gắn `EventBackupRecordV1` vào typed `BackupDataV3.events` đã do BE-012 định nghĩa |
-| `src-tauri/src/bin/export_bindings.rs` | Đăng ký DTO/event/error calendar với binding generator |
+| `src-tauri/src/settings/data_participant.rs` | Concrete Events adapter và owned import/reset projection theo cấu trúc hiện hữu |
+| `src-tauri/src/search/mod.rs`, `src-tauri/src/search/service.rs` | Event source/target và orchestration/ranking BE-010 |
+| `src-tauri/tests/unified_search_contract.rs`, `src-tauri/tests/notes_contract.rs`, `src-tauri/tests/storage_foundation.rs` | Regression search, migration ceiling và storage |
+| `src/bindings/search.ts`, `src/bindings/data-management.ts` | Generated binding các extension consumer |
 | `src/bindings/calendar.ts` | Binding sinh tự động cho command, DTO và event calendar; không sửa tay |
 | `src-tauri/tests/calendar_commands.rs` | Integration test CRUD, validation, caller, optimistic concurrency và project FK |
 | `src-tauri/tests/calendar_occurrences.rs` | Integration test timed/all-day, range overlap, recurrence, DST, sort và giới hạn |
@@ -828,17 +845,17 @@ Error serialize theo `{ kind, ...fields }`; không chứa raw SQLite/RRULE parse
 
 ## Tiêu chí hoàn thành
 
-- [ ] Migration `0008_create_calendar_events.sql` chạy đúng sau `0007`, rollback transaction khi lỗi và giữ FK/index/CHECK như contract.
-- [ ] CRUD timed/all-day round-trip đúng, reminder IDs ổn định theo offset, project delete tự unlink và stale revision không ghi đè.
-- [ ] Form rule title/description/date/timezone/DST/duration/recurrence/end/reminder đều được backend từ chối bằng typed error tương ứng.
-- [ ] Month/upcoming/project/home query trả occurrence overlap đúng, sort deterministic, giữ wall time qua DST và báo lỗi khi quá range/result cap.
-- [ ] Monthly ngày 29–31, yearly 29/02, weekly multi-day, inclusive end date/count, invalid candidate không tiêu thụ count và ambiguous/nonexistent/skipped-day timezone có golden tests.
-- [ ] Search adapter trả tối đa một result/base event đúng `EventSearchSource`, resolve optional project name và không materialize recurrence.
-- [ ] Public BE-019 ports trả due occurrence/context read-only, occurrence identity chứa resolved instant, reconcile timezone hủy identity cũ và không tạo delivery state.
-- [ ] Backup v3 export/import/reset giữ reminder ID khi semantic không đổi, remap UUID v5 deterministic khi incoming-wins đổi offset; app adapter clone/remap project bằng `ProjectImportMap::resolve` trước owner; recompute derived fields, v1/v2 giữ Events và rollback không emit.
-- [ ] Generated `src/bindings/calendar.ts` khớp Rust DTO, không có sửa tay; command chỉ register một lần và chỉ `main` gọi được.
-- [ ] `calendar://changed` chỉ phát sau commit, đúng một event/mutation hoặc một aggregate event/bulk; failed transaction/read không phát.
-- [ ] `cargo fmt --check`, Clippy không warning, Rust unit/integration tests, frontend formatter/linter/typecheck/test liên quan và Windows Tauri build đều pass.
+- [x] Migration `0008_create_calendar_events.sql` chạy đúng sau `0007`, rollback transaction khi lỗi và giữ FK/index/CHECK như contract.
+- [x] CRUD timed/all-day round-trip đúng, reminder IDs ổn định theo offset, project delete tự unlink và stale revision không ghi đè.
+- [x] Form rule title/description/date/timezone/DST/duration/recurrence/end/reminder đều được backend từ chối bằng typed error tương ứng.
+- [x] Month/upcoming/project/home query trả occurrence overlap đúng, sort deterministic, giữ wall time qua DST và báo lỗi khi quá range/result cap.
+- [x] Monthly ngày 29–31, yearly 29/02, weekly multi-day, inclusive end date/count, invalid candidate không tiêu thụ count và ambiguous/nonexistent/skipped-day timezone có golden tests.
+- [x] Search adapter trả tối đa một result/base event đúng `EventSearchSource`, resolve optional project name và không materialize recurrence.
+- [x] Public BE-019 ports trả due occurrence/context read-only, occurrence identity chứa resolved instant, reconcile timezone hủy identity cũ và không tạo delivery state.
+- [x] Backup v3 export/import/reset giữ reminder ID khi semantic không đổi, remap UUID v5 deterministic khi incoming-wins đổi offset; app adapter clone/remap project bằng `ProjectImportMap::resolve` trước owner; recompute derived fields, v1/v2 giữ Events và rollback không emit.
+- [x] Generated `src/bindings/calendar.ts` khớp Rust DTO, không có sửa tay; command chỉ register một lần và chỉ `main` gọi được.
+- [x] `calendar://changed` chỉ phát sau commit, đúng một event/mutation hoặc một aggregate event/bulk; failed transaction/read không phát.
+- [x] `cargo fmt --check`, Clippy không warning, Rust unit/integration tests, frontend formatter/linter/typecheck/test liên quan và Windows Tauri build đều pass.
 
 ## Kiểm thử
 

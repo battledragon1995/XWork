@@ -168,7 +168,8 @@ pub struct BackupDataV3 {
     pub keyboard_shortcut_overrides: Vec<ShortcutOverride>,
     pub notes: Vec<NoteBackupRecordV1>,
     pub events: Vec<EventBackupRecordV1>,
-    pub notification_settings: NotificationSettingsDto,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub notification_settings: Option<NotificationSettingsDto>,
 }
 ```
 
@@ -234,13 +235,21 @@ pub enum CliEnvironmentBackupRecordV1 {
 - `appearance` và `sidebar` là phần bền vững của BE-008, không chứa `revision` hoặc General invariant (`English`, close-to-tray, ask-before-quit, tray icon). Ở v3, `notificationSettings` dùng contract typed sau migration `0010`.
 - Shortcut chỉ xuất override theo `KeyboardShortcutsService::export_overrides`, sort theo catalog; default và conflict projection được tính lại khi import. Quick Note global chỉ có trong catalog/override từ Phase 3 của BE-009/017.
 
+### Quyết định staging GĐ20/GĐ21 — 2026-09-09
+
+Quy tắc này thay thế yêu cầu trước đây phải chờ đủ ba migration mới bật v3. Roadmap yêu cầu backup Events hoạt động ngay GĐ20, trước owner notification settings ở GĐ21. Schema v3 bắt buộc `events`, còn `notificationSettings` là extension optional bền vững của v3; không tăng version hoặc thay đổi nghĩa field khi GĐ21 triển khai.
+
+- GĐ20 chỉ chạy migration `0008`, export v3 có Events và không có `notificationSettings`; không tạo DTO/settings persistence hoặc placeholder scheduler của GĐ21. Parser GĐ20 dùng shape v3 chỉ có field đã sở hữu. Nếu JSON chứa key `notificationSettings` với bất kỳ giá trị nào (kể cả `null`), trả `DomainValidationFailed { domain: Settings }` trước preview/write; không silently drop, không áp một phần và không emit invalidation. Các unknown key khác vẫn là `InvalidBackup`.
+- GĐ21 chạy tiếp `0009` rồi `0010`; export v3 luôn ghi object `notificationSettings` typed BE-008. Parser GĐ21 chấp nhận v3 GĐ20 thiếu field và giữ settings local; field có mặt phải là object hợp lệ, `null` bị từ chối bởi strict prevalidation. Khi field có mặt, import thay settings nguyên tử cùng Events. `Option<NotificationSettingsDto>` trong shape đích biểu diễn absence, không cho phép null trên wire.
+- Import v1/v2 giữ Events và notification settings. Import v3 thiếu settings giữ settings, kể cả khi merge Events. GĐ20 reset xóa Events trước Projects; GĐ21 thêm reset-only Reminders trước Events và áp order cuối Phase 4 đã mô tả.
+- Test golden v3 GĐ20, missing Events, settings-present rejected trước mọi mutation; tại GĐ21 test import golden GĐ20 giữ settings local và v3 GĐ21 round-trip settings. No inbox/delivery/runtime projection trong mọi envelope.
 ### Mở rộng Notes và Events
 
 | Schema | Phase tạo | Field bắt buộc mới | Owner record | Quy tắc compatibility |
 |---:|---|---|---|---|
 | `1` | Phase 1 | Không có ngoài core | BE-003/006/008/009 | Binary v1 chỉ xuất/nhập v1 |
 | `2` | Phase 3 | `notes` | `NoteBackupRecordV1` do BE-016 public contract sở hữu | Binary v2/v3 nhập v1 mà không đổi notes hiện có; export v2 luôn có array, kể cả rỗng |
-| `3` | Phase 4 | `events`, `notificationSettings` | `EventBackupRecordV1` do BE-018 và DTO BE-008 sở hữu | Binary v3 nhập v1/v2 mà không đổi events/notification settings hiện có; export v3 luôn có đủ field |
+| `3` | Phase 4 | `events`, `notificationSettings` | `EventBackupRecordV1` do BE-018 và DTO BE-008 sở hữu | Binary v3 nhập v1/v2 mà không đổi events/notification settings hiện có; export v3 luôn có `events`; `notificationSettings` theo quy tắc staging GĐ20/GĐ21 |
 
 `NoteBackupRecordV1` phải giữ identity, title tùy chọn, Markdown content, optional project link, pin/lifecycle state và timestamp cần để restore đúng BE-016. `EventBackupRecordV1` phải giữ identity, title, description, optional project link, start/end/all-day/timezone, recurrence và reminder definitions cần để restore đúng BE-018. App participant adapter clone từng record, remap optional project link qua public `ProjectImportMap::resolve`, rồi mới chuyển bản sao đã remap cho owner validate domain field và canonical target project ID; referential existence được bảo đảm bởi map cùng thứ tự apply Projects trước Notes/Events. BE-012 không deserialize record thành `serde_json::Value` và không truy cập repository owner.
 
@@ -959,8 +968,8 @@ pub enum DataManagementError {
 - [ ] Reset chỉ chạy với pending request + literal `RESET`, async quiesce BE-019/011 và cleanup BE-005/014 trước transaction, reset đúng domain/default rồi resume worker; không `block_on` và không xóa source/database/migration/log.
 - [ ] Shared read/write permit chặn mutation/session chen vào maintenance, không deadlock/re-enter; transaction failure không publish/đổi cache, commit publish đúng order rồi phát tối đa một `data://changed`; stale/double confirm không chạy lần hai.
 - [ ] Data location/open/copy chỉ dùng app-data path backend resolve; frontend không có arbitrary path API.
-- [ ] Phase 3 bump schema v2 và bắt buộc Notes section; Phase 4 bump v3 và bắt buộc Events/notification settings; compatibility v1/v2 giữ domain không hiện diện.
-- [ ] Phase 4 chỉ khởi tạo Events/Reminders/notification-settings participant sau registry đã chạy bắt buộc `0008_create_calendar_events.sql` → `0009_create_reminder_deliveries.sql` → `0010_add_notification_settings.sql`.
+- [ ] Phase 3 bump schema v2 và bắt buộc Notes section; Phase 4 bump v3 và bắt buộc Events; notification settings theo quy tắc staging GĐ20/GĐ21; compatibility v1/v2 giữ domain không hiện diện.
+- [ ] GĐ20 khởi tạo Events sau `0008_create_calendar_events.sql`; GĐ21 thêm Reminders/notification-settings sau `0009_create_reminder_deliveries.sql` → `0010_add_notification_settings.sql`.
 - [ ] Binding aggregate sinh từ Rust và contract test phát hiện drift; mọi function/method/callback/helper/test mới có comment ngắn theo AGENTS.md.
 - [ ] Trên Windows, `cargo fmt --check`, `cargo clippy --all-targets --all-features -- -D warnings`, `cargo test --all-targets --all-features`, formatter/linter/typecheck/test frontend liên quan và `pnpm tauri build` đều pass.
 

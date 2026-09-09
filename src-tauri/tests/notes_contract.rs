@@ -20,7 +20,7 @@ fn notes_migration_is_registered() {
             },
         )
         .unwrap();
-    assert_eq!(version, 7);
+    assert_eq!(version, 8);
 }
 /// Requires a typed Notes array in every schema-v2 backup.
 #[test]

@@ -17,4 +17,5 @@ pub fn run() {
         .expect("failed to start the XWork desktop application");
 }
 
+pub mod calendar;
 pub mod notes;

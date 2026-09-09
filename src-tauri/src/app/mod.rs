@@ -1,4 +1,5 @@
 use self::search_sources::AppNoteSearchSource;
+use crate::calendar::{CalendarService, SystemCalendarClock, TauriCalendarEventSink};
 use crate::notes::{NotesService, SystemNotesClock, TauriNotesEventSink};
 use std::{
     path::{Path, PathBuf},
@@ -388,6 +389,12 @@ fn app_invoke_handler<R: Runtime>() -> impl Fn(tauri::ipc::Invoke<R>) -> bool + 
         quick_note::close_quick_note_window,
         quick_note::start_quick_note_window_drag,
         quick_note::get_quick_note_global_shortcut_status,
+        crate::calendar::commands::list_calendar_occurrences,
+        crate::calendar::commands::get_calendar_event,
+        crate::calendar::commands::create_calendar_event,
+        crate::calendar::commands::update_calendar_event,
+        crate::calendar::commands::prepare_delete_calendar_event,
+        crate::calendar::commands::confirm_delete_calendar_event,
         crate::notes::commands::list_notes,
         crate::notes::commands::get_note,
         crate::notes::commands::create_note,
@@ -549,6 +556,13 @@ where
                     app.state::<DataMaintenanceGate>().inner().clone(),
                     Arc::new(SystemNotesClock::default()),
                     Arc::new(TauriNotesEventSink(app.handle().clone())),
+                ));
+                app.manage(CalendarService::with_seams(
+                    storage.clone(),
+                    app.state::<ProjectService>().inner().clone(),
+                    Arc::new(SystemCalendarClock::default()),
+                    Arc::new(TauriCalendarEventSink(app.handle().clone())),
+                    app.state::<DataMaintenanceGate>().inner().clone(),
                 ));
                 setup_search(app, sessions.clone())?;
                 let terminal =
@@ -733,6 +747,9 @@ fn setup_data_management<R: Runtime>(
     notifications: NotificationService,
 ) {
     let participants = DataParticipants {
+        events: crate::app::data_participants::EventsDataParticipant::new(
+            app.state::<CalendarService>().inner().clone(),
+        ),
         notes: crate::app::data_participants::NotesDataParticipant::new(
             app.state::<crate::notes::NotesService>().inner().clone(),
         ),
@@ -780,6 +797,12 @@ fn setup_search<R: Runtime>(
             app.state::<KeyboardShortcutsService>().inner().clone(),
         )),
     )?;
+    let service = service.with_events(Arc::new(
+        crate::app::search_sources::AppEventSearchSource::new(
+            app.state::<CalendarService>().inner().clone(),
+            app.state::<ProjectService>().inner().clone(),
+        ),
+    ));
     app.manage(service);
     Ok(())
 }

@@ -16,6 +16,7 @@ use xwork_lib::app::lifecycle::{
     QuitSummaryDto,
 };
 use xwork_lib::app::official_plugins_initialized;
+use xwork_lib::calendar::CalendarService;
 use xwork_lib::files::FilesService;
 use xwork_lib::projects::{
     ProjectChangedEventDto, ProjectEventSink, ProjectFuture, ProjectPlatform, ProjectService,
@@ -157,7 +158,7 @@ fn composition_root_builds_and_manages_storage() {
     let mut app = build_isolated_app(directory.path().to_path_buf());
     run_setup(&mut app);
 
-    assert_eq!(managed_schema_version(&app), 7);
+    assert_eq!(managed_schema_version(&app), 8);
     assert!(
         app.state::<xwork_lib::notes::NotesService>()
             .maintenance_gate()
@@ -169,6 +170,136 @@ fn composition_root_builds_and_manages_storage() {
             .is_some()
     );
     assert!(app.try_state::<DataManagementService>().is_some());
+}
+
+/// Proves the managed Calendar owner shares the gate and all six IPC routes enforce exact caller authorization.
+#[test]
+fn calendar_composition_routes_six_commands_and_authorizes_main_only() {
+    let directory = tempfile::TempDir::new().unwrap();
+    let mut app = build_isolated_app(directory.path().to_path_buf());
+    run_setup(&mut app);
+    assert!(
+        app.state::<CalendarService>()
+            .maintenance_gate()
+            .shares_state_with(app.state::<DataMaintenanceGate>().inner())
+    );
+    assert!(
+        !app.state::<CalendarService>()
+            .maintenance_gate()
+            .shares_state_with(&DataMaintenanceGate::new())
+    );
+    let main = window(&app, "main");
+    let quick_note = window(&app, "quick-note");
+    let mut event = serde_json::json!({
+        "title": "Calendar invoke fixture", "description": "", "projectId": null,
+        "time": { "kind": "timed", "startLocal": "2026-09-09T10:00", "endLocal": "2026-09-09T11:00", "timeZoneId": "Asia/Bangkok" },
+        "recurrence": { "kind": "none" }, "reminderMinutesBefore": [15]
+    });
+    let range = serde_json::json!({
+        "startDate": "2026-09-09", "endDateExclusive": "2026-09-10",
+        "viewerTimeZoneId": "Asia/Bangkok", "projectId": null, "onlyWithReminders": false
+    });
+    for (command, body) in [
+        (
+            "list_calendar_occurrences",
+            serde_json::json!({ "input": range }),
+        ),
+        (
+            "create_calendar_event",
+            serde_json::json!({ "input": event }),
+        ),
+        (
+            "get_calendar_event",
+            serde_json::json!({ "eventId": "invalid-before-validation" }),
+        ),
+        (
+            "update_calendar_event",
+            serde_json::json!({ "input": { "eventId": "invalid-before-validation", "expectedRevision": "invalid", "event": event } }),
+        ),
+        (
+            "prepare_delete_calendar_event",
+            serde_json::json!({ "input": { "eventId": "invalid-before-validation", "expectedRevision": "invalid" } }),
+        ),
+        (
+            "confirm_delete_calendar_event",
+            serde_json::json!({ "input": { "requestId": 0 } }),
+        ),
+    ] {
+        let error =
+            tauri::test::get_ipc_response(&quick_note, invoke_request_with_body(command, body))
+                .expect_err("every Calendar route must reject Quick Note before owner validation");
+        assert_eq!(
+            error,
+            serde_json::json!({ "kind": "unauthorized_caller" }),
+            "{command}"
+        );
+    }
+    let empty = calendar_invoke(
+        &main,
+        "list_calendar_occurrences",
+        serde_json::json!({ "input": range }),
+    );
+    assert_eq!(empty["items"], serde_json::json!([]));
+    let created = calendar_invoke(
+        &main,
+        "create_calendar_event",
+        serde_json::json!({ "input": event }),
+    );
+    assert_eq!(created["revision"], "1");
+    let fetched = calendar_invoke(
+        &main,
+        "get_calendar_event",
+        serde_json::json!({ "eventId": created["id"] }),
+    );
+    assert_eq!(fetched, created);
+    event["title"] = serde_json::json!("Updated through invoke");
+    let updated = calendar_invoke(
+        &main,
+        "update_calendar_event",
+        serde_json::json!({ "input": {
+        "eventId": created["id"], "expectedRevision": created["revision"], "event": event
+    } }),
+    );
+    assert_eq!(updated["title"], "Updated through invoke");
+    assert_eq!(updated["revision"], "2");
+    let listed = calendar_invoke(
+        &main,
+        "list_calendar_occurrences",
+        serde_json::json!({ "input": range }),
+    );
+    assert_eq!(listed["items"].as_array().unwrap().len(), 1);
+    assert_eq!(listed["items"][0]["eventId"], created["id"]);
+    let impact = calendar_invoke(
+        &main,
+        "prepare_delete_calendar_event",
+        serde_json::json!({ "input": {
+        "eventId": created["id"], "expectedRevision": updated["revision"]
+    } }),
+    );
+    let deleted = calendar_invoke(
+        &main,
+        "confirm_delete_calendar_event",
+        serde_json::json!({ "input": { "requestId": impact["requestId"] } }),
+    );
+    assert_eq!(deleted["eventId"], created["id"]);
+    let empty = calendar_invoke(
+        &main,
+        "list_calendar_occurrences",
+        serde_json::json!({ "input": range }),
+    );
+    assert_eq!(empty["items"], serde_json::json!([]));
+}
+
+/// Invokes a registered Calendar command and decodes its successful JSON boundary response.
+fn calendar_invoke(
+    window: &WebviewWindow<tauri::test::MockRuntime>,
+    command: &str,
+    body: serde_json::Value,
+) -> serde_json::Value {
+    tauri::test::get_ipc_response(window, invoke_request_with_body(command, body))
+        .expect("main Calendar command should succeed")
+        .deserialize()
+        .expect("Calendar response should be JSON")
 }
 
 /// Verifies all nine Data Management commands route and reject non-main windows first.
@@ -267,7 +398,7 @@ fn composition_root_fails_for_newer_database() {
     let database_path = directory.path().join(Storage::DATABASE_FILE_NAME);
     let connection = Connection::open(database_path).expect("the fixture database should open");
     connection
-        .pragma_update(None, "user_version", 8)
+        .pragma_update(None, "user_version", 9)
         .expect("the fixture schema version should be set");
     drop(connection);
 
@@ -302,6 +433,7 @@ fn lifecycle_composition_orders_setup_and_registers_commands() {
                 && app.try_state::<ProjectService>().is_some()
                 && app.try_state::<FilesService>().is_some()
                 && app.try_state::<SearchService>().is_some()
+                && app.try_state::<CalendarService>().is_some()
                 && app.try_state::<SettingsService>().is_some()
                 && app.try_state::<CliProfilesService>().is_some()
                 && app.try_state::<DataMaintenanceGate>().is_some();
@@ -329,7 +461,7 @@ fn projects_composition_manages_storage_project_and_gate() {
     let mut app = build_isolated_app(directory.path().to_path_buf());
     run_setup(&mut app);
 
-    assert_eq!(managed_schema_version(&app), 7);
+    assert_eq!(managed_schema_version(&app), 8);
     assert!(
         app.state::<xwork_lib::notes::NotesService>()
             .maintenance_gate()
@@ -620,6 +752,7 @@ fn projects_composition_publishes_nothing_when_startup_fails() {
     ));
 
     assert!(result.is_err());
+    assert!(app.try_state::<CalendarService>().is_none());
     assert!(app.try_state::<ProjectService>().is_none());
     assert!(app.try_state::<FilesService>().is_none());
     assert!(app.try_state::<DataMaintenanceGate>().is_none());
@@ -637,7 +770,7 @@ fn projects_composition_publishes_nothing_for_a_newer_database() {
     let database_path = directory.path().join(Storage::DATABASE_FILE_NAME);
     let connection = Connection::open(database_path).expect("the fixture database should open");
     connection
-        .pragma_update(None, "user_version", 8)
+        .pragma_update(None, "user_version", 9)
         .expect("the fixture schema version should be set");
     drop(connection);
     let mut app = build_isolated_app(directory.path().to_path_buf());
@@ -648,6 +781,7 @@ fn projects_composition_publishes_nothing_for_a_newer_database() {
     ));
 
     assert!(result.is_err());
+    assert!(app.try_state::<CalendarService>().is_none());
     assert!(app.try_state::<ProjectService>().is_none());
     assert!(app.try_state::<FilesService>().is_none());
     assert!(app.try_state::<DataMaintenanceGate>().is_none());
@@ -664,7 +798,7 @@ fn keyboard_shortcuts_composition_manages_state_and_participant() {
     let directory = tempfile::TempDir::new().unwrap();
     let mut app = build_isolated_app(directory.path().to_path_buf());
     run_setup(&mut app);
-    assert_eq!(managed_schema_version(&app), 7);
+    assert_eq!(managed_schema_version(&app), 8);
     assert!(
         app.state::<xwork_lib::notes::NotesService>()
             .maintenance_gate()

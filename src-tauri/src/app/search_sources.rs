@@ -265,3 +265,76 @@ impl crate::search::NoteSearchSource for AppNoteSearchSource {
         })
     }
 }
+
+/// Joins public Calendar candidates with current public project names.
+pub struct AppEventSearchSource {
+    calendar: crate::calendar::CalendarService,
+    projects: ProjectService,
+}
+impl AppEventSearchSource {
+    /// Composes owner handles without repository dependencies.
+    pub fn new(calendar: crate::calendar::CalendarService, projects: ProjectService) -> Self {
+        Self { calendar, projects }
+    }
+}
+impl crate::search::EventSearchSource for AppEventSearchSource {
+    /// Maps one base series per candidate and redacts all owner failures.
+    fn search_events<'a>(
+        &'a self,
+        query: &'a str,
+        limit: u32,
+    ) -> SearchFuture<
+        'a,
+        Result<SearchCandidates<crate::search::EventSearchDocument>, SearchSourceError>,
+    > {
+        Box::pin(async move {
+            let slice = self
+                .calendar
+                .search_for_unified(query, limit)
+                .await
+                .map_err(
+                    // Hides Calendar storage and validation errors.
+                    |_| SearchSourceError::Unavailable,
+                )?;
+            let names = self
+                .projects
+                .list_projects(None)
+                .await
+                .map_err(
+                    // Hides project owner internals.
+                    |_| SearchSourceError::Unavailable,
+                )?
+                .into_iter()
+                .map(
+                    // Indexes current public project display names.
+                    |project| (project.id, project.display_name),
+                )
+                .collect::<HashMap<_, _>>();
+            Ok(SearchCandidates {
+                has_more: slice.has_more,
+                items: slice
+                    .items
+                    .into_iter()
+                    .map(
+                        // Transfers only the documented Search contract fields.
+                        |event| crate::search::EventSearchDocument {
+                            project_name: event
+                                .project_id
+                                .as_ref()
+                                .and_then(
+                                    // Resolves optional project links without accessing project storage.
+                                    |id| names.get(id),
+                                )
+                                .cloned(),
+                            event_id: event.event_id,
+                            title: event.title,
+                            matching_description: event.matching_description,
+                            starts_at_ms: event.starts_at_ms,
+                            time_zone_id: event.time_zone_id,
+                        },
+                    )
+                    .collect(),
+            })
+        })
+    }
+}

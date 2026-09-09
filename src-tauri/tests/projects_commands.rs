@@ -180,14 +180,16 @@ fn migration_creates_projects_schema() {
     let directory = tempfile::TempDir::new().expect("the temporary directory should be created");
     let storage = Storage::open(directory.path()).expect("storage should open");
 
-    assert_eq!(schema_version(&storage), 7);
+    assert_eq!(schema_version(&storage), 8);
     assert_eq!(
         schema_object_names(&storage, "table"),
         vec![
+            "calendar_events",
             "cli_profile_environment",
             "cli_profile_settings",
             "cli_profiles",
             "credential_cleanup_queue",
+            "event_reminders",
             "keyboard_shortcut_overrides",
             "notes",
             "notifications",
@@ -199,6 +201,12 @@ fn migration_creates_projects_schema() {
     assert_eq!(
         schema_object_names(&storage, "index"),
         vec![
+            "idx_calendar_events_all_day_range",
+            "idx_calendar_events_project",
+            "idx_calendar_events_recurring_start",
+            "idx_calendar_events_search",
+            "idx_calendar_events_timed_range",
+            "idx_event_reminders_event",
             "idx_notes_active_order",
             "idx_notes_archive_order",
             "idx_notes_project_order",
@@ -235,14 +243,16 @@ fn migration_creates_projects_schema() {
     // Reopening must not rerun the migration or change the committed schema version.
     drop(storage);
     let reopened = Storage::open(directory.path()).expect("storage should reopen");
-    assert_eq!(schema_version(&reopened), 7);
+    assert_eq!(schema_version(&reopened), 8);
     assert_eq!(
         schema_object_names(&reopened, "table"),
         vec![
+            "calendar_events",
             "cli_profile_environment",
             "cli_profile_settings",
             "cli_profiles",
             "credential_cleanup_queue",
+            "event_reminders",
             "keyboard_shortcut_overrides",
             "notes",
             "notifications",

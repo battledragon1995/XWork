@@ -30,7 +30,7 @@ use super::{
 /// Names the aggregate event emitted after import or reset publication.
 pub const DATA_CHANGED_EVENT: &str = "data://changed";
 const BACKUP_FORMAT: &str = "xwork-backup";
-const SCHEMA_VERSION: u32 = 2;
+const SCHEMA_VERSION: u32 = 3;
 const REQUEST_TTL: Duration = Duration::from_secs(10 * 60);
 const MAX_RECORDS: usize = 100_000;
 
@@ -68,6 +68,19 @@ pub struct BackupDataV2 {
     pub notes: Vec<crate::notes::NoteBackupRecordV1>,
 }
 
+/// Requires Notes and Events in a stage-20 schema-v3 package.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct BackupDataV3 {
+    pub projects: Vec<ProjectBackupRecordV1>,
+    pub cli_profiles: CliProfilesBackupV1,
+    pub appearance: crate::settings::AppearanceSettingsDto,
+    pub sidebar: crate::settings::SidebarSettingsDto,
+    pub keyboard_shortcut_overrides: Vec<ShortcutOverride>,
+    pub notes: Vec<crate::notes::NoteBackupRecordV1>,
+    pub events: Vec<crate::calendar::EventBackupRecordV1>,
+}
+
 /// Keeps v1 absence distinct from the mandatory v2 Notes section.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -79,6 +92,8 @@ pub struct ParsedBackupData {
     pub keyboard_shortcut_overrides: Vec<ShortcutOverride>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub notes: Option<Vec<crate::notes::NoteBackupRecordV1>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub events: Option<Vec<crate::calendar::EventBackupRecordV1>>,
 }
 
 /// Describes the backend-resolved application data location.
@@ -708,7 +723,7 @@ impl DataManagementService {
                         keyboard_shortcut_overrides_removed: current.keyboard_shortcut_overrides,
                         settings_reset: current.settings_differ_from_default,
                         notes_removed: current.notes,
-                        events_removed: 0,
+                        events_removed: current.events,
                         sessions_stopped: current.sessions,
                         credential_cleanup_pending: cleanup,
                     })
@@ -769,6 +784,12 @@ impl DataManagementService {
                     created_at_ms,
                     app_version: env!("CARGO_PKG_VERSION").to_owned(),
                     data: ParsedBackupData {
+                        events: Some(
+                            participants
+                                .events
+                                .export(tx)
+                                .map_err(|_| DataManagementError::SnapshotFailed)?,
+                        ),
                         notes: Some(
                             participants
                                 .notes
@@ -824,6 +845,12 @@ impl DataManagementService {
                     .export(tx)
                     .map_err(|_| domain(BackupDomainDto::KeyboardShortcuts))?;
                 let fingerprint = serde_json::to_vec(&ParsedBackupData {
+                    events: data
+                        .events
+                        .as_ref()
+                        .map(|_| participants.events.export(tx))
+                        .transpose()
+                        .map_err(|_| domain(BackupDomainDto::Events))?,
                     notes: Some(
                         participants
                             .notes
@@ -873,6 +900,19 @@ impl DataManagementService {
                     )
                     .transpose()
                     .map_err(|_| domain(BackupDomainDto::Notes))?;
+                let events = data
+                    .events
+                    .as_ref()
+                    .map(
+                        // Older packages preserve local Calendar definitions without invoking its owner.
+                        |records| {
+                            participants
+                                .events
+                                .prepare_import(tx, records, &projects.import_map)
+                        },
+                    )
+                    .transpose()
+                    .map_err(|_| domain(BackupDomainDto::Events))?;
                 let shortcut_counts =
                     compare_shortcuts(&current_shortcuts, &data.keyboard_shortcut_overrides)?;
                 let merge = BackupMergeCountsDto {
@@ -884,6 +924,9 @@ impl DataManagementService {
                         .and_then(|n| {
                             n.checked_add(notes.as_ref().map_or(0, |plan| plan.counts.inserts))
                         })
+                        .and_then(|n| {
+                            n.checked_add(events.as_ref().map_or(0, |plan| plan.counts.inserts))
+                        })
                         .ok_or(DataManagementError::InvalidBackup)?,
                     updates: projects
                         .counts
@@ -892,6 +935,9 @@ impl DataManagementService {
                         .and_then(|n| n.checked_add(shortcut_counts.1))
                         .and_then(|n| {
                             n.checked_add(notes.as_ref().map_or(0, |plan| plan.counts.updates))
+                        })
+                        .and_then(|n| {
+                            n.checked_add(events.as_ref().map_or(0, |plan| plan.counts.updates))
                         })
                         .ok_or(DataManagementError::InvalidBackup)?,
                     unchanged: projects
@@ -902,12 +948,16 @@ impl DataManagementService {
                         .and_then(|n| {
                             n.checked_add(notes.as_ref().map_or(0, |plan| plan.counts.unchanged))
                         })
+                        .and_then(|n| {
+                            n.checked_add(events.as_ref().map_or(0, |plan| plan.counts.unchanged))
+                        })
                         .ok_or(DataManagementError::InvalidBackup)?,
                     removals: shortcut_counts.3,
                     project_path_matches: projects.counts.path_matches,
                 };
                 Ok((
                     PreparedImportPlans {
+                        events,
                         notes,
                         projects,
                         settings,
@@ -942,7 +992,17 @@ impl DataManagementService {
                     .map(|plan| participants.notes.apply_import(tx, plan))
                     .transpose()
                     .map_err(|_| DataManagementError::PersistenceFailed)?;
+                let events = plans
+                    .events
+                    .as_ref()
+                    .map(
+                        // Applies Calendar only after remapped Projects exist.
+                        |plan| participants.events.apply_import(tx, plan),
+                    )
+                    .transpose()
+                    .map_err(|_| DataManagementError::PersistenceFailed)?;
                 Ok(ImportCommittedProjections {
+                    events,
                     notes,
                     projects,
                     settings: participants
@@ -966,6 +1026,9 @@ impl DataManagementService {
 
     /// Publishes committed import projections in dependency order.
     fn publish_import(&self, projections: ImportCommittedProjections) {
+        if let Some(events) = projections.events {
+            self.inner.participants.events.publish_after_commit(events);
+        }
         if let Some(notes) = projections.notes {
             self.inner.participants.notes.publish_after_commit(notes);
         }
@@ -1006,7 +1069,7 @@ impl DataManagementService {
             } != SettingsBackupSection::defaults()
                 || snapshot.data.cli_profiles.default_shell_id != "system",
             notes: count(snapshot.data.notes.as_ref().map_or(0, Vec::len))?,
-            events: 0,
+            events: count(snapshot.data.events.as_ref().map_or(0, Vec::len))?,
             sessions: runtime.sessions,
             running_processes: runtime.running_processes,
             unsaved_documents: runtime.unsaved_documents,
@@ -1042,6 +1105,10 @@ impl DataManagementService {
                     .apply_reset(tx)
                     .map_err(|_| DataManagementError::PersistenceFailed)?;
                 Ok(ResetCommittedProjections {
+                    events: participants
+                        .events
+                        .apply_reset(tx)
+                        .map_err(|_| DataManagementError::PersistenceFailed)?,
                     notes,
                     notifications,
                     keyboard_shortcuts: participants
@@ -1070,6 +1137,10 @@ impl DataManagementService {
 
     /// Publishes reset projections only after the shared transaction commits.
     async fn publish_reset(&self, projections: ResetCommittedProjections) {
+        self.inner
+            .participants
+            .events
+            .publish_after_commit(projections.events);
         self.inner
             .participants
             .notes
@@ -1247,6 +1318,7 @@ pub fn parse_backup(bytes: &[u8]) -> Result<BackupEnvelope<ParsedBackupData>, Da
                     sidebar: value.data.sidebar,
                     keyboard_shortcut_overrides: value.data.keyboard_shortcut_overrides,
                     notes: None,
+                    events: None,
                 },
             }
         }
@@ -1265,6 +1337,26 @@ pub fn parse_backup(bytes: &[u8]) -> Result<BackupEnvelope<ParsedBackupData>, Da
                     sidebar: value.data.sidebar,
                     keyboard_shortcut_overrides: value.data.keyboard_shortcut_overrides,
                     notes: Some(value.data.notes),
+                    events: None,
+                },
+            }
+        }
+        3 => {
+            let value: BackupEnvelope<BackupDataV3> =
+                serde_json::from_slice(bytes).map_err(|_| DataManagementError::InvalidBackup)?;
+            BackupEnvelope {
+                format: value.format,
+                schema_version: 3,
+                created_at_ms: value.created_at_ms,
+                app_version: value.app_version,
+                data: ParsedBackupData {
+                    projects: value.data.projects,
+                    cli_profiles: value.data.cli_profiles,
+                    appearance: value.data.appearance,
+                    sidebar: value.data.sidebar,
+                    keyboard_shortcut_overrides: value.data.keyboard_shortcut_overrides,
+                    notes: Some(value.data.notes),
+                    events: Some(value.data.events),
                 },
             }
         }
@@ -1312,7 +1404,7 @@ fn validate_backup_shape(bytes: &[u8]) -> Result<(), DataManagementError> {
         .get("schemaVersion")
         .and_then(serde_json::Value::as_u64)
         .ok_or(DataManagementError::InvalidBackup)?;
-    if version != 1 && version != 2 {
+    if !(1..=3).contains(&version) {
         return Err(DataManagementError::UnsupportedBackupVersion {
             found: u32::try_from(version).map_err(|_| DataManagementError::InvalidBackup)?,
             supported: SCHEMA_VERSION,
@@ -1325,11 +1417,21 @@ fn validate_backup_shape(bytes: &[u8]) -> Result<(), DataManagementError> {
         "sidebar",
         "keyboardShortcutOverrides",
     ];
-    if version == 2 {
+    if version >= 2 {
         fields.push("notes");
     }
+    if version == 3 {
+        if data
+            .as_object()
+            .is_some_and(|object| object.contains_key("notificationSettings"))
+        {
+            return Err(domain(BackupDomainDto::Settings));
+        }
+        fields.push("events");
+        array(field(data, "events")?)?;
+    }
     object_fields(data, &fields)?;
-    if version == 2 {
+    if version >= 2 {
         for note in array(field(data, "notes")?)? {
             object_fields(
                 note,
@@ -1459,6 +1561,7 @@ fn content_counts(data: &ParsedBackupData) -> Result<BackupContentCountsDto, Dat
         .projects
         .len()
         .checked_add(data.notes.as_ref().map_or(0, Vec::len))
+        .and_then(|n| n.checked_add(data.events.as_ref().map_or(0, Vec::len)))
         .and_then(|n| n.checked_add(data.cli_profiles.custom_profiles.len()))
         .and_then(|n| n.checked_add(data.keyboard_shortcut_overrides.len()))
         .ok_or(DataManagementError::InvalidBackup)?;
@@ -1487,7 +1590,11 @@ fn content_counts(data: &ParsedBackupData) -> Result<BackupContentCountsDto, Dat
             .as_ref()
             .map(|records| count(records.len()))
             .transpose()?,
-        events: None,
+        events: data
+            .events
+            .as_ref()
+            .map(|records| count(records.len()))
+            .transpose()?,
     })
 }
 
@@ -1730,12 +1837,12 @@ mod tests {
         );
         let newer = String::from_utf8(fixture())
             .expect("fixture is UTF-8")
-            .replace("\"schemaVersion\":1", "\"schemaVersion\":3");
+            .replace("\"schemaVersion\":1", "\"schemaVersion\":4");
         assert_eq!(
             parse_backup(newer.as_bytes()),
             Err(DataManagementError::UnsupportedBackupVersion {
-                found: 3,
-                supported: 2
+                found: 4,
+                supported: 3
             })
         );
         let zero = String::from_utf8(fixture())
@@ -1745,7 +1852,7 @@ mod tests {
             parse_backup(zero.as_bytes()),
             Err(DataManagementError::UnsupportedBackupVersion {
                 found: 0,
-                supported: 2
+                supported: 3
             })
         );
         let unknown = String::from_utf8(fixture())
@@ -1773,6 +1880,28 @@ mod tests {
             parse_backup(nested_unknown.as_bytes()),
             Err(DataManagementError::InvalidBackup)
         );
+    }
+
+    /// Requires Events in v3 and rejects unsupported settings even when explicitly null.
+    #[test]
+    fn version_three_requires_events_and_rejects_notification_settings() {
+        let mut value: serde_json::Value = serde_json::from_slice(&fixture()).unwrap();
+        value["schemaVersion"] = serde_json::json!(3);
+        value["data"]["notes"] = serde_json::json!([]);
+        assert_eq!(
+            parse_backup(&serde_json::to_vec(&value).unwrap()),
+            Err(DataManagementError::InvalidBackup)
+        );
+        value["data"]["events"] = serde_json::json!([]);
+        let parsed = parse_backup(&serde_json::to_vec(&value).unwrap()).unwrap();
+        assert_eq!(parsed.data.events, Some(Vec::new()));
+        for settings in [serde_json::Value::Null, serde_json::json!({})] {
+            value["data"]["notificationSettings"] = settings;
+            assert_eq!(
+                parse_backup(&serde_json::to_vec(&value).unwrap()),
+                Err(domain(BackupDomainDto::Settings))
+            );
+        }
     }
 
     /// Formats the documented UTC export name without locale dependencies.

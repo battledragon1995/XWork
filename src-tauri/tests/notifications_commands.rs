@@ -169,7 +169,7 @@ fn notification_schema_is_version_five() {
             },
         )
         .unwrap();
-    assert_eq!(version, 7);
+    assert_eq!(version, 8);
 }
 
 /// Invokes the real Tauri wrapper rather than bypassing window authorization.

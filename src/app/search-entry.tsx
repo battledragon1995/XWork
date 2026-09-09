@@ -36,6 +36,8 @@ const UNAVAILABLE = new Set([
 
 /** Fail closed for catalog entries that have no public palette executor. */
 function availability(target: SearchTargetDto): SearchTargetAvailability {
+  if (target.kind === "event")
+    return { enabled: false, reason: "Calendar event details are not available yet." };
   if (target.kind === "file")
     return {
       enabled: false,
@@ -238,7 +240,7 @@ export function SearchEntry() {
         if (note.id !== target.noteId || note.status === "trash")
           throw new IpcCallError("get_note", { code: "target_unavailable" });
         destination = `/notes?noteId=${encodeURIComponent(note.id)}&view=${note.status}`;
-      } else if (target.kind === "file") {
+      } else if (target.kind === "file" || target.kind === "event") {
         return;
       } else if (
         target.actionId === "sessions.create_current_project" &&
