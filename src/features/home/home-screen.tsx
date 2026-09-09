@@ -263,6 +263,7 @@ export function HomeScreen({
             )}
           </ul>
         </section>
+        {props.calendarSection}
         {(props.notesSection || props.quickNoteSlot) && (
           <div className="min-w-0 space-y-6">
             {props.quickNoteSlot}

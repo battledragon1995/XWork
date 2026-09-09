@@ -1,3 +1,7 @@
+import { getCalendarEvent } from "@/lib/ipc/calendar";
+import type { CalendarEventDto } from "@/bindings/calendar";
+/** Isolate Calendar event revalidation from native storage. */
+vi.mock("@/lib/ipc/calendar", () => ({ getCalendarEvent: vi.fn() }));
 import { getNote } from "@/lib/ipc/notes";
 import type { NoteDto } from "@/bindings/notes";
 /** Isolate note target revalidation. */
@@ -93,7 +97,10 @@ function Harness() {
       >
         Other route
       </button>
-      <output data-testid="route">{location.pathname}</output>
+      <output data-testid="route">
+        {location.pathname}
+        {location.search}
+      </output>
     </TooltipProvider>
   );
 }
@@ -580,4 +587,62 @@ it("ignores a Note response after palette dismissal", async () => {
   await userEvent.click(screen.getByRole("button", { name: "Close search" }));
   await act(async () => resolve({ id: "n", status: "active" } as NoteDto));
   expect(screen.getByTestId("route").textContent).toBe("/");
+});
+
+/** Event results use a verified owner and preserve opaque IDs in the query. */
+it("opens an enabled verified Calendar event", async () => {
+  vi.mocked(searchUnified).mockResolvedValue(response({ kind: "event", eventId: "event /1" }));
+  vi.mocked(getCalendarEvent).mockResolvedValue({ id: "event /1" } as CalendarEventDto);
+  mount();
+  await open();
+  expect(screen.getByRole("option")).not.toHaveAttribute("aria-disabled", "true");
+  await activate();
+  expect(getCalendarEvent).toHaveBeenCalledExactlyOnceWith("event /1");
+  await waitFor(
+    /** Observe navigation after the validated read. */ () =>
+      expect(screen.getByTestId("route").textContent).toBe("/calendar?event=event%20%2F1"),
+  );
+});
+/** A gone or mismatched event never opens a different detail. */
+it.each(["missing", "mismatch"])("rejects a %s Calendar result", async (mode) => {
+  vi.mocked(searchUnified).mockResolvedValue(response({ kind: "event", eventId: "e" }));
+  if (mode === "missing")
+    vi.mocked(getCalendarEvent).mockRejectedValue(
+      new IpcCallError("get_calendar_event", { kind: "event_not_found" }),
+    );
+  else vi.mocked(getCalendarEvent).mockResolvedValue({ id: "other" } as CalendarEventDto);
+  mount();
+  await open();
+  await activate();
+  expect(await screen.findByText("This result is no longer available.")).toBeVisible();
+  expect(screen.getByTestId("route").textContent).toBe("/");
+});
+/** Every lifetime boundary retires pending event activation, including synchronous store changes. */
+it.each(["close", "route", "quit", "reset"])("retires Calendar activation on %s", async (mode) => {
+  const owner = dataOwner();
+  let resolve!: (event: CalendarEventDto) => void;
+  vi.mocked(getCalendarEvent).mockReturnValue(
+    new Promise(
+      /** Defer the owner response. */ (yes) => {
+        resolve = yes;
+      },
+    ),
+  );
+  vi.mocked(searchUnified).mockResolvedValue(response({ kind: "event", eventId: "e" }));
+  mount();
+  await open();
+  await activate();
+  if (mode === "close") await userEvent.click(screen.getByRole("button", { name: "Close search" }));
+  else if (mode === "route")
+    fireEvent.click(screen.getByRole("button", { name: "Other route", hidden: true }));
+  else if (mode === "quit")
+    act(
+      /** Publish Quit before read settlement. */ () =>
+        useQuitStore.setState({ phase: "requesting" }),
+    );
+  else await owner.getSnapshot().acceptCommitted("app_reset");
+  await act(
+    /** Resolve a retired event lookup. */ async () => resolve({ id: "e" } as CalendarEventDto),
+  );
+  expect(screen.getByTestId("route").textContent).not.toContain("?event=");
 });

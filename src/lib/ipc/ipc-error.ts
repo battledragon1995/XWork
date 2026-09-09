@@ -1,8 +1,9 @@
 import { invoke } from "@tauri-apps/api/core";
 
-/** Every backend error the frontend understands is a discriminated union tagged by `code`. */
+/** Backend capabilities use either the established code tag or their generated kind tag. */
 export interface TaggedIpcError {
-  code: string;
+  code?: string;
+  kind?: string;
 }
 
 /**
@@ -19,7 +20,7 @@ export class IpcCallError<TError extends TaggedIpcError> extends Error {
     super(
       payload === null
         ? `The command "${command}" failed with an unrecognized error.`
-        : `The command "${command}" failed with code "${payload.code}".`,
+        : `The command "${command}" failed with code "${payload.code ?? payload.kind}".`,
     );
     this.name = "IpcCallError";
     this.command = command;
@@ -27,7 +28,7 @@ export class IpcCallError<TError extends TaggedIpcError> extends Error {
   }
 }
 
-// Recognize the documented `{ code }` shape. Anything else is deliberately not coerced,
+// Recognize documented string `code` or `kind` tags. Anything else is deliberately not coerced,
 // so a malformed rejection can never be mistaken for a known error code.
 function asTaggedError<TError extends TaggedIpcError>(rejection: unknown): TError | null {
   if (typeof rejection !== "object" || rejection === null) {
@@ -35,8 +36,9 @@ function asTaggedError<TError extends TaggedIpcError>(rejection: unknown): TErro
   }
 
   const code = (rejection as { code?: unknown }).code;
+  const kind = (rejection as { kind?: unknown }).kind;
 
-  return typeof code === "string" ? (rejection as TError) : null;
+  return typeof code === "string" || typeof kind === "string" ? (rejection as TError) : null;
 }
 
 /**

@@ -13,6 +13,7 @@ export interface HomeRouteProps {
   quickNoteOpening?: boolean;
   quickNoteOpenError?: string | null;
   notesSection?: React.ReactNode;
+  calendarSection?: React.ReactNode;
   quickNoteSlot?: React.ReactNode;
   notesPresence?: "loading" | "present" | "empty" | "error";
   onRetryNotesPresence?(): void;
@@ -74,12 +75,15 @@ export function HomeRoute(props: HomeRouteProps = {}) {
               />
             </div>
           )}
-          <WelcomeScreen
-            onOpenQuickNote={props.onOpenQuickNote}
-            quickNoteOpening={props.quickNoteOpening}
-            quickNoteOpenError={props.quickNoteOpenError}
-            quickNoteDisabled={props.boundary?.suspended}
-          />
+          <div className="h-full overflow-y-auto">
+            <WelcomeScreen
+              onOpenQuickNote={props.onOpenQuickNote}
+              quickNoteOpening={props.quickNoteOpening}
+              quickNoteOpenError={props.quickNoteOpenError}
+              quickNoteDisabled={props.boundary?.suspended}
+            />
+            {props.calendarSection && <div className="p-7">{props.calendarSection}</div>}
+          </div>
         </>
       ) : presence.status === "present" ||
         (presence.status === "empty" && props.notesPresence === "present") ? (

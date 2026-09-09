@@ -242,3 +242,11 @@ it("renders the optional writing slots in order", async () => {
   ).toBeTruthy();
   expect(screen.getByRole("heading", { name: "Recent projects" })).toBeVisible();
 });
+
+/** Calendar failures occupy their injected block without hiding successful dashboard data. */
+it("keeps Calendar errors independent from sessions and projects", async () => {
+  mount(projects(), { calendarSection: <section role="alert">Calendar read failed</section> });
+  expect(await screen.findByRole("link", { name: "Open session Build" })).toBeVisible();
+  expect(screen.getByText("Calendar read failed")).toBeVisible();
+  expect(screen.getByRole("link", { name: "Open project Project" })).toBeVisible();
+});

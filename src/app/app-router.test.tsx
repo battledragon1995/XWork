@@ -4,6 +4,12 @@ import { act, cleanup, render, screen, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { createMemoryRouter, RouterProvider } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+/** Keep all Calendar reads isolated while exercising the real feature route. */
+vi.mock("@/lib/ipc/calendar", () => ({
+  listCalendarOccurrences: vi.fn(async () => ({ revision: "0", items: [] })),
+  getCalendarEvent: vi.fn(),
+  onCalendarChanged: vi.fn(async () => () => {}),
+}));
 import type { ProjectDto } from "@/bindings/projects/projects";
 import { resetProjectsStore } from "@/features/projects/projects-store";
 import { resetSessionsStore } from "@/features/sessions/sessions-store";
@@ -171,16 +177,13 @@ function readBreadcrumb(): string[] {
 }
 
 describe("createAppRouter", () => {
-  // Verify each primary area route renders its own placeholder with the owning feature.
-  it.each([["/calendar", "Calendar", "FE-021"]])(
-    "renders the %s route as the %s area placeholder",
-    (path, area, arrivesWith) => {
-      renderAt(path);
-
-      expect(screen.getByRole("heading", { level: 1, name: area })).toBeInTheDocument();
-      expect(screen.getByText(`This area arrives with ${arrivesWith}.`)).toBeInTheDocument();
-    },
-  );
+  /** Calendar now renders its real read owner within the shell. */
+  it("renders the real Calendar route", async () => {
+    renderAt("/calendar");
+    expect(await screen.findByRole("heading", { level: 1, name: "Calendar" })).toBeVisible();
+    expect(screen.queryByText("This area arrives with FE-021.")).toBeNull();
+    expect(screen.getByRole("button", { name: "Today" })).toBeVisible();
+  });
 
   // Verify the Settings index is replaced by General with matching shell and sub-nav state.
   it("redirects /settings to the real General route", async () => {

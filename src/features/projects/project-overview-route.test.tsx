@@ -443,27 +443,45 @@ describe("ProjectOverviewRoute sessions", () => {
 });
 
 /** Slot invocation is deferred until the project owner has loaded its identity. */
-it("renders linked notes only after project load", async () => {
-  let resolve!: (value: ProjectDto) => void;
-  openProjectMock.mockReturnValueOnce(
-    new Promise((yes) => {
-      resolve = yes;
-    }),
-  );
-  const slot = vi.fn((id: string) => <p>Notes for {id}</p>);
-  render(
-    <TooltipProvider>
-      <MemoryRouter initialEntries={["/projects/3f2a"]}>
-        <Routes>
-          <Route
-            path="/projects/:projectId"
-            element={<ProjectOverviewRoute renderLinkedNotes={slot} />}
-          />
-        </Routes>
-      </MemoryRouter>
-    </TooltipProvider>,
-  );
-  expect(slot).not.toHaveBeenCalled();
-  await act(async () => resolve(PROJECT));
-  expect(await screen.findByText("Notes for 3f2a")).toBeVisible();
-});
+it.each(["available", "unavailable"] as const)(
+  "renders linked slots only after %s project load",
+  async (status) => {
+    let resolve!: (value: ProjectDto) => void;
+    openProjectMock.mockReturnValueOnce(
+      new Promise((yes) => {
+        resolve = yes;
+      }),
+    );
+    const slot = vi.fn(
+      /** Render Notes with the verified identity. */ (id: string) => <p>Notes for {id}</p>,
+    );
+    const events = vi.fn(
+      /** Render Calendar with the verified identity. */ (id: string) => <p>Events for {id}</p>,
+    );
+    render(
+      <TooltipProvider>
+        <MemoryRouter initialEntries={["/projects/3f2a"]}>
+          <Routes>
+            <Route
+              path="/projects/:projectId"
+              element={
+                <ProjectOverviewRoute renderLinkedNotes={slot} renderLinkedEvents={events} />
+              }
+            />
+          </Routes>
+        </MemoryRouter>
+      </TooltipProvider>,
+    );
+    expect(slot).not.toHaveBeenCalled();
+    expect(events).not.toHaveBeenCalled();
+    await act(
+      /** Resolve registered metadata even if its folder is unavailable. */ async () =>
+        resolve({
+          ...PROJECT,
+          availability: status === "available" ? { status } : { status, reason: "missing" },
+        }),
+    );
+    expect(await screen.findByText("Notes for 3f2a")).toBeVisible();
+    expect(screen.getByText("Events for 3f2a")).toBeVisible();
+  },
+);

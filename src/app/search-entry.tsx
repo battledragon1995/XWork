@@ -1,3 +1,4 @@
+import { getCalendarEvent } from "@/lib/ipc/calendar";
 import { getNote } from "@/lib/ipc/notes";
 import { useOptionalDataManagement } from "@/features/settings/data-management-provider";
 import { Search } from "lucide-react";
@@ -36,8 +37,6 @@ const UNAVAILABLE = new Set([
 
 /** Fail closed for catalog entries that have no public palette executor. */
 function availability(target: SearchTargetDto): SearchTargetAvailability {
-  if (target.kind === "event")
-    return { enabled: false, reason: "Calendar event details are not available yet." };
   if (target.kind === "file")
     return {
       enabled: false,
@@ -57,7 +56,7 @@ function availability(target: SearchTargetDto): SearchTargetAvailability {
   };
 }
 
-/** Compose route context, configured keyboard dispatch and the seven existing owner actions. */
+/** Compose route context, configured keyboard dispatch and the implemented owner actions. */
 export function SearchEntry() {
   const data = useOptionalDataManagement();
   const location = useLocation();
@@ -221,7 +220,14 @@ export function SearchEntry() {
       !signal.aborted &&
       !document.hidden &&
       !current.current.suspended &&
+      (useQuitStore.getState().phase === "idle" ||
+        useQuitStore.getState().phase === "snapshot-failed") &&
       current.current.route === route;
+    if (!valid()) {
+      flight.current = false;
+      setBusy(false);
+      return;
+    }
     let creating = false;
     try {
       let destination: string;
@@ -240,7 +246,12 @@ export function SearchEntry() {
         if (note.id !== target.noteId || note.status === "trash")
           throw new IpcCallError("get_note", { code: "target_unavailable" });
         destination = `/notes?noteId=${encodeURIComponent(note.id)}&view=${note.status}`;
-      } else if (target.kind === "file" || target.kind === "event") {
+      } else if (target.kind === "event") {
+        const event = await getCalendarEvent(target.eventId);
+        if (event.id !== target.eventId)
+          throw new IpcCallError("get_calendar_event", { code: "target_unavailable" });
+        destination = `/calendar?event=${encodeURIComponent(event.id)}`;
+      } else if (target.kind === "file") {
         return;
       } else if (
         target.actionId === "sessions.create_current_project" &&
@@ -261,11 +272,13 @@ export function SearchEntry() {
       if (!same) await navigate(destination);
     } catch (cause) {
       if (!valid()) return;
-      const code = cause instanceof IpcCallError ? (cause.payload?.code ?? null) : null;
+      const code =
+        cause instanceof IpcCallError ? (cause.payload?.code ?? cause.payload?.kind ?? null) : null;
       if (
         [
           "target_unavailable",
           "note_not_found",
+          "event_not_found",
           "projectNotFound",
           "project_not_found",
           "sessionNotFound",

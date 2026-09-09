@@ -418,3 +418,15 @@ it("retains one Notes maintenance owner across child replacement", () => {
   );
   expect(seen.at(-1)).toBe(seen[0]);
 });
+/** Keep Calendar reads isolated and healthy while testing application chrome. */
+vi.mock("@/lib/ipc/calendar", () => ({
+  listCalendarOccurrences: vi.fn(
+    /** Return an isolated empty projection. */ async () => ({ revision: "1", items: [] }),
+  ),
+  getCalendarEvent: vi.fn(),
+  onCalendarChanged: vi.fn(
+    /** Install an isolated change subscription. */ async () =>
+      /** Release the test subscription. */
+      () => {},
+  ),
+}));

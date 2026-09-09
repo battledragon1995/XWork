@@ -1,3 +1,14 @@
+import type { CalendarRouteProps } from "@/features/calendar";
+/** Observe the injected projection while the existing host and owner stores remain real. */
+vi.mock("@/features/calendar", () => ({
+  HomeCalendarSection: /** Render the live Calendar boundary. */ ({
+    boundary,
+  }: CalendarRouteProps) => (
+    <output data-testid="home-calendar">
+      {boundary?.suspended ? "paused" : "ready"}:{boundary?.epoch}
+    </output>
+  ),
+}));
 import * as notesIpc from "@/lib/ipc/notes";
 import { openQuickNoteWindow } from "@/lib/ipc/quick-note-window";
 
@@ -601,4 +612,24 @@ it("blocks floating opening while Quit or Data starts", async () => {
   );
   await act(async () => preparing);
   expect(openQuickNoteWindow).not.toHaveBeenCalled();
+});
+
+/** Home composes a Calendar projection beside Welcome and propagates live Quit state. */
+it("keeps Calendar reachable beside Welcome with live admission", async () => {
+  vi.mocked(listProjects).mockResolvedValue([]);
+  vi.mocked(notesIpc.listNotes).mockResolvedValue({
+    items: [],
+    offset: 0,
+    totalMatches: 0,
+    hasMore: false,
+    counts: { active: 0, archived: 0, trash: 0 },
+  });
+  await mount();
+  await screen.findByRole("button", { name: "Add Project" });
+  expect(screen.getByTestId("home-calendar")).toHaveTextContent("ready:0");
+  act(
+    /** Publish Quit through the real store. */ () =>
+      useQuitStore.setState({ phase: "requesting" }),
+  );
+  expect(screen.getByTestId("home-calendar")).toHaveTextContent("paused:0");
 });

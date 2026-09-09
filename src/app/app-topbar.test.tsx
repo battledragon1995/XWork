@@ -734,3 +734,15 @@ vi.mock("@/lib/ipc/notifications", () => ({
 vi.mock("@/lib/ipc/search", () => ({
   searchUnified: vi.fn(async () => ({ query: "", groups: [], resultCount: 0, sourceFailures: [] })),
 }));
+/** Keep Calendar reads isolated and healthy while testing application chrome. */
+vi.mock("@/lib/ipc/calendar", () => ({
+  listCalendarOccurrences: vi.fn(
+    /** Return an isolated empty projection. */ async () => ({ revision: "1", items: [] }),
+  ),
+  getCalendarEvent: vi.fn(),
+  onCalendarChanged: vi.fn(
+    /** Install an isolated change subscription. */ async () =>
+      /** Release the test subscription. */
+      () => {},
+  ),
+}));

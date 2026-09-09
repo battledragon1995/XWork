@@ -279,3 +279,16 @@ it("moves focus to Welcome only when the focused Home row disappears", async () 
     screen.getByRole("heading", { name: "Every project, every CLI, one window." }),
   ).toHaveFocus();
 });
+
+/** A bounded Calendar projection stays available beside Welcome without claiming global emptiness. */
+it("renders Calendar when projects and notes are empty", async () => {
+  render(
+    <TooltipProvider>
+      <MemoryRouter>
+        <HomeRoute notesPresence="empty" calendarSection={<section>Calendar projection</section>} />
+      </MemoryRouter>
+    </TooltipProvider>,
+  );
+  expect(await screen.findByRole("button", { name: "Add Project" })).toBeVisible();
+  expect(screen.getByText("Calendar projection")).toBeVisible();
+});

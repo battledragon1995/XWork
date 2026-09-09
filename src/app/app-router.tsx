@@ -15,7 +15,8 @@ import { SettingsSectionPlaceholder } from "@/features/settings/settings-section
 import { SettingsTerminalProfilesRoute } from "@/features/settings/settings-terminal-profiles-route";
 import { AppErrorBoundary } from "./app-error-boundary";
 import { AppShell } from "./app-shell";
-import { AreaPlaceholder, NotFoundPlaceholder } from "./area-placeholder";
+import { CalendarEntry } from "./calendar-entry";
+import { NotFoundPlaceholder } from "./area-placeholder";
 import { HomeEntry } from "./home-entry";
 import { SessionTerminalRoute } from "./session-terminal-route";
 
@@ -84,7 +85,7 @@ export function createAppRouter(initialEntries: string[] = ["/"]) {
           },
           {
             path: "calendar",
-            element: <AreaPlaceholder area="Calendar" arrivesWith="FE-021" />,
+            element: <CalendarEntry />,
             errorElement: <AppErrorBoundary />,
             handle: crumbs(() => ["Calendar"]),
           },

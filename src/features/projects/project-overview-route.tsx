@@ -89,7 +89,10 @@ function ProjectActionFailureLine(props: {
 
 /** Compose the Stage 5 project metadata, read-only Git state, actions, and dialogs. */
 export function ProjectOverviewRoute(
-  props: { renderLinkedNotes?(projectId: string): React.ReactNode } = {},
+  props: {
+    renderLinkedNotes?(projectId: string): React.ReactNode;
+    renderLinkedEvents?(projectId: string): React.ReactNode;
+  } = {},
 ) {
   const { projectId = "" } = useParams();
   const navigate = useNavigate();
@@ -252,6 +255,7 @@ export function ProjectOverviewRoute(
             {/* The session block leads the left column; the later right-column features of
                 FE-009 and FE-011 are not pulled forward by this slice. */}
             {props.renderLinkedNotes?.(project.id)}
+            {props.renderLinkedEvents?.(project.id)}
             <ProjectSessionList
               projectId={project.id}
               isProjectUnavailable={isUnavailable}

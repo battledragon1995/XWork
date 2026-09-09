@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { HomeCalendarSection } from "@/features/calendar";
 import { HomeRoute } from "@/features/home/home-route";
 import { HomeNoteSections, QuickNoteComposer, useNotesPresence } from "@/features/notes";
 import { useDataManagement } from "@/features/settings/data-management-provider";
@@ -60,6 +61,15 @@ export function HomeEntry() {
           readSuspended={
             /** Read live admission immediately before mutations. */ () => readBoundary().suspended
           }
+        />
+      }
+      calendarSection={
+        <HomeCalendarSection
+          boundary={{
+            epoch: invalidationEpoch,
+            suspended: busy || (phase !== "idle" && phase !== "snapshot-failed"),
+          }}
+          readBoundary={readBoundary}
         />
       }
       notesSection={<HomeNoteSections />}
