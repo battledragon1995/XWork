@@ -136,6 +136,21 @@ export function HomeScreen({
       <header className="mb-8 space-y-2">
         <h1 className="font-display text-[36px] leading-tight tracking-tight text-ink">Home</h1>
         <p className="text-sm text-muted">{homeDate(date)}</p>
+        <Button
+          variant="outline"
+          disabled={suspended || props.quickNoteOpening}
+          onClick={props.onOpenQuickNote}
+        >
+          Open Quick Note window
+        </Button>
+        {props.quickNoteOpenError && (
+          <p role="alert">
+            {props.quickNoteOpenError}{" "}
+            <Button disabled={suspended || props.quickNoteOpening} onClick={props.onOpenQuickNote}>
+              Retry
+            </Button>
+          </p>
+        )}
         {counts && !sessions.failure && (
           <p className="text-sm text-body">
             {counts.running ? `${counts.running} sessions running` : "No sessions running"} ·{" "}

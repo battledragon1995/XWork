@@ -87,7 +87,8 @@ it("shows the two Phase 1 blocks with real counts and encoded destinations", asy
   );
   expect(screen.getByText("1 sessions running · 0 need attention")).toBeInTheDocument();
   expect(screen.getByText("3 tabs · 2 processes")).toBeInTheDocument();
-  expect(screen.queryByText(/Quick Note|Calendar|Upcoming|Save note/)).toBeNull();
+  expect(screen.getByRole("button", { name: "Open Quick Note window" })).toBeInTheDocument();
+  expect(screen.queryByText(/Calendar|Upcoming|Save note/)).toBeNull();
   expect(listSessions).toHaveBeenCalledExactlyOnceWith();
 });
 // Status labels never filter finished, unconfigured or failed sessions out of Home.

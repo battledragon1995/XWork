@@ -1,4 +1,8 @@
 import * as notesIpc from "@/lib/ipc/notes";
+import { openQuickNoteWindow } from "@/lib/ipc/quick-note-window";
+
+/** Isolate native singleton opening. */
+vi.mock("@/lib/ipc/quick-note-window");
 /** Isolate Notes presence and projection reads. */
 vi.mock("@/lib/ipc/notes", () => ({
   listNotes: vi.fn(async () => ({
@@ -12,8 +16,7 @@ vi.mock("@/lib/ipc/notes", () => ({
   createNote: vi.fn(),
   getNote: vi.fn(),
 }));
-import { NotesProvider } from "@/features/notes";
-import { note } from "@/features/notes/notes-test-fixture";
+
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { useEffect } from "react";
 import { createMemoryRouter, Link, Outlet, RouterProvider } from "react-router";
@@ -26,6 +29,8 @@ import {
   FileHandleRegistry,
   type FileHandleRegistryDependencies,
 } from "@/features/files/file-handle-registry";
+import { NotesProvider } from "@/features/notes";
+import { note } from "@/features/notes/notes-test-fixture";
 import { resetProjectsStore } from "@/features/projects/projects-store";
 import { resetSessionsStore } from "@/features/sessions/sessions-store";
 import { resetCliProfilesStore } from "@/features/settings/cli-profiles-store";
@@ -548,4 +553,52 @@ it("accepts a Save after Home unmount without changing the current route", async
   await act(async () => router.navigate("/"));
   expect(await screen.findByRole("link", { name: "Open note" })).toBeInTheDocument();
   expect(notesIpc.createNote).toHaveBeenCalledTimes(1);
+});
+/** Floating opening retains the Home draft and rejects repeated native requests. */
+it("opens once, retains Home input and recovers opening failure", async () => {
+  const pending = deferred<void>();
+  vi.mocked(openQuickNoteWindow).mockReturnValueOnce(pending.promise);
+  await mount();
+  fireEvent.change(await screen.findByLabelText("Markdown"), { target: { value: "Home draft" } });
+  const open = screen.getByRole("button", { name: "Open Quick Note window" });
+  act(
+    /** Race activations before React renders pending state. */ () => {
+      fireEvent.click(open);
+      fireEvent.click(open);
+    },
+  );
+  expect(openQuickNoteWindow).toHaveBeenCalledTimes(1);
+  await act(async () => pending.resolve());
+  expect(screen.getByLabelText("Markdown")).toHaveValue("Home draft");
+  vi.mocked(openQuickNoteWindow).mockRejectedValueOnce(new Error("native"));
+  fireEvent.click(open);
+  expect(await screen.findByText("Could not open Quick Note. Try again.")).toBeInTheDocument();
+  vi.mocked(openQuickNoteWindow).mockResolvedValueOnce();
+  await act(async () => fireEvent.click(screen.getByRole("button", { name: "Retry" })));
+  expect(screen.queryByText("Could not open Quick Note. Try again.")).toBeNull();
+});
+/** Main operation owners block stale opening callbacks in the same tick. */
+it("blocks floating opening while Quit or Data starts", async () => {
+  await mount();
+  const open = await screen.findByRole("button", { name: "Open Quick Note window" });
+  act(
+    /** Change live Quit state before the disabled render. */ () => {
+      useQuitStore.setState({ phase: "requesting" });
+      fireEvent.click(open);
+    },
+  );
+  expect(openQuickNoteWindow).not.toHaveBeenCalled();
+  act(
+    /** Restore idle before admitting maintenance. */ () =>
+      useQuitStore.setState({ phase: "idle" }),
+  );
+  let preparing!: Promise<void>;
+  act(
+    /** Claim Data synchronously before stale activation. */ () => {
+      preparing = data.prepare("reset");
+      fireEvent.click(open);
+    },
+  );
+  await act(async () => preparing);
+  expect(openQuickNoteWindow).not.toHaveBeenCalled();
 });

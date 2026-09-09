@@ -9,6 +9,9 @@ export interface HomeBoundarySnapshot {
   epoch: number;
 }
 export interface HomeRouteProps {
+  onOpenQuickNote?(): void;
+  quickNoteOpening?: boolean;
+  quickNoteOpenError?: string | null;
   notesSection?: React.ReactNode;
   quickNoteSlot?: React.ReactNode;
   notesPresence?: "loading" | "present" | "empty" | "error";
@@ -71,7 +74,12 @@ export function HomeRoute(props: HomeRouteProps = {}) {
               />
             </div>
           )}
-          <WelcomeScreen />
+          <WelcomeScreen
+            onOpenQuickNote={props.onOpenQuickNote}
+            quickNoteOpening={props.quickNoteOpening}
+            quickNoteOpenError={props.quickNoteOpenError}
+            quickNoteDisabled={props.boundary?.suspended}
+          />
         </>
       ) : presence.status === "present" ||
         (presence.status === "empty" && props.notesPresence === "present") ? (

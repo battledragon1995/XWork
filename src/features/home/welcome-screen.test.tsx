@@ -45,12 +45,12 @@ function ProjectProbe() {
 }
 
 /** Render Welcome inside the router and tooltip context the application provides. */
-function renderWelcome() {
+function renderWelcome(props: Parameters<typeof WelcomeScreen>[0] = {}) {
   return render(
     <TooltipProvider>
       <MemoryRouter initialEntries={["/"]}>
         <Routes>
-          <Route path="/" element={<WelcomeScreen />} />
+          <Route path="/" element={<WelcomeScreen {...props} />} />
           <Route path="/projects/:projectId" element={<ProjectProbe />} />
         </Routes>
       </MemoryRouter>
@@ -74,6 +74,24 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+});
+
+/** Route the shipped capture entry and retry through the app-owned callback. */
+it("activates Quick Note and presents native opening recovery", async () => {
+  const open = vi.fn();
+  renderWelcome({
+    onOpenQuickNote: open,
+    quickNoteOpenError: "Could not open Quick Note. Try again.",
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Open Quick Note" }));
+  fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+  expect(open).toHaveBeenCalledTimes(2);
+  expect(screen.getByRole("alert")).toHaveTextContent("Could not open Quick Note");
+});
+/** Disable capture activation while the app operation boundary is suspended. */
+it("disables Quick Note while opening or suspended", () => {
+  renderWelcome({ quickNoteDisabled: true });
+  expect(screen.getByRole("button", { name: "Open Quick Note" })).toBeDisabled();
 });
 
 describe("WelcomeScreen content", () => {
@@ -158,29 +176,29 @@ describe("WelcomeScreen keyboard access", () => {
 
   // Verify both unavailable controls stay reachable instead of being removed from the tab
   // order, because their tooltip is the only explanation a keyboard user can reach.
-  it.each([
-    ["Open Quick Note", "Quick Note arrives with FE-020."],
-    ["See keyboard shortcuts", "Keyboard shortcuts arrive with FE-014."],
-  ])("keeps %s focusable and explained by a tooltip", async (name, tooltip) => {
-    const user = userEvent.setup();
-    renderWelcome();
-    const control = screen.getByRole("button", { name });
+  it.each([["See keyboard shortcuts", "Keyboard shortcuts arrive with FE-014."]])(
+    "keeps %s focusable and explained by a tooltip",
+    async (name, tooltip) => {
+      const user = userEvent.setup();
+      renderWelcome();
+      const control = screen.getByRole("button", { name });
 
-    expect(control).toHaveAttribute("aria-disabled", "true");
-    expect(control).not.toBeDisabled();
+      expect(control).toHaveAttribute("aria-disabled", "true");
+      expect(control).not.toBeDisabled();
 
-    await user.hover(control);
-    expect((await screen.findAllByText(tooltip)).length).toBeGreaterThan(0);
+      await user.hover(control);
+      expect((await screen.findAllByText(tooltip)).length).toBeGreaterThan(0);
 
-    await user.unhover(control);
-    act(() => {
-      control.focus();
-    });
-    expect((await screen.findAllByText(tooltip)).length).toBeGreaterThan(0);
-  });
+      await user.unhover(control);
+      act(() => {
+        control.focus();
+      });
+      expect((await screen.findAllByText(tooltip)).length).toBeGreaterThan(0);
+    },
+  );
 
   // Verify an unavailable control performs no action through any of its activation paths.
-  it.each([["Open Quick Note"], ["See keyboard shortcuts"]])(
+  it.each([["See keyboard shortcuts"]])(
     "makes %s inert on click, Enter and Space",
     async (name) => {
       const user = userEvent.setup();

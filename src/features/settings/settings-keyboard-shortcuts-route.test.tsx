@@ -206,8 +206,10 @@ const snapshot: KeyboardShortcutsDto = {
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import type { QuickNoteGlobalShortcutStatusDto } from "@/bindings/quick-note-window";
 import { readAppInfo } from "@/lib/ipc/app-info";
 import * as ipc from "@/lib/ipc/keyboard-shortcuts";
+import * as quickNoteIpc from "@/lib/ipc/quick-note-window";
 import { KeyboardShortcutsProvider } from "./keyboard-shortcuts-provider";
 import { SettingsKeyboardShortcutsRoute } from "./settings-keyboard-shortcuts-route";
 
@@ -220,9 +222,40 @@ vi.mock("@/lib/ipc/keyboard-shortcuts", () => ({
 }));
 /** Never inspect the host OS in component tests. */
 vi.mock("@/lib/ipc/app-info", () => ({ readAppInfo: vi.fn() }));
+/** Keep native registration isolated from route tests. */
+vi.mock("@/lib/ipc/quick-note-window", () => ({
+  getQuickNoteGlobalShortcutStatus: vi.fn(),
+  onQuickNoteGlobalShortcutStatusChanged: vi.fn(),
+}));
+const globalChord = { primary: true, alt: true, shift: false, keyCode: "KeyN" };
+const globalStatus: QuickNoteGlobalShortcutStatusDto = {
+  sequence: "1",
+  actionId: "quick_note.open_global",
+  chord: globalChord,
+  state: "active",
+  conflictsWith: [],
+};
+/** Extend the historical fixture with the Phase 3 native shortcut action. */
+function withGlobal() {
+  const catalog = structuredClone(snapshot);
+  catalog.actions.unshift({
+    actionId: "quick_note.open_global",
+    label: "Quick Note",
+    category: "global",
+    scope: "global",
+    currentChord: globalChord,
+    defaultChord: globalChord,
+    isCustom: false,
+    conflictsWith: [],
+    isDispatchable: true,
+  });
+  return catalog;
+}
 /** Reset the catalog for every independent route lifetime. */
 beforeEach(() => {
   vi.resetAllMocks();
+  vi.mocked(quickNoteIpc.getQuickNoteGlobalShortcutStatus).mockResolvedValue(globalStatus);
+  vi.mocked(quickNoteIpc.onQuickNoteGlobalShortcutStatusChanged).mockResolvedValue(vi.fn());
   vi.mocked(readAppInfo).mockResolvedValue({
     osPlatform: "windows",
     appVersion: "test",
@@ -233,6 +266,115 @@ beforeEach(() => {
   vi.mocked(ipc.resetAllKeyboardShortcuts).mockResolvedValue(structuredClone(snapshot));
 });
 afterEach(cleanup);
+
+/** Native availability replaces the historical unimplemented action label. */
+it("shows actual global status and supports explicit reconciliation", async () => {
+  vi.mocked(ipc.getKeyboardShortcuts).mockResolvedValue(withGlobal());
+  vi.mocked(quickNoteIpc.getQuickNoteGlobalShortcutStatus).mockRejectedValueOnce(
+    new Error("offline"),
+  );
+  await mount();
+  const row = screen.getByRole("button", { name: "Change shortcut for Quick Note" }).closest("tr");
+  expect(row).not.toHaveTextContent("Not available yet");
+  expect(
+    await screen.findByText("Could not read global shortcut status. Try again."),
+  ).toBeInTheDocument();
+  await userEvent
+    .setup()
+    .click(screen.getByRole("button", { name: "Retry global shortcut status" }));
+  expect(await screen.findByText("Global shortcut active")).toBeInTheDocument();
+});
+
+/** An OS registration failure never rolls back an acknowledged shortcut assignment. */
+it("retains a saved global chord when native registration is unavailable", async () => {
+  const user = userEvent.setup();
+  const catalog = withGlobal();
+  vi.mocked(ipc.getKeyboardShortcuts).mockResolvedValue(catalog);
+  await mount();
+  await user.click(screen.getByRole("button", { name: "Change shortcut for Quick Note" }));
+  fireEvent.keyDown(screen.getByRole("button", { name: "Press a shortcut" }), {
+    code: "KeyY",
+    ctrlKey: true,
+  });
+  const changed = structuredClone(catalog);
+  const action = changed.actions[0];
+  if (action === undefined) throw new Error("Expected global action");
+  action.currentChord = { ...globalChord, alt: false, keyCode: "KeyY" };
+  action.isCustom = true;
+  vi.mocked(ipc.setKeyboardShortcut).mockResolvedValue(changed);
+  vi.mocked(quickNoteIpc.getQuickNoteGlobalShortcutStatus).mockResolvedValue({
+    ...globalStatus,
+    sequence: "2",
+    chord: action.currentChord,
+    state: "unavailable",
+  });
+  const reads = vi.mocked(quickNoteIpc.getQuickNoteGlobalShortcutStatus).mock.calls.length;
+  await user.click(screen.getByRole("button", { name: "Save" }));
+  expect(
+    await screen.findByText(
+      "Global shortcut unavailable. Change or reset the shortcut, or restart XWork.",
+    ),
+  ).toBeInTheDocument();
+  expect(quickNoteIpc.getQuickNoteGlobalShortcutStatus).toHaveBeenCalledTimes(reads + 1);
+  expect(screen.getByRole("button", { name: "Change shortcut for Quick Note" })).toHaveTextContent(
+    "CtrlY",
+  );
+  expect(screen.getByRole("button", { name: "Reset shortcut for Quick Note" })).toBeEnabled();
+  expect(ipc.resetKeyboardShortcut).not.toHaveBeenCalled();
+});
+
+/** Native status for an old chord stays pending until the committed chord is reconciled. */
+it("shows pending reconciliation and then backend conflict names", async () => {
+  const catalog = withGlobal();
+  const action = catalog.actions[0];
+  if (action === undefined) throw new Error("Expected global action");
+  action.conflictsWith = ["tabs.create"];
+  action.isDispatchable = false;
+  vi.mocked(ipc.getKeyboardShortcuts).mockResolvedValue(catalog);
+  vi.mocked(quickNoteIpc.getQuickNoteGlobalShortcutStatus).mockResolvedValue({
+    ...globalStatus,
+    chord: { ...globalChord, keyCode: "KeyY" },
+  });
+  await mount();
+  expect(screen.getByText("Applying global shortcut…")).toBeInTheDocument();
+  expect(screen.queryByText("Global shortcut active")).not.toBeInTheDocument();
+  const callback = vi.mocked(quickNoteIpc.onQuickNoteGlobalShortcutStatusChanged).mock
+    .calls[0]?.[0];
+  if (callback === undefined) throw new Error("Expected status listener");
+  act(
+    // Reconcile the actual catalog assignment after its OS registration is disabled.
+    () =>
+      callback({
+        ...globalStatus,
+        sequence: "2",
+        state: "disabled_by_conflict",
+        conflictsWith: ["tabs.create"],
+      }),
+  );
+  expect(screen.getByText("Disabled by shortcut conflict")).toBeInTheDocument();
+  expect(screen.getByText(/Conflicts with New tab/)).toBeInTheDocument();
+});
+
+/** Both reset operations reconcile native status after the catalog commit succeeds. */
+it("refreshes global registration after reset-one and reset-all", async () => {
+  const user = userEvent.setup();
+  const catalog = withGlobal();
+  const action = catalog.actions[0];
+  if (action === undefined) throw new Error("Expected global action");
+  action.isCustom = true;
+  vi.mocked(ipc.getKeyboardShortcuts).mockResolvedValue(catalog);
+  vi.mocked(ipc.resetKeyboardShortcut).mockResolvedValue(withGlobal());
+  vi.mocked(ipc.resetAllKeyboardShortcuts).mockResolvedValue(withGlobal());
+  await mount();
+  const reads = vi.mocked(quickNoteIpc.getQuickNoteGlobalShortcutStatus).mock.calls.length;
+  await user.click(screen.getByRole("button", { name: "Reset shortcut for Quick Note" }));
+  expect(quickNoteIpc.getQuickNoteGlobalShortcutStatus).toHaveBeenCalledTimes(reads + 1);
+  await user.click(screen.getByRole("button", { name: "Restore all defaults" }));
+  await user.click(
+    within(screen.getByRole("dialog")).getByRole("button", { name: "Restore all defaults" }),
+  );
+  expect(quickNoteIpc.getQuickNoteGlobalShortcutStatus).toHaveBeenCalledTimes(reads + 2);
+});
 /** Mount the real provider and wait for the backend catalog. */
 async function mount() {
   const view = render(

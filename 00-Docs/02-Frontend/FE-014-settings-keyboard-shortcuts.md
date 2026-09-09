@@ -323,3 +323,7 @@ Mock IPC ở frontend, không dùng app data thật. Chạy lại bộ Rust BE-0
 ## Câu hỏi mở
 
 Không có.
+
+## Mở rộng giai đoạn 19 — Quick Note global shortcut
+
+Contract chi tiết/file/test theo `FE-020-quick-note.md`, mục FE001 và FE014 integration. Catalog BE009 nay có `quick_note.open_global`; route bỏ nhãn Not available yet cho action này và giữ cùng luồng edit/reset/conflict. BE017 sở hữu đăng ký OS. Hook `src/features/settings/use-quick-note-shortcut-status.ts` đọc snapshot/listen status trong main, sequence decimal string so sánh BigInt, ignore older/duplicate, cleanup late unlisten; mount/focus/Retry reconcile. Initial unavailable trước BE017 reconcile không fatal. Status unknown không hiển thị active; chord chưa khớp catalog hiển thị Applying global shortcut. Status unavailable hướng dẫn đổi/reset/restart, không rollback override hoặc đoán tên app chiếm chord. File hook test và settings-keyboard-shortcuts-route test kiểm chứng race/recovery và mutation. Các giới hạn 18 action Phase1 phía trên là scope lịch sử, không áp dụng catalog Phase3. Không có câu hỏi mở cho extension này.

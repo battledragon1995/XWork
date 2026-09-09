@@ -1,8 +1,6 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import { RouterProvider } from "react-router";
-import { AppProviders } from "@/app/app-providers";
-import { createAppRouter } from "@/app/app-router";
+import { createWindowEntry } from "@/app/window-entry";
 import { bootstrapAppSettings } from "@/features/settings/settings-store";
 import "@/index.css";
 
@@ -17,9 +15,5 @@ if (!rootElement) {
 bootstrapAppSettings();
 
 createRoot(rootElement).render(
-  <StrictMode>
-    <AppProviders>
-      <RouterProvider router={createAppRouter()} />
-    </AppProviders>
-  </StrictMode>,
+  <StrictMode>{createWindowEntry(window.location.search)}</StrictMode>,
 );

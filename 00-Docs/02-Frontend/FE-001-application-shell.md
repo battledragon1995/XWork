@@ -476,3 +476,7 @@ Vị trí và độ mượt của vệt sáng sidebar/topbar không kiểm đư�
 ## Câu hỏi mở
 
 Không có.
+
+## Mở rộng giai đoạn 19 — Entry Quick Note
+
+Contract chi tiết và danh sách file/test thuộc `FE-020-quick-note.md`, mục Mở rộng giai đoạn 19. `src/main.tsx` chọn entry bằng literal query `window=quick-note` trước khi tạo router; `src/app/window-entry.tsx` compose floating bằng TooltipProvider, AppearanceThemeSync và public QuickNoteWindow. Không mount main providers, shell, QuitDialog hoặc keyboard executor trong floating. Read-only get_settings giữ theme khi mở; mutation settings vẫn chỉ main. Home/Welcome mở bằng callback app sở hữu với guard Data/Quit và error/retry; main hide-to-tray không ảnh hưởng floating. Các mô tả Phase1 trước đây là phạm vi lịch sử, không còn có nghĩa Quick Note unavailable. Native window policy giữ BE017; không dùng guest API hoặc mở quyền. Không có câu hỏi mở cho extension này.

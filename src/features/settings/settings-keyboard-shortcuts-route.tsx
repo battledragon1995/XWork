@@ -14,8 +14,10 @@ import { useKeyboardShortcuts } from "./keyboard-shortcuts-provider";
 import { shortcutErrorCopy } from "./keyboard-shortcuts-state";
 import { SettingsSection } from "./settings-section";
 import { ShortcutRecorderDialog } from "./shortcut-recorder-dialog";
+import { useQuickNoteShortcutStatus } from "./use-quick-note-shortcut-status";
 
 const AVAILABLE = new Set([
+  "quick_note.open_global",
   "search.open_command_palette",
   "tabs.create",
   "tabs.close",
@@ -53,6 +55,11 @@ export function SettingsKeyboardShortcutsRoute() {
     [refresh],
   );
   const actions = state.snapshot?.actions ?? [];
+  const globalAction = actions.find(
+    // Native registration is reconciled against the committed catalog chord.
+    (action) => action.actionId === "quick_note.open_global",
+  );
+  const globalShortcut = useQuickNoteShortcutStatus(globalAction?.currentChord ?? null);
   const editing = actions.find(
     // Resolve the current action again after each committed snapshot.
     (action) => action.actionId === editingId,
@@ -95,6 +102,7 @@ export function SettingsKeyboardShortcutsRoute() {
   /** Reset one row and focus its surviving chord button. */
   async function resetOne(actionId: string) {
     if (await state.resetOne(actionId)) {
+      void globalShortcut.refresh();
       setNotice("Defaults restored.");
       (rows.current.get(actionId) ?? search.current)?.focus();
     }
@@ -102,6 +110,7 @@ export function SettingsKeyboardShortcutsRoute() {
   /** Confirm restore-all across the entire catalog, independent of the query. */
   async function restoreAll() {
     if (await state.resetAll()) {
+      void globalShortcut.refresh();
       setRestoreOpen(false);
       setNotice("Defaults restored.");
     }
@@ -275,6 +284,34 @@ export function SettingsKeyboardShortcutsRoute() {
                           </button>
                         </td>
                         <td className="p-2 align-top break-words">
+                          {action.actionId === "quick_note.open_global" && (
+                            <div className="mb-2">
+                              <p role={globalShortcut.error === null ? "status" : "alert"}>
+                                {globalShortcut.error ??
+                                  (globalShortcut.status === "active"
+                                    ? "Global shortcut active"
+                                    : globalShortcut.status === "disabled_by_conflict"
+                                      ? "Disabled by shortcut conflict"
+                                      : globalShortcut.status === "unavailable"
+                                        ? "Global shortcut unavailable. Change or reset the shortcut, or restart XWork."
+                                        : "Applying global shortcut…")}
+                              </p>
+                              {(globalShortcut.error !== null ||
+                                globalShortcut.status === "unavailable") && (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  aria-label="Retry global shortcut status"
+                                  onClick={
+                                    // Read native status again without changing the saved assignment.
+                                    () => void globalShortcut.refresh()
+                                  }
+                                >
+                                  Retry
+                                </Button>
+                              )}
+                            </div>
+                          )}
                           {action.isCustom ? (
                             <Button
                               variant="ghost"
@@ -327,6 +364,7 @@ export function SettingsKeyboardShortcutsRoute() {
           onSaved={
             // Announce the acknowledged backend commit.
             () => {
+              void globalShortcut.refresh();
               setEditingId(null);
               setNotice("Shortcut saved.");
             }

@@ -28,7 +28,14 @@ function UnavailableAction(props: { tooltip: string; children: ReactElement }) {
  * entry points §5.1 requires even though their features arrive later. It owns no project
  * data; the backend registers the folder and this screen only reacts to the outcome.
  */
-export function WelcomeScreen() {
+export function WelcomeScreen(
+  props: {
+    onOpenQuickNote?(): void;
+    quickNoteOpening?: boolean;
+    quickNoteOpenError?: string | null;
+    quickNoteDisabled?: boolean;
+  } = {},
+) {
   const addProjectButton = useRef<HTMLButtonElement>(null);
   const navigate = useNavigate();
 
@@ -91,17 +98,26 @@ export function WelcomeScreen() {
               </p>
             )}
 
-            <UnavailableAction tooltip="Quick Note arrives with FE-020.">
-              <Button
-                variant="secondary"
-                aria-disabled="true"
-                onClick={ignoreActivation}
-                className="h-10 border border-hairline px-5 text-[14px] text-muted-soft"
-              >
-                <PenLine className="size-3.5" />
-                Open Quick Note
-              </Button>
-            </UnavailableAction>
+            <Button
+              variant="secondary"
+              disabled={props.quickNoteOpening || props.quickNoteDisabled}
+              onClick={props.onOpenQuickNote}
+              className="h-10 border border-hairline px-5 text-[14px] text-muted-soft"
+            >
+              <PenLine className="size-3.5" />
+              Open Quick Note
+            </Button>
+            {props.quickNoteOpenError && (
+              <p role="alert">
+                {props.quickNoteOpenError}{" "}
+                <Button
+                  disabled={props.quickNoteOpening || props.quickNoteDisabled}
+                  onClick={props.onOpenQuickNote}
+                >
+                  Retry
+                </Button>
+              </p>
+            )}
           </div>
 
           <p className="mt-4">

@@ -212,3 +212,105 @@ Phần Quick Note nhúng Home đã hoàn thành kiểm chứng tự động: 179
 Hook project choices nhận cờ suspended tùy chọn để composer dừng query khi Data/Quit đang chặn thao tác; consumer Notes hiện hữu giữ mặc định. Test maintenance dùng HomeEntry với NotesProvider/DataManagementHost thật để kiểm tra draft sau Home unmount; public Data bridge không đổi.
 
 Các checkbox trên ghi phạm vi implementation và automated verification. Native Windows smoke vẫn **pending** vì chưa có môi trường disposable/operator; build không thay thế kiểm tra restart/tray/IME/theme/font/responsive/import-reset native. Stage18 được bàn giao dưới trạng thái **automated implementation complete; native stage acceptance pending**. Stage19/floating/BE-017/tray/global shortcut và nghiệm thu toàn Phase3 vẫn deferred. Draft chưa được backend xác nhận vẫn có thể mất khi crash/force exit/immediate tray Quit.
+
+## Mở rộng giai đoạn 19 — Cửa sổ nổi
+
+Phần này chốt đầy đủ phần floating của FE-020 và có hiệu lực thay các câu defer giai đoạn 19 ở phần Home phía trên. Contract Home đã triển khai giữ nguyên, chỉ bổ sung điểm mở. Người dùng ủy quyền tự quyết các câu hỏi thiết kế; không còn câu hỏi cần chờ.
+
+### Quyết định và phạm vi
+
+- `index.html?window=quick-note` chọn entry riêng trước khi tạo router. Không mount AppProviders, NotesProvider, TerminalProvider, FileHandleProvider, QuitDialog, shell hoặc keyboard executor của main. Query chỉ chọn presentation; caller authorization vẫn do Rust.
+- Entry chỉ compose TooltipProvider, AppearanceThemeSync và public QuickNoteWindow. `bootstrapAppSettings()` vẫn được gọi vì `get_settings` hiện hữu là read-only AppHandle command, không khóa main. Không gọi mutation settings hoặc status global từ floating. Theme lấy snapshot khi mở; lỗi đọc dùng system/static tokens hiện hữu, không chặn capture. Không tạo cross-window theme protocol.
+- Form floating dùng local state và public createNote/listProjects, không reuse NotesProvider vì provider có các command/listener main-only. Có thể chia sẻ helper validation thuần giữa hai composer; không đổi luồng Home. Title input, textarea Markdown, native select và button hiện hữu là đủ; không thêm dependency.
+- Home có `Open Quick Note window` ngoài composer; Welcome kích hoạt `Open Quick Note`. App sở hữu command callback và lỗi mở, truyền qua props/slot, Home không import Notes hoặc Settings. Không chuyển draft Home sang floating. Open pending khóa lặp đồng bộ; lỗi giữ vị trí và có Retry. Data/Quit guard main hiện hữu chặn activation mới từ UI.
+- BE017 đã sở hữu tray/global/singleton/on-top/geometry. FE không dùng guest window/global-shortcut API hay tự register chord. Không mở rộng capability/backend.
+
+### File liên quan bổ sung
+
+| Đường dẫn | Vai trò |
+|---|---|
+| `src/main.tsx` | Chọn bootstrap theo query trước router |
+| `src/app/window-entry.tsx`, `src/app/window-entry.test.tsx` | Composition main/floating và test không mount main owners |
+| `src/features/notes/quick-note-window.tsx`, `src/features/notes/quick-note-window.test.tsx` | Floating capture và lifecycle local |
+| `src/features/notes/quick-note-validation.ts`, `src/features/notes/quick-note-validation.test.ts` | Helper validation thuần chia sẻ nếu tách từ Home |
+| `src/lib/ipc/quick-note-window.ts`, `src/lib/ipc/quick-note-window.test.ts` | Bốn command và status listener BE017 |
+| `src/features/home/home-route.tsx`, `src/features/home/welcome-screen.tsx`, `src/features/home/welcome-screen.test.tsx` | Inject điểm mở thật và feedback |
+| `src/features/settings/use-quick-note-shortcut-status.ts`, `src/features/settings/use-quick-note-shortcut-status.test.tsx` | Snapshot/event main-only, reconcile trên mount/focus |
+| `src/features/settings/settings-keyboard-shortcuts-route.tsx`, `src/features/settings/settings-keyboard-shortcuts-route.test.tsx` | Hàng global active/conflict/unavailable |
+| `src/features/settings/appearance-theme-sync.tsx`, `src/features/settings/settings-store.ts` | Public app composition reuse, chỉ đọc |
+| `src/bindings/quick-note-window.ts` | Generated DTO authority, chỉ đọc |
+| `src-tauri/tests/quick_note_window.rs`, `src-tauri/tests/keyboard_shortcuts_contract.rs`, `src-tauri/tests/app_lifecycle.rs`, `src-tauri/tests/window_configuration.rs` | Regression gates, chỉ đọc |
+
+Các đường dẫn HomeEntry, HomeRoute tests, Notes index/composer/tests, bindings/notes và wrapper Projects đã nằm trong bảng Home phía trên và được phép sửa đúng phần integration này.
+
+### UI, state và tương tác floating
+
+Bám `06-Notes.html#quick-note`: titlebar XWork / Quick Note, helper `Esc cancel`, nút `Close Quick Note`, vùng nội dung padding 16–20px, title/body, project, Markdown hint, Cancel/Save. Body co giãn, footer wrap và nội dung cuộn ở minimum geometry BE017. Titlebar drag chỉ primary pointer trên vùng trống; controls không kích hoạt drag. Drag failure có alert an toàn, không ảnh hưởng draft.
+
+| Trạng thái | Biểu hiện và recovery |
+|---|---|
+| Empty/editing | Title optional, autofocus body một lần khi mount, project mặc định No project; Enter textarea xuống dòng |
+| Projects loading/error/empty | Báo loading / lỗi + Refresh / No project; unlinked vẫn Save được, không tự thay selected ID |
+| Invalid | Cùng Unicode scalar/title control/UTF-8 body limits và raw Markdown contract Home; alert/aria-invalid, focus field lỗi |
+| Saving | Lock đồng bộ trước await; fields/Save/Cancel/Close disabled, Escape bị chặn; không timeout/retry tự động |
+| Typed create error | Giữ mọi input, noteErrorCopy; cho sửa/Save explicit, không close |
+| Uncertain create | Text read-only để copy; `Could not confirm creation. Check Notes in the main window before creating another note.`; Save disabled, Cancel/Close cho bỏ local draft, không gọi main navigation command bị cấm |
+| Closing | Giữ committed NoteDto nếu đã Save; freeze form, một close flight |
+| Saved close error | `Note saved, but the window could not close.`; chỉ `Retry Close`, tuyệt đối không create lần hai |
+| Cancel close error | Giữ draft và báo không đóng được; cho Retry Close; không giả đã hủy khi cửa sổ còn tồn tại |
+
+Cancel, Escape ngoài IME, custom Close bỏ draft bằng close command không hỏi lại. Khi IME composing không Save bằng activation/Enter và không Escape cancel. Không thêm Ctrl+S ngoài yêu cầu; Save/Cancel native button keyboard. Error role=alert, progress/success role=status, tooltip/name cho icon, focus visible. Không dùng link Open Notes trong floating vì không có command navigate-main. Native CloseRequested/Quit vẫn có thể thắng create flight; ack cũ sau unmount không set state, create đã nhận có thể commit theo BE017.
+
+```ts
+/** Render one isolated manually saved native Quick Note instance. */
+export function QuickNoteWindow(): React.JSX.Element;
+/** Retain capture and commit identity for the lifetime of one renderer. */
+interface FloatingQuickNoteState {
+  title: string;
+  contentMarkdown: string;
+  projectId: string | null;
+  phase: "editing" | "saving" | "error" | "uncertain" | "closing" | "close-error";
+  committedNote: NoteDto | null;
+  message: string | null;
+}
+```
+
+Synchronous ref guards serialize create/close and retain acknowledged NoteDto **trước** close call; React render batching không được cho phép Save lại. Không autosave, persist/localStorage, log draft hoặc nhận event làm acknowledgment. Mở lại sau destroy luôn rỗng. Project removed giữ ID + unavailable option, yêu cầu Refresh/chọn lại hoặc No project; backend quyết định race cuối.
+
+### IPC bổ sung
+
+| Wrapper / command | Input → output | Hành vi |
+|---|---|---|
+| openQuickNoteWindow / open_quick_note_window | Không → void | main Home/Welcome only |
+| closeQuickNoteWindow / close_quick_note_window | Không → void | floating Cancel/Close hoặc sau ack |
+| startQuickNoteWindowDrag / start_quick_note_window_drag | Không → void | floating titlebar only |
+| getQuickNoteGlobalShortcutStatus / get_quick_note_global_shortcut_status | Không → QuickNoteGlobalShortcutStatusDto | main Settings only |
+| onQuickNoteGlobalShortcutStatusChanged | handler(payload) → Promise<UnlistenFn> | `quick-note://global-shortcut-status-changed`, main only |
+
+Wrappers dùng invokeCommand và generated QuickNoteWindowError. unauthorized_window/stale_window/app_shutting_down: safe copy, không auto-loop; window_operation_failed/unavailable/transport: Retry đúng operation. create_note/list_projects giữ generated contracts BE016/Projects. Floating không subscribe notes/projects vì capability event rỗng; project Refresh query trực tiếp đủ cho form ngắn. Notes event phía main hiện hữu invalidate các projection sau commit.
+
+### FE001 và FE014 integration
+
+FE001 bootstrap tách main/floating như trên; main close-to-tray/Quit giữ nguyên. FE014 thêm `quick_note.open_global` vào availability catalog presentation, giữ BE009 set/reset/recorder/conflict. Không hardcode chord mặc định vào executor JavaScript.
+
+Hook status subscribe trước snapshot; compare decimal sequence bằng BigInt sau validation digits, bỏ older/duplicate. Cleanup late subscription phải unlisten; request sau unmount không set state. Snapshot unavailable trước initial reconcile là trạng thái chưa sẵn sàng, không fatal. Event hợp lệ sau đó tự recover; mount/focus/Retry gọi snapshot lại. Query/listener lỗi có status unknown + Retry, không nói active từ catalog. Hiển thị `Global shortcut active`, `Disabled by shortcut conflict`, hoặc `Global shortcut unavailable. Change or reset the shortcut, or restart XWork.`. Nếu status chord chưa khớp currentChord của catalog, hiện `Applying global shortcut…` cho đến reconciliation; không rollback override đã commit. Conflict names từ catalog, không đoán tên ứng dụng chiếm chord. Mutation success trigger status refresh; event quyết định trạng thái OS sau đó.
+
+### Kiểm thử và hoàn thành giai đoạn 19
+
+- [x] window-entry test kiểm tra literal query chọn floating và không tạo router/main owners; main đường cũ vẫn mount. get_settings read-only được phép, không command main-only trong floating.
+- [x] quick-note-window component test cover empty/invalid/IME/projects failures/removed selection, single-flight create, typed/unknown failure, cancel/Escape/drag, ack trước close và retry close không tạo duplicate; mocked IPC promises điều khiển race và unmount.
+- [x] HomeEntry/HomeRoute/Welcome tests chứng minh cả hai điểm mở thật, error/retry và live Data/Quit guard; Home Save vẫn reset tại chỗ.
+- [x] FE014 hook/route tests cover catalog action, mount/focus/error retry, status initial unavailable→active, conflict/unavailable/chord mismatch, out-of-order snapshot/event, late unlisten và mutation không rollback.
+- [x] IPC tests khẳng định exact names/no-argument commands/payload forwarding và typed errors; no raw invoke hoặc guest window/global shortcut registration bằng kiểm tra diff và source imports.
+- [x] Chạy toàn bộ gates frontend/Rust theo tiêu chí phía trên và Windows `pnpm tauri build`; explicit Rust targets quick_note_window/keyboard_shortcuts_contract/app_lifecycle/window_configuration.
+- [ ] Windows smoke trên tài khoản/VM dữ liệu riêng: Home/Welcome/tray/global mở cùng window; repeated trigger giữ draft/main hidden; on-top/drag/resize; Save xuất hiện Notes/project; Cancel/Escape/native close mở lại rỗng; IME; đổi/reset/conflict shortcut; Quit. Tổng hợp §20 Phase3 với evidence Notes/Search/backup đã có ở giai đoạn18.
+
+Native smoke/p95 hiện pending vì công cụ native disabled. Không claim build thay smoke hoặc Phase3 native acceptance đã pass; ghi limitation khi bàn giao và tiếp tục công việc độc lập.
+
+### Ghi nhận triển khai giai đoạn 19 — 2026-09-09
+
+- Floating giữ validation và draft cục bộ; không tách helper dùng chung khi chưa cần và không thay composer Home.
+- Nút mở Home được đặt ở header của HomeScreen hiện hữu; callback/pending/error do HomeEntry sở hữu. Welcome nhận cùng callback qua HomeRoute.
+- Cancel đóng lỗi vẫn giữ nguyên draft và cung cấp Retry Close; Save đóng lỗi giữ NoteDto đã xác nhận trước IPC close, nên Retry Close không thể tạo note trùng.
+- Lần chạy toàn bộ frontend đầu có một assertion Home cũ được cập nhật và một lỗi timing Markdown editor ngoài scope khi chạy đồng thời Rust. Hai target đã pass khi chạy riêng; không sửa Markdown editor. Giới hạn hai Vitest workers cho lượt full cuối giữ nguyên toàn bộ test targets.
+- Native Windows smoke, global shortcut thực trên OS và p95 vẫn pending do công cụ native disabled; build không thay thế bằng chứng này.
