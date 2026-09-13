@@ -847,3 +847,18 @@ Lỗi scheduler nền không chứa user data và không phát trực tiếp qua
 ## Câu hỏi mở
 
 - Không có.
+
+### Ghi chú triển khai Giai đoạn 21 — 2026-09-13
+
+- Theo ủy quyền tự quyết của user, quy tắc staging backup tại `BE-012-backup-and-reset.md` là nguồn chuẩn thay cho các câu cũ trong tài liệu này yêu cầu chờ migration `0010` mới bật toàn bộ v3. Giai đoạn 20 đã export v3 với Events sau `0008`; Giai đoạn 21 chạy tiếp `0009` → `0010`, rồi export thêm object `notificationSettings` typed. Import v3 cũ thiếu field giữ settings local; field hiện diện phải là object hợp lệ, `null` bị từ chối. Import v1/v2 giữ Events và notification settings.
+- Migration runner hiện hữu commit theo từng version. Lỗi migration `0010` rollback riêng version đó, giữ version `0009` đã commit thành công; không làm mất dữ liệu và không khởi tạo service phụ thuộc trước khi registry hoàn tất.
+- Binding hiện được sinh và kiểm tra drift bằng `src-tauri/tests/export_bindings.rs`; dùng cơ chế này thay cho đường dẫn generator binary dự kiến chưa tồn tại. Generated binding không sửa tay.
+
+
+### Quyết định triển khai Giai đoạn 21 — 2026-09-13
+
+- Worker dùng `std::future::poll_fn` để chờ timer, invalidation và Settings watch với Tokio hiện hành, không thêm dependency hoặc bật macro feature mới. Pause/Quit có tín hiệu hủy riêng: dependency future đang đợi Calendar/Notifications được hủy trước khi chờ worker quiesce, tránh vòng chờ với maintenance writer.
+- `app/data_participants.rs` và `settings/data_participant.rs` giữ participant hiện hữu. Reminder là reset-only participant tùy chọn trong builder fixture; composition production luôn đăng ký. Reset capture baseline bằng `DataClock::epoch_ms()` đúng một lần và publish projection sau transaction commit.
+- Mock app builder chỉ chạy một chu kỳ bootstrap và không tạo timer worker nền; các kiểm thử scheduler/worker dùng `ReminderClock` điều khiển, SQLite tạm, Calendar projection giả hoặc projection public thực, Notifications intake thực và recording OS. Production khởi động worker duy nhất; không có thay đổi capability/plugin permission.
+- Extension tối thiểu tại app Notification entry nhận union event target và điều hướng vào route Calendar hiện hữu. Chi tiết Missed/Snooze/Dismiss/visibility UI được triển khai ở bước FE tiếp theo; backend không coi điều hướng này là bằng chứng native smoke.
+- Test red trước triển khai được thu cho migration Settings (`8` thay vì `10`). Các target Reminder/Notifications còn lại không thu red hành vi trước triển khai do module đang được tích hợp song song; chỉ báo các test regression thực sự chạy, không tính compilation failure là red evidence.

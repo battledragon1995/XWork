@@ -148,7 +148,55 @@ pub struct SidebarSettingsDto {
     pub collapsed: bool,
 }
 
-/// Returns the complete Phase 1 application settings contract.
+/// Selects the terminal states eligible for operating-system notifications.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[ts(rename_all = "camelCase", export_to = "settings.ts")]
+pub struct CliOsNotificationStatesDto {
+    pub needs_input: bool,
+    pub process_finished: bool,
+    pub process_exited_with_error: bool,
+}
+
+/// Returns the persisted terminal and event notification policy.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[ts(rename_all = "camelCase", export_to = "settings.ts")]
+pub struct NotificationSettingsDto {
+    pub terminal_activity_enabled: bool,
+    pub terminal_os_states: CliOsNotificationStatesDto,
+    pub event_reminders_enabled: bool,
+}
+
+impl Default for NotificationSettingsDto {
+    /// Returns the documented first-run notification policy.
+    fn default() -> Self {
+        Self {
+            terminal_activity_enabled: true,
+            terminal_os_states: CliOsNotificationStatesDto {
+                needs_input: true,
+                process_finished: false,
+                process_exited_with_error: true,
+            },
+            event_reminders_enabled: true,
+        }
+    }
+}
+
+/// Describes an atomic partial update of notification policy.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[ts(rename_all = "camelCase", export_to = "settings.ts")]
+pub struct NotificationSettingsPatchDto {
+    #[ts(optional)]
+    pub terminal_activity_enabled: Option<bool>,
+    #[ts(optional)]
+    pub terminal_os_states: Option<CliOsNotificationStatesDto>,
+    #[ts(optional)]
+    pub event_reminders_enabled: Option<bool>,
+}
+
+/// Returns the complete committed application settings contract.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(rename_all = "camelCase")]
@@ -158,11 +206,12 @@ pub struct AppSettingsDto {
     pub general: GeneralSettingsDto,
     pub appearance: AppearanceSettingsDto,
     pub sidebar: SidebarSettingsDto,
+    pub notifications: NotificationSettingsDto,
 }
 
 /// Describes an optional partial Appearance update.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 #[ts(rename_all = "camelCase")]
 #[ts(export_to = "settings.ts")]
 pub struct AppearanceSettingsPatchDto {
@@ -182,7 +231,7 @@ pub struct AppearanceSettingsPatchDto {
 
 /// Describes an optional partial sidebar update.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 #[ts(rename_all = "camelCase")]
 #[ts(export_to = "settings.ts")]
 pub struct SidebarSettingsPatchDto {
@@ -194,7 +243,7 @@ pub struct SidebarSettingsPatchDto {
 
 /// Describes one atomic partial settings update.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 #[ts(rename_all = "camelCase")]
 #[ts(export_to = "settings.ts")]
 pub struct UpdateSettingsDto {
@@ -202,6 +251,8 @@ pub struct UpdateSettingsDto {
     pub appearance: Option<AppearanceSettingsPatchDto>,
     #[ts(optional)]
     pub sidebar: Option<SidebarSettingsPatchDto>,
+    #[ts(optional)]
+    pub notifications: Option<NotificationSettingsPatchDto>,
 }
 
 /// Describes stable Settings failures without exposing SQLite details.
@@ -277,10 +328,11 @@ pub struct SettingsSnapshot {
     pub general: GeneralSettingsDto,
     pub appearance: AppearanceSettingsDto,
     pub sidebar: SidebarSettingsDto,
+    pub notifications: NotificationSettingsDto,
 }
 
 impl SettingsSnapshot {
-    /// Creates the exact first-run Phase 1 settings snapshot.
+    /// Creates the exact first-run settings snapshot.
     pub fn defaults() -> Self {
         Self {
             revision: 0,
@@ -290,6 +342,7 @@ impl SettingsSnapshot {
                 width_px: 280,
                 collapsed: false,
             },
+            notifications: NotificationSettingsDto::default(),
         }
     }
 
@@ -300,27 +353,28 @@ impl SettingsSnapshot {
             general: self.general.clone(),
             appearance: self.appearance.clone(),
             sidebar: self.sidebar.clone(),
+            notifications: self.notifications.clone(),
         }
     }
 }
 
-/// Carries the settings-owned section of a future coordinator snapshot.
+/// Carries the settings-owned section of the coordinator backup snapshot.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SettingsBackupSection {
     pub appearance: AppearanceSettingsDto,
     pub sidebar: SidebarSettingsDto,
-    pub notification_settings: Option<()>,
+    pub notification_settings: Option<NotificationSettingsDto>,
 }
 
 impl SettingsBackupSection {
-    /// Returns the persisted Phase 1 defaults without General invariants.
+    /// Returns the persisted defaults without General invariants.
     pub fn defaults() -> Self {
         let snapshot = SettingsSnapshot::defaults();
         Self {
             appearance: snapshot.appearance,
             sidebar: snapshot.sidebar,
-            notification_settings: None,
+            notification_settings: Some(snapshot.notifications),
         }
     }
 }
@@ -348,7 +402,7 @@ struct SettingsServiceInner {
     gate: DataMaintenanceGate,
     write_gate: Mutex<()>,
     cache: RwLock<SettingsSnapshot>,
-    revisions: tokio::sync::watch::Sender<u64>,
+    snapshots: tokio::sync::watch::Sender<SettingsSnapshot>,
     shutting_down: AtomicBool,
 }
 
@@ -356,15 +410,14 @@ impl SettingsService {
     /// Hydrates and validates the singleton row before exposing the service.
     pub fn new(storage: Storage, gate: DataMaintenanceGate) -> Result<Self, SettingsError> {
         let snapshot = storage.with_connection(read_snapshot)?;
-        let revision = snapshot.revision;
-        let (revisions, _) = tokio::sync::watch::channel(revision);
+        let (snapshots, _) = tokio::sync::watch::channel(snapshot.clone());
         Ok(Self {
             inner: Arc::new(SettingsServiceInner {
                 storage,
                 gate,
                 write_gate: Mutex::new(()),
                 cache: RwLock::new(snapshot),
-                revisions,
+                snapshots,
                 shutting_down: AtomicBool::new(false),
             }),
         })
@@ -376,9 +429,13 @@ impl SettingsService {
         self.clone_cache()
     }
 
-    /// Subscribes internal consumers to committed settings invalidations.
-    pub fn subscribe(&self) -> tokio::sync::watch::Receiver<u64> {
-        self.inner.revisions.subscribe()
+    /// Subscribes internal consumers to the latest committed settings snapshot.
+    pub fn subscribe(
+        &self,
+    ) -> Result<tokio::sync::watch::Receiver<SettingsSnapshot>, SettingsError> {
+        self.ensure_available()?;
+        self.clone_cache()?;
+        Ok(self.inner.snapshots.subscribe())
     }
 
     /// Applies one atomic update while acquiring its own maintenance admission.
@@ -450,7 +507,7 @@ impl SettingsService {
         Ok(SettingsBackupSection {
             appearance: snapshot.appearance,
             sidebar: snapshot.sidebar,
-            notification_settings: None,
+            notification_settings: Some(snapshot.notifications),
         })
     }
 
@@ -459,11 +516,6 @@ impl SettingsService {
         tx: &Transaction<'_>,
         incoming: &SettingsBackupSection,
     ) -> Result<SettingsRestorePlan, SettingsError> {
-        if incoming.notification_settings.is_some() {
-            return Err(SettingsError::CorruptStoredSettings {
-                field: "notificationSettings".to_owned(),
-            });
-        }
         let current = read_snapshot(tx)?;
         let mut snapshot = SettingsSnapshot {
             revision: current
@@ -473,6 +525,10 @@ impl SettingsService {
             general: general_settings(),
             appearance: incoming.appearance.clone(),
             sidebar: incoming.sidebar.clone(),
+            notifications: incoming
+                .notification_settings
+                .clone()
+                .unwrap_or(current.notifications),
         };
         normalize_and_validate_snapshot(&mut snapshot)?;
         Ok(SettingsRestorePlan { snapshot })
@@ -505,14 +561,14 @@ impl SettingsService {
 
     /// Publishes one coordinator projection after its transaction commits.
     pub fn publish_data_change(&self, projection: SettingsCommittedProjection) {
-        let revision = projection.snapshot.revision;
         let mut cache = self
             .inner
             .cache
             .write()
             .unwrap_or_else(|poison| poison.into_inner());
-        *cache = projection.snapshot;
-        let _ = self.inner.revisions.send(revision);
+        *cache = projection.snapshot.clone();
+        drop(cache);
+        self.inner.snapshots.send_replace(projection.snapshot);
     }
 
     /// Persists a complete snapshot and publishes it only after commit.
@@ -529,7 +585,8 @@ impl SettingsService {
             .write()
             .map_err(|_| SettingsError::Unavailable)?;
         *cache = snapshot.clone();
-        let _ = self.inner.revisions.send(snapshot.revision);
+        drop(cache);
+        self.inner.snapshots.send_replace(snapshot.clone());
         Ok(snapshot)
     }
 
@@ -622,7 +679,7 @@ fn authorize_main_caller(label: &str) -> Result<(), SettingsError> {
 
 /// Rejects a missing, null-only, or nested empty update before admission.
 fn validate_update_shape(patch: &UpdateSettingsDto) -> Result<(), SettingsError> {
-    if patch.appearance.is_none() && patch.sidebar.is_none() {
+    if patch.appearance.is_none() && patch.sidebar.is_none() && patch.notifications.is_none() {
         return Err(SettingsError::EmptyPatch);
     }
     if patch.appearance.as_ref().is_some_and(|value| {
@@ -637,6 +694,16 @@ fn validate_update_shape(patch: &UpdateSettingsDto) -> Result<(), SettingsError>
         .as_ref()
         .is_some_and(|value| value.width_px.is_none() && value.collapsed.is_none())
     {
+        return Err(SettingsError::EmptyPatch);
+    }
+    if patch.notifications.as_ref().is_some_and(
+        // Empty notification objects have no durable intent after null omission.
+        |value| {
+            value.terminal_activity_enabled.is_none()
+                && value.terminal_os_states.is_none()
+                && value.event_reminders_enabled.is_none()
+        },
+    ) {
         return Err(SettingsError::EmptyPatch);
     }
     Ok(())
@@ -689,6 +756,17 @@ fn merge_update(
         }
         if let Some(collapsed) = sidebar.collapsed {
             snapshot.sidebar.collapsed = collapsed;
+        }
+    }
+    if let Some(notifications) = &patch.notifications {
+        if let Some(enabled) = notifications.terminal_activity_enabled {
+            snapshot.notifications.terminal_activity_enabled = enabled;
+        }
+        if let Some(states) = &notifications.terminal_os_states {
+            snapshot.notifications.terminal_os_states = states.clone();
+        }
+        if let Some(enabled) = notifications.event_reminders_enabled {
+            snapshot.notifications.event_reminders_enabled = enabled;
         }
     }
     snapshot.revision = snapshot
@@ -981,6 +1059,11 @@ struct RawSettingsRow {
     terminal_font_size: i64,
     sidebar_width: i64,
     sidebar_collapsed: i64,
+    terminal_activity_enabled: i64,
+    os_needs_input: i64,
+    os_process_finished: i64,
+    os_process_exited_with_error: i64,
+    event_reminders_enabled: i64,
 }
 
 /// Reads and validates the singleton settings row from a connection or transaction.
@@ -991,7 +1074,10 @@ fn read_snapshot(connection: &Connection) -> Result<SettingsSnapshot, SettingsEr
              light_canvas_color, light_sidebar_color, light_text_color, dark_accent_color, \
              dark_canvas_color, dark_sidebar_color, dark_text_color, terminal_background, \
              terminal_foreground, terminal_ansi_colors_json, interface_font_size_px, \
-             terminal_font_size_px, sidebar_width_px, sidebar_collapsed \
+             terminal_font_size_px, sidebar_width_px, sidebar_collapsed, \
+             terminal_activity_notifications_enabled, notify_os_needs_input, \
+             notify_os_process_finished, notify_os_process_exited_with_error, \
+             event_reminder_notifications_enabled \
              FROM settings WHERE id = ?1",
             params![1],
             // Copies every untrusted scalar so validation runs after the row borrow ends.
@@ -1015,6 +1101,11 @@ fn read_snapshot(connection: &Connection) -> Result<SettingsSnapshot, SettingsEr
                     terminal_font_size: row.get(15)?,
                     sidebar_width: row.get(16)?,
                     sidebar_collapsed: row.get(17)?,
+                    terminal_activity_enabled: row.get(18)?,
+                    os_needs_input: row.get(19)?,
+                    os_process_finished: row.get(20)?,
+                    os_process_exited_with_error: row.get(21)?,
+                    event_reminders_enabled: row.get(22)?,
                 })
             },
         )
@@ -1063,6 +1154,30 @@ fn decode_snapshot(raw: RawSettingsRow) -> Result<SettingsSnapshot, SettingsErro
         sidebar: SidebarSettingsDto {
             width_px: sidebar_width,
             collapsed: parse_bool(raw.sidebar_collapsed, "sidebar.collapsed")?,
+        },
+        notifications: NotificationSettingsDto {
+            terminal_activity_enabled: parse_bool(
+                raw.terminal_activity_enabled,
+                "notifications.terminalActivityEnabled",
+            )?,
+            terminal_os_states: CliOsNotificationStatesDto {
+                needs_input: parse_bool(
+                    raw.os_needs_input,
+                    "notifications.terminalOsStates.needsInput",
+                )?,
+                process_finished: parse_bool(
+                    raw.os_process_finished,
+                    "notifications.terminalOsStates.processFinished",
+                )?,
+                process_exited_with_error: parse_bool(
+                    raw.os_process_exited_with_error,
+                    "notifications.terminalOsStates.processExitedWithError",
+                )?,
+            },
+            event_reminders_enabled: parse_bool(
+                raw.event_reminders_enabled,
+                "notifications.eventRemindersEnabled",
+            )?,
         },
     };
     normalize_and_validate_snapshot(&mut snapshot).map_err(as_corrupt)?;
@@ -1151,7 +1266,10 @@ fn write_snapshot(
          dark_sidebar_color = ?10, dark_text_color = ?11, terminal_background = ?12, \
          terminal_foreground = ?13, terminal_ansi_colors_json = ?14, \
          interface_font_size_px = ?15, terminal_font_size_px = ?16, sidebar_width_px = ?17, \
-         sidebar_collapsed = ?18 WHERE id = 1",
+         sidebar_collapsed = ?18, terminal_activity_notifications_enabled = ?19, \
+         notify_os_needs_input = ?20, notify_os_process_finished = ?21, \
+         notify_os_process_exited_with_error = ?22, event_reminder_notifications_enabled = ?23 \
+         WHERE id = 1",
         params![
             revision,
             theme_mode_text(appearance.theme_mode),
@@ -1171,6 +1289,16 @@ fn write_snapshot(
             appearance.terminal_font_size_px,
             snapshot.sidebar.width_px,
             i64::from(snapshot.sidebar.collapsed),
+            i64::from(snapshot.notifications.terminal_activity_enabled),
+            i64::from(snapshot.notifications.terminal_os_states.needs_input),
+            i64::from(snapshot.notifications.terminal_os_states.process_finished),
+            i64::from(
+                snapshot
+                    .notifications
+                    .terminal_os_states
+                    .process_exited_with_error
+            ),
+            i64::from(snapshot.notifications.event_reminders_enabled),
         ],
     )?;
     if affected != 1 {
@@ -1319,12 +1447,14 @@ mod tests {
         );
         assert_eq!(
             validate_update_shape(&UpdateSettingsDto {
+                notifications: None,
                 appearance: Some(AppearanceSettingsPatchDto::default()),
                 sidebar: None,
             }),
             Err(SettingsError::EmptyPatch)
         );
         let patch = UpdateSettingsDto {
+            notifications: None,
             appearance: Some(AppearanceSettingsPatchDto {
                 theme_preset: Some(ThemePresetDto::Ink),
                 interface_colors: Some(default_appearance().interface_colors),
@@ -1344,6 +1474,7 @@ mod tests {
         let mut colors = default_appearance().interface_colors;
         colors.light.accent = "#000000".to_owned();
         let patch = UpdateSettingsDto {
+            notifications: None,
             appearance: Some(AppearanceSettingsPatchDto {
                 interface_colors: Some(colors),
                 ..Default::default()
@@ -1357,6 +1488,7 @@ mod tests {
         let marked = merge_update(
             customized,
             &UpdateSettingsDto {
+                notifications: None,
                 appearance: Some(AppearanceSettingsPatchDto {
                     theme_preset: Some(ThemePresetDto::Custom),
                     ..Default::default()
@@ -1401,6 +1533,10 @@ mod tests {
         ));
         assert!(cache_panic.is_err());
         assert_eq!(cache_service.snapshot(), Err(SettingsError::Unavailable));
+        assert!(matches!(
+            cache_service.subscribe(),
+            Err(SettingsError::Unavailable)
+        ));
 
         let write_dir = tempfile::TempDir::new().expect("the temporary directory should exist");
         let write_service = SettingsService::new(
@@ -1423,6 +1559,7 @@ mod tests {
         assert!(write_panic.is_err());
         assert_eq!(
             write_service.update(&UpdateSettingsDto {
+                notifications: None,
                 appearance: None,
                 sidebar: Some(SidebarSettingsPatchDto {
                     width_px: Some(300),

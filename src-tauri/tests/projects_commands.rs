@@ -180,7 +180,7 @@ fn migration_creates_projects_schema() {
     let directory = tempfile::TempDir::new().expect("the temporary directory should be created");
     let storage = Storage::open(directory.path()).expect("storage should open");
 
-    assert_eq!(schema_version(&storage), 8);
+    assert_eq!(schema_version(&storage), 10);
     assert_eq!(
         schema_object_names(&storage, "table"),
         vec![
@@ -195,6 +195,8 @@ fn migration_creates_projects_schema() {
             "notifications",
             "projects",
             "recent_files",
+            "reminder_deliveries",
+            "reminder_scheduler_state",
             "settings",
         ]
     );
@@ -216,6 +218,10 @@ fn migration_creates_projects_schema() {
             "idx_notifications_target",
             "idx_notifications_unread",
             "idx_projects_list_order",
+            "idx_reminder_deliveries_event",
+            "idx_reminder_deliveries_missed",
+            "idx_reminder_deliveries_notification_sync",
+            "idx_reminder_deliveries_snoozed",
             "recent_files_by_project_opened"
         ]
     );
@@ -243,7 +249,7 @@ fn migration_creates_projects_schema() {
     // Reopening must not rerun the migration or change the committed schema version.
     drop(storage);
     let reopened = Storage::open(directory.path()).expect("storage should reopen");
-    assert_eq!(schema_version(&reopened), 8);
+    assert_eq!(schema_version(&reopened), 10);
     assert_eq!(
         schema_object_names(&reopened, "table"),
         vec![
@@ -258,6 +264,8 @@ fn migration_creates_projects_schema() {
             "notifications",
             "projects",
             "recent_files",
+            "reminder_deliveries",
+            "reminder_scheduler_state",
             "settings",
         ]
     );

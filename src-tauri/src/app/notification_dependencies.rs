@@ -58,6 +58,8 @@ impl NotificationVisibility {
 pub(crate) struct AppNotificationDependencies {
     pub sessions: Arc<SessionManager>,
     pub visibility: NotificationVisibility,
+    pub calendar: Option<crate::calendar::CalendarService>,
+    pub settings: Option<crate::settings::SettingsService>,
 }
 impl NotificationDependencies for AppNotificationDependencies {
     /// Reads session context after earlier native visibility changes commit.
@@ -99,17 +101,51 @@ impl NotificationDependencies for AppNotificationDependencies {
                     .any(|tab| tab.id == tab_id && target_pane(&tab.layout, pane_id, terminal_id)))
         })
     }
-    /// Keeps Phase 4 Calendar resolution absent without importing its implementation.
+    /// Resolves the current Calendar occurrence through its public owner contract.
     fn event_target<'a>(
         &'a self,
-        _event_id: &'a str,
-        _occurrence_id: &'a str,
+        event_id: &'a str,
+        occurrence_id: &'a str,
     ) -> NotificationFuture<'a, Result<Option<NotificationEventTarget>, NotificationError>> {
         // Awaits owner work without retaining a calling state borrow.
-        Box::pin(async { Ok(None) })
+        Box::pin(async move {
+            let Some(calendar) = &self.calendar else {
+                return Ok(None);
+            };
+            Ok(calendar
+                .get_notification_context(event_id, occurrence_id)
+                .await
+                .map_err(
+                    // Converts Calendar failures into the consumer-owned sanitized error.
+                    |_| NotificationError::DependencyUnavailable,
+                )?
+                .map(
+                    // Uses the current project association rather than the stored notification snapshot.
+                    |c| NotificationEventTarget {
+                        event_id: c.event_id,
+                        occurrence_id: c.occurrence_id,
+                        project_id: c.project_id,
+                    },
+                ))
+        })
     }
-    /// Returns the Phase 1 defaults until notification settings ship in Phase 4.
+    /// Reads committed policy while isolated legacy fixtures retain the documented defaults.
     fn terminal_policy(&self) -> Result<TerminalNotificationPolicy, NotificationError> {
+        if let Some(settings) = &self.settings {
+            let policy = settings
+                .snapshot()
+                .map_err(
+                    // Keeps settings failures sanitized at the consumer boundary.
+                    |_| NotificationError::DependencyUnavailable,
+                )?
+                .notifications;
+            return Ok(TerminalNotificationPolicy {
+                terminal_activity_enabled: policy.terminal_activity_enabled,
+                os_needs_input: policy.terminal_os_states.needs_input,
+                os_process_finished: policy.terminal_os_states.process_finished,
+                os_process_failed: policy.terminal_os_states.process_exited_with_error,
+            });
+        }
         Ok(TerminalNotificationPolicy {
             terminal_activity_enabled: true,
             os_needs_input: true,
@@ -251,6 +287,8 @@ mod tests {
             let dependencies = AppNotificationDependencies {
                 sessions: sessions.clone(),
                 visibility: visibility.clone(),
+                calendar: None,
+                settings: None,
             };
             visibility.set(false);
             assert!(

@@ -20,7 +20,7 @@ fn calendar_migration_is_registered() {
             },
         )
         .unwrap();
-    assert_eq!(version, 8);
+    assert_eq!(version, 10);
 }
 
 mod calendar_support;

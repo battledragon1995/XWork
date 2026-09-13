@@ -68,7 +68,7 @@ pub struct BackupDataV2 {
     pub notes: Vec<crate::notes::NoteBackupRecordV1>,
 }
 
-/// Requires Notes and Events in a stage-20 schema-v3 package.
+/// Requires Notes and Events while accepting the optional notification policy extension.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct BackupDataV3 {
@@ -79,6 +79,8 @@ pub struct BackupDataV3 {
     pub keyboard_shortcut_overrides: Vec<ShortcutOverride>,
     pub notes: Vec<crate::notes::NoteBackupRecordV1>,
     pub events: Vec<crate::calendar::EventBackupRecordV1>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub notification_settings: Option<super::NotificationSettingsDto>,
 }
 
 /// Keeps v1 absence distinct from the mandatory v2 Notes section.
@@ -94,6 +96,8 @@ pub struct ParsedBackupData {
     pub notes: Option<Vec<crate::notes::NoteBackupRecordV1>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub events: Option<Vec<crate::calendar::EventBackupRecordV1>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub notification_settings: Option<super::NotificationSettingsDto>,
 }
 
 /// Describes the backend-resolved application data location.
@@ -806,6 +810,7 @@ impl DataManagementService {
                             .map_err(|_| DataManagementError::SnapshotFailed)?,
                         appearance: settings.appearance,
                         sidebar: settings.sidebar,
+                        notification_settings: settings.notification_settings,
                         keyboard_shortcut_overrides: participants
                             .keyboard_shortcuts
                             .export(tx)
@@ -861,6 +866,7 @@ impl DataManagementService {
                     cli_profiles: current_profiles,
                     appearance: current_settings.appearance,
                     sidebar: current_settings.sidebar,
+                    notification_settings: current_settings.notification_settings,
                     keyboard_shortcut_overrides: current_shortcuts.clone(),
                 })
                 .map_err(|_| DataManagementError::SnapshotFailed)?;
@@ -875,7 +881,7 @@ impl DataManagementService {
                         &SettingsBackupSection {
                             appearance: data.appearance.clone(),
                             sidebar: data.sidebar.clone(),
-                            notification_settings: None,
+                            notification_settings: data.notification_settings.clone(),
                         },
                     )
                     .map_err(|_| domain(BackupDomainDto::Settings))?;
@@ -1065,7 +1071,7 @@ impl DataManagementService {
             settings_differ_from_default: SettingsBackupSection {
                 appearance: snapshot.data.appearance,
                 sidebar: snapshot.data.sidebar,
-                notification_settings: None,
+                notification_settings: snapshot.data.notification_settings,
             } != SettingsBackupSection::defaults()
                 || snapshot.data.cli_profiles.default_shell_id != "system",
             notes: count(snapshot.data.notes.as_ref().map_or(0, Vec::len))?,
@@ -1081,8 +1087,22 @@ impl DataManagementService {
         let storage = self.inner.storage.clone();
         let participants = self.inner.participants.clone();
         let files = self.inner.files.clone();
+        let reminder_baseline_ms = self.inner.clock.epoch_ms()?;
         tauri::async_runtime::spawn_blocking(move || {
             storage.with_transaction(|tx| {
+                let reminders = participants
+                    .reminders
+                    .as_ref()
+                    .map(
+                        // Plans and applies child reminder state using one captured reset baseline.
+                        |service| {
+                            let plan =
+                                service.prepare_reminder_reset_in(tx, reminder_baseline_ms)?;
+                            service.reset_reminders_in(tx, &plan)
+                        },
+                    )
+                    .transpose()
+                    .map_err(|_| DataManagementError::PersistenceFailed)?;
                 let notifications = participants
                     .notifications
                     .reset_notifications_in(tx)
@@ -1111,6 +1131,7 @@ impl DataManagementService {
                         .map_err(|_| DataManagementError::PersistenceFailed)?,
                     notes,
                     notifications,
+                    reminders,
                     keyboard_shortcuts: participants
                         .keyboard_shortcuts
                         .apply_reset(tx)
@@ -1137,6 +1158,11 @@ impl DataManagementService {
 
     /// Publishes reset projections only after the shared transaction commits.
     async fn publish_reset(&self, projections: ResetCommittedProjections) {
+        if let (Some(service), Some(projection)) =
+            (&self.inner.participants.reminders, projections.reminders)
+        {
+            service.publish_reminder_reset(projection);
+        }
         self.inner
             .participants
             .events
@@ -1319,6 +1345,7 @@ pub fn parse_backup(bytes: &[u8]) -> Result<BackupEnvelope<ParsedBackupData>, Da
                     keyboard_shortcut_overrides: value.data.keyboard_shortcut_overrides,
                     notes: None,
                     events: None,
+                    notification_settings: None,
                 },
             }
         }
@@ -1338,6 +1365,7 @@ pub fn parse_backup(bytes: &[u8]) -> Result<BackupEnvelope<ParsedBackupData>, Da
                     keyboard_shortcut_overrides: value.data.keyboard_shortcut_overrides,
                     notes: Some(value.data.notes),
                     events: None,
+                    notification_settings: None,
                 },
             }
         }
@@ -1357,6 +1385,7 @@ pub fn parse_backup(bytes: &[u8]) -> Result<BackupEnvelope<ParsedBackupData>, Da
                     keyboard_shortcut_overrides: value.data.keyboard_shortcut_overrides,
                     notes: Some(value.data.notes),
                     events: Some(value.data.events),
+                    notification_settings: value.data.notification_settings,
                 },
             }
         }
@@ -1421,11 +1450,11 @@ fn validate_backup_shape(bytes: &[u8]) -> Result<(), DataManagementError> {
         fields.push("notes");
     }
     if version == 3 {
-        if data
-            .as_object()
-            .is_some_and(|object| object.contains_key("notificationSettings"))
-        {
-            return Err(domain(BackupDomainDto::Settings));
+        if let Some(settings) = data.get("notificationSettings") {
+            // Absence preserves local policy; explicit null and incomplete objects reject atomically.
+            serde_json::from_value::<super::NotificationSettingsDto>(settings.clone())
+                .map_err(|_| domain(BackupDomainDto::Settings))?;
+            fields.push("notificationSettings");
         }
         fields.push("events");
         array(field(data, "events")?)?;
@@ -1882,9 +1911,9 @@ mod tests {
         );
     }
 
-    /// Requires Events in v3 and rejects unsupported settings even when explicitly null.
+    /// Requires Events in v3 and validates optional settings without accepting null.
     #[test]
-    fn version_three_requires_events_and_rejects_notification_settings() {
+    fn version_three_requires_events_and_validates_notification_settings() {
         let mut value: serde_json::Value = serde_json::from_slice(&fixture()).unwrap();
         value["schemaVersion"] = serde_json::json!(3);
         value["data"]["notes"] = serde_json::json!([]);
@@ -1895,7 +1924,19 @@ mod tests {
         value["data"]["events"] = serde_json::json!([]);
         let parsed = parse_backup(&serde_json::to_vec(&value).unwrap()).unwrap();
         assert_eq!(parsed.data.events, Some(Vec::new()));
-        for settings in [serde_json::Value::Null, serde_json::json!({})] {
+        assert_eq!(parsed.data.notification_settings, None);
+        value["data"]["notificationSettings"] =
+            serde_json::to_value(super::super::NotificationSettingsDto::default()).unwrap();
+        let parsed = parse_backup(&serde_json::to_vec(&value).unwrap()).unwrap();
+        assert_eq!(
+            parsed.data.notification_settings,
+            Some(super::super::NotificationSettingsDto::default())
+        );
+        for settings in [
+            serde_json::Value::Null,
+            serde_json::json!({}),
+            serde_json::json!({"terminalActivityEnabled": "true"}),
+        ] {
             value["data"]["notificationSettings"] = settings;
             assert_eq!(
                 parse_backup(&serde_json::to_vec(&value).unwrap()),

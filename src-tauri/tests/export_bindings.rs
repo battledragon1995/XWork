@@ -105,6 +105,12 @@ fn generated_projects_binding() -> String {
 fn generated_settings_binding() -> String {
     let config = Config::default();
     [
+        xwork_lib::settings::NotificationSettingsDto::export_to_string(&config)
+            .expect("notification settings export"),
+        xwork_lib::settings::NotificationSettingsPatchDto::export_to_string(&config)
+            .expect("notification patch export"),
+        xwork_lib::settings::CliOsNotificationStatesDto::export_to_string(&config)
+            .expect("OS states export"),
         InterfaceLanguageDto::export_to_string(&config)
             .expect("InterfaceLanguageDto should export"),
         ThemeModeDto::export_to_string(&config).expect("ThemeModeDto should export"),
@@ -438,7 +444,7 @@ fn sessions_binding_matches_rust_contract() {
     assert_binding_is_current(binding_path(&["sessions", "sessions.ts"]), generated);
 }
 
-/// Generates and checks the exact Phase 1 notification contract without internal source fields.
+/// Generates the notification contract while excluding consumer ports and internal source fields.
 #[test]
 fn notifications_binding_matches_rust_contract() {
     use xwork_lib::notifications::*;
@@ -460,7 +466,7 @@ fn notifications_binding_matches_rust_contract() {
         "sourceId",
         "source_key",
         "sourceKey",
-        "Reminder",
+        "ReminderNotificationInput",
         "NotificationDependencies",
         "NotificationEventTarget",
         "NotificationReset",
@@ -560,4 +566,29 @@ fn calendar_binding_matches_rust_contract() {
     assert!(!generated.contains("bigint"));
     assert!(!generated.contains("BackupRecord"));
     assert_binding_is_current(binding_path(&["calendar.ts"]), generated);
+}
+
+/// Generates all reminder query, action, visibility and invalidation contracts from Rust.
+#[test]
+fn reminder_bindings_are_current() {
+    use xwork_lib::calendar::*;
+    let config = Config::default();
+    let generated = [
+        ReminderDeliveryStatusDto::export_to_string(&config)
+            .expect("ReminderDeliveryStatusDto exports"),
+        ReminderDeliveryDto::export_to_string(&config).expect("ReminderDeliveryDto exports"),
+        ReminderCursorDto::export_to_string(&config).expect("ReminderCursorDto exports"),
+        MissedReminderPageDto::export_to_string(&config).expect("MissedReminderPageDto exports"),
+        EventReminderDeliveriesDto::export_to_string(&config)
+            .expect("EventReminderDeliveriesDto exports"),
+        ReminderTargetDto::export_to_string(&config).expect("ReminderTargetDto exports"),
+        ReminderActionResultDto::export_to_string(&config)
+            .expect("ReminderActionResultDto exports"),
+        VisibleCalendarEventInputDto::export_to_string(&config)
+            .expect("VisibleCalendarEventInputDto exports"),
+        ReminderChangedDto::export_to_string(&config).expect("ReminderChangedDto exports"),
+        ReminderError::export_to_string(&config).expect("ReminderError exports"),
+    ]
+    .join("\n");
+    assert_binding_is_current(binding_path(&["reminders.ts"]), generated);
 }

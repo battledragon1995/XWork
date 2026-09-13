@@ -554,3 +554,9 @@ Error IPC có tagged shape `{ code, ...details }`. `PersistenceFailed` và `Unav
 ## Câu hỏi mở
 
 Không có.
+
+### Ghi chú triển khai Giai đoạn 21 — 2026-09-13
+
+- Theo ủy quyền tự quyết của user, quy tắc staging backup tại `BE-012-backup-and-reset.md` là nguồn chuẩn thay cho các câu cũ trong tài liệu này yêu cầu chờ migration `0010` mới bật toàn bộ v3. Giai đoạn 20 đã export v3 với Events sau `0008`; Giai đoạn 21 chạy tiếp `0009` → `0010`, rồi export thêm object `notificationSettings` typed. Import v3 cũ thiếu field giữ settings local; field hiện diện phải là object hợp lệ, `null` bị từ chối. Import v1/v2 giữ Events và notification settings.
+- Migration runner hiện hữu commit theo từng version. Lỗi migration `0010` rollback riêng version đó, giữ version `0009` đã commit thành công; không làm mất dữ liệu và không khởi tạo service phụ thuộc trước khi registry hoàn tất.
+- Binding hiện được sinh và kiểm tra drift bằng `src-tauri/tests/export_bindings.rs`; dùng cơ chế này thay cho đường dẫn generator binary dự kiến chưa tồn tại. Generated binding không sửa tay.

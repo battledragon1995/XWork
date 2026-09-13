@@ -176,7 +176,7 @@ fn migration_v3_creates_exact_schema_and_default() {
     let directory = TempDir::new().expect("the temporary directory should be created");
     let storage = Storage::open(directory.path()).expect("storage should open");
 
-    assert_eq!(schema_version(&storage), 8);
+    assert_eq!(schema_version(&storage), 10);
     assert_eq!(
         table_names(&storage),
         vec![
@@ -191,6 +191,8 @@ fn migration_v3_creates_exact_schema_and_default() {
             "notifications",
             "projects",
             "recent_files",
+            "reminder_deliveries",
+            "reminder_scheduler_state",
             "settings",
         ]
     );
@@ -425,7 +427,7 @@ fn migration_v3_preserves_versions_one_and_two() {
 
     let storage = Storage::open(directory.path()).expect("storage should migrate the fixture");
 
-    assert_eq!(schema_version(&storage), 8);
+    assert_eq!(schema_version(&storage), 10);
     let (project_name, sidebar_width) = storage
         .with_connection(
             // Reads one value from each pre-existing migration to prove nothing was rebuilt.
@@ -479,7 +481,7 @@ fn migration_v3_reopens_without_reapplying() {
 
     let reopened = Storage::open(directory.path()).expect("storage should reopen");
 
-    assert_eq!(schema_version(&reopened), 8);
+    assert_eq!(schema_version(&reopened), 10);
     assert_eq!(row_count(&reopened, "cli_profile_settings"), 1);
     assert_eq!(row_count(&reopened, "cli_profiles"), 1);
     let persisted_shell = reopened

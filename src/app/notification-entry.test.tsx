@@ -29,7 +29,7 @@ vi.mock("@/features/notifications", () => ({
 }));
 // Activation is isolated from real sessions, PTYs and application data.
 vi.mock("@/lib/ipc/sessions", () => ({ setActivePane: vi.fn(), setMaximizedPane: vi.fn() }));
-const target: NotificationTargetDto = {
+const target: Extract<NotificationTargetDto, { kind: "session" }> = {
   kind: "session",
   projectId: "project",
   sessionId: "session /one",
@@ -66,7 +66,11 @@ function Destination() {
   const location = useLocation();
   return (
     <output data-testid="destination">
-      {JSON.stringify({ pathname: location.pathname, state: location.state })}
+      {JSON.stringify({
+        pathname: location.pathname,
+        search: location.search,
+        state: location.state,
+      })}
     </output>
   );
 }
@@ -240,4 +244,24 @@ it("retires pending notification activation after Data reset", async () => {
   });
   expect(sessions.setMaximizedPane).not.toHaveBeenCalled();
   expect(screen.getByTestId("destination")).toHaveTextContent('"pathname":"/projects"');
+});
+/** Reminder targets navigate through Calendar without executing terminal activation commands. */
+it("routes reminder targets to the existing Calendar boundary", async () => {
+  mount();
+  await act(async () => {
+    await bridge.props?.onOpenTarget(
+      {
+        kind: "eventReminder",
+        projectId: null,
+        eventId: "event-one",
+        occurrenceId: "single",
+        reminderDeliveryId: "delivery-one",
+        deliveryVersion: "1",
+      },
+      new AbortController().signal,
+    );
+  });
+  expect(sessions.setActivePane).not.toHaveBeenCalled();
+  expect(screen.getByTestId("destination")).toHaveTextContent("/calendar");
+  expect(screen.getByTestId("destination")).toHaveTextContent("event=event-one");
 });

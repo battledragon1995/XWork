@@ -51,6 +51,16 @@ pub(crate) const MIGRATIONS: &[Migration] = &[
         name: "create_calendar_events",
         sql: include_str!("../../migrations/0008_create_calendar_events.sql"),
     },
+    Migration {
+        version: 9,
+        name: "create_reminder_deliveries",
+        sql: include_str!("../../migrations/0009_create_reminder_deliveries.sql"),
+    },
+    Migration {
+        version: 10,
+        name: "add_notification_settings",
+        sql: include_str!("../../migrations/0010_add_notification_settings.sql"),
+    },
 ];
 
 /// Applies every missing migration after validating the complete registry.
@@ -412,5 +422,35 @@ mod tests {
         assert!(!table_exists(&connection, "marker"));
         assert_eq!(schema_version(&connection), 2);
         assert_eq!(connection.total_changes(), 1);
+    }
+    /// A failed notification-settings migration rolls back itself and preserves committed version nine.
+    #[test]
+    fn notification_settings_failure_preserves_committed_reminder_schema() {
+        let mut connection = open_test_database();
+        run_migrations(&mut connection, &super::MIGRATIONS[..9]).unwrap();
+        let mut migrations: Vec<_> = super::MIGRATIONS[..9]
+            .iter()
+            .map(
+                // Copies immutable registry descriptors into an isolated failure fixture.
+                |m| Migration {
+                    version: m.version,
+                    name: m.name,
+                    sql: m.sql,
+                },
+            )
+            .collect();
+        migrations.push(Migration{version:10,name:"broken_notification_settings",sql:"ALTER TABLE settings ADD COLUMN temporary_policy INTEGER; INSERT INTO nonexistent_table VALUES (1);"});
+        assert!(run_migrations(&mut connection, &migrations).is_err());
+        assert_eq!(schema_version(&connection), 9);
+        assert!(table_exists(&connection, "reminder_deliveries"));
+        let columns: u32 = connection
+            .query_row(
+                "SELECT count(*) FROM pragma_table_info('settings') WHERE name='temporary_policy'",
+                [],
+                // Proves no partial settings column survives the failed transaction.
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(columns, 0);
     }
 }

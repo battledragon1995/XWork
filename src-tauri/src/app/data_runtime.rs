@@ -819,6 +819,7 @@ pub(crate) struct SessionsAppRuntime {
     projects: ProjectService,
     terminal: TerminalManager,
     notifications: NotificationService,
+    reminders: crate::calendar::ReminderService,
 }
 
 impl SessionsAppRuntime {
@@ -828,6 +829,7 @@ impl SessionsAppRuntime {
         projects: ProjectService,
         terminal: TerminalManager,
         notifications: NotificationService,
+        reminders: crate::calendar::ReminderService,
         files: crate::files::FilesService,
     ) -> Self {
         Self {
@@ -836,6 +838,7 @@ impl SessionsAppRuntime {
             projects,
             terminal,
             notifications,
+            reminders,
         }
     }
 }
@@ -913,13 +916,19 @@ impl AppRuntime for SessionsAppRuntime {
     /// Delegates true-Quit cleanup to the Sessions owner.
     fn shutdown_for_quit<'a>(&'a self) -> AppRuntimeFuture<'a, Result<(), AppLifecycleError>> {
         Box::pin(async move {
+            let reminders = self.reminders.shutdown_for_quit().await;
             self.notifications.begin_shutdown();
             self.terminal.begin_shutdown();
             let files = self.files.shutdown().await;
             let sessions = self.sessions.shutdown_all().await;
             let terminal = self.terminal.shutdown_remaining().await;
             let notifications = self.notifications.shutdown_runtime_sources().await;
-            if files.is_err() || sessions.is_err() || terminal.is_err() || notifications.is_err() {
+            if reminders.is_err()
+                || files.is_err()
+                || sessions.is_err()
+                || terminal.is_err()
+                || notifications.is_err()
+            {
                 Err(AppLifecycleError::RuntimeShutdownFailed)
             } else {
                 Ok(())
@@ -960,14 +969,20 @@ pub trait DataRuntimeControl: Send + Sync {
 pub struct AppDataRuntime {
     sessions: Arc<SessionManager>,
     notifications: NotificationService,
+    reminders: crate::calendar::ReminderService,
 }
 
 impl AppDataRuntime {
     /// Creates the production reset adapter from managed owner handles.
-    pub fn new(sessions: Arc<SessionManager>, notifications: NotificationService) -> Self {
+    pub fn new(
+        sessions: Arc<SessionManager>,
+        notifications: NotificationService,
+        reminders: crate::calendar::ReminderService,
+    ) -> Self {
         Self {
             sessions,
             notifications,
+            reminders,
         }
     }
 }
@@ -988,8 +1003,16 @@ impl DataRuntimeControl for AppDataRuntime {
     /// Drains notification work before stopping every session-owned resource.
     fn shutdown_for_reset<'a>(&'a self) -> DataRuntimeFuture<'a, Result<(), ()>> {
         Box::pin(async move {
-            self.notifications.pause_for_reset().await.map_err(|_| ())?;
+            self.reminders.pause_for_reset().await.map_err(
+                // Converts reset participant failure without leaking owner details.
+                |_| (),
+            )?;
+            if self.notifications.pause_for_reset().await.is_err() {
+                self.reminders.resume_after_reset(false);
+                return Err(());
+            }
             if self.sessions.shutdown_all().await.is_err() {
+                self.reminders.resume_after_reset(false);
                 self.notifications.resume_after_reset(false);
                 self.sessions.resume_after_reset(false);
                 return Err(());
@@ -1003,6 +1026,7 @@ impl DataRuntimeControl for AppDataRuntime {
         let committed = completion == DataResetCompletion::Committed;
         self.sessions.resume_after_reset(committed);
         self.notifications.resume_after_reset(committed);
+        self.reminders.resume_after_reset(committed);
     }
 }
 

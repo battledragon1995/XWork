@@ -14,7 +14,10 @@ function containsPane(node: PaneLayoutNodeDto, paneId: string): boolean {
     : containsPane(node.first, paneId) || containsPane(node.second, paneId);
 }
 /** Rejects stale/mismatched snapshots instead of opening an arbitrary surviving pane. */
-function validatedTab(detail: SessionDetailDto, target: NotificationTargetDto) {
+function validatedTab(
+  detail: SessionDetailDto,
+  target: Extract<NotificationTargetDto, { kind: "session" }>,
+) {
   // Match IDs directly rather than trusting a stale row's project or active selection.
   const tab = detail.tabs.find((entry) => entry.id === target.tabId);
   if (
@@ -41,6 +44,15 @@ export function NotificationEntry() {
   /** Runs only the remaining non-aborted steps; committed backend effects are never rolled back. */
   async function onOpenTarget(target: NotificationTargetDto, signal: AbortSignal) {
     if (signal.aborted || data?.getCurrent().busy) return;
+    if (target.kind === "eventReminder") {
+      const params = new URLSearchParams({
+        event: target.eventId,
+        occurrence: target.occurrenceId,
+      });
+      if (target.projectId) params.set("project", target.projectId);
+      await navigate(`/calendar?${params.toString()}`);
+      return;
+    }
     const epoch = data?.getCurrent().invalidationEpoch;
     /** Guard every awaited activation step against maintenance before React effects run. */
     const retired = () =>

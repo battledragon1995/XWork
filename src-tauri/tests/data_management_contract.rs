@@ -515,6 +515,7 @@ impl SettingsHarness {
         let paper = self
             .service
             .update(&UpdateSettingsDto {
+                notifications: None,
                 appearance: Some(AppearanceSettingsPatchDto {
                     theme_preset: Some(ThemePresetDto::Paper),
                     ..Default::default()
@@ -1007,6 +1008,7 @@ fn settings_export_reads_persisted_section_under_shared_transaction() {
     harness
         .service
         .update(&UpdateSettingsDto {
+            notifications: None,
             appearance: None,
             sidebar: Some(SidebarSettingsPatchDto {
                 width_px: Some(incoming.sidebar.width_px),
@@ -1024,7 +1026,10 @@ fn settings_export_reads_persisted_section_under_shared_transaction() {
         .expect("settings export should commit its read transaction");
     assert_eq!(exported.appearance, incoming.appearance);
     assert_eq!(exported.sidebar, incoming.sidebar);
-    assert_eq!(exported.notification_settings, None);
+    assert_eq!(
+        exported.notification_settings,
+        Some(xwork_lib::settings::NotificationSettingsDto::default())
+    );
 }
 
 /// Verifies owner APIs do not re-enter the maintenance gate while write admission is held.
@@ -1127,7 +1132,7 @@ fn settings_coordinator_rollback_publishes_nothing() {
 #[test]
 fn settings_commit_publishes_prepared_projection() {
     let harness = SettingsHarness::new();
-    let subscription = harness.service.subscribe();
+    let subscription = harness.service.subscribe().unwrap();
     let incoming = harness.incoming();
     let before = harness
         .service
@@ -1196,6 +1201,7 @@ fn settings_mutation_is_blocked_by_write_permit() {
     let (sender, receiver) = mpsc::channel();
     let worker = std::thread::spawn(move || {
         let result = service.update(&UpdateSettingsDto {
+            notifications: None,
             appearance: None,
             sidebar: Some(SidebarSettingsPatchDto {
                 width_px: Some(310),
@@ -2213,6 +2219,11 @@ fn phase_one_service_round_trips_and_resets_temp_storage() {
     .expect("CLI profile fixtures should finish hydration before import");
 
     let participants = DataParticipants {
+        reminders: Some(
+            app.state::<xwork_lib::calendar::ReminderService>()
+                .inner()
+                .clone(),
+        ),
         events: xwork_lib::app::data_participants::EventsDataParticipant::new(
             app.state::<xwork_lib::calendar::CalendarService>()
                 .inner()
@@ -2246,6 +2257,19 @@ fn phase_one_service_round_trips_and_resets_temp_storage() {
         Arc::new(EmptyDataEvents),
     );
     let settings_service = app.state::<SettingsService>().inner().clone();
+    let local_policy = xwork_lib::settings::NotificationSettingsDto {
+        event_reminders_enabled: false,
+        ..Default::default()
+    };
+    settings_service
+        .update(&UpdateSettingsDto {
+            notifications: Some(xwork_lib::settings::NotificationSettingsPatchDto {
+                event_reminders_enabled: Some(false),
+                ..Default::default()
+            }),
+            ..Default::default()
+        })
+        .unwrap();
 
     tauri::async_runtime::block_on(async {
         let notes = app.state::<xwork_lib::notes::NotesService>();
@@ -2267,6 +2291,7 @@ fn phase_one_service_round_trips_and_resets_temp_storage() {
         assert_eq!(preview.counts.projects, 1);
         tauri::async_runtime::spawn_blocking(move || {
             settings_service.update(&UpdateSettingsDto {
+                notifications: None,
                 appearance: None,
                 sidebar: Some(SidebarSettingsPatchDto {
                     width_px: None,
@@ -2295,6 +2320,13 @@ fn phase_one_service_round_trips_and_resets_temp_storage() {
         );
 
         assert_eq!(notes.get_note(original.id.clone()).await.unwrap(), original);
+        assert_eq!(
+            app.state::<SettingsService>()
+                .snapshot()
+                .unwrap()
+                .notifications,
+            local_policy
+        );
         let outcome = service
             .export_backup()
             .await
@@ -2324,7 +2356,14 @@ fn phase_one_service_round_trips_and_resets_temp_storage() {
         let mut v2: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
         assert_eq!(v2["schemaVersion"], 3);
         assert_eq!(v2["data"]["events"], serde_json::json!([]));
-        assert!(v2["data"].get("notificationSettings").is_none());
+        assert_eq!(
+            v2["data"]["notificationSettings"],
+            serde_json::to_value(&local_policy).unwrap()
+        );
+        v2["data"]
+            .as_object_mut()
+            .unwrap()
+            .remove("notificationSettings");
         v2["schemaVersion"] = serde_json::json!(2);
         v2["data"].as_object_mut().unwrap().remove("events");
         assert!(v2["data"]["notes"][0].get("revision").is_none());
@@ -2372,6 +2411,13 @@ fn phase_one_service_round_trips_and_resets_temp_storage() {
             .await
             .unwrap();
         assert_eq!(result.schema_version, 2);
+        assert_eq!(
+            app.state::<SettingsService>()
+                .snapshot()
+                .unwrap()
+                .notifications,
+            local_policy
+        );
         let merged = notes.get_note(original.id.clone()).await.unwrap();
         assert_eq!(merged.content_markdown, "incoming v2");
         assert_eq!(merged.revision, "2");
@@ -2393,16 +2439,29 @@ fn phase_one_service_round_trips_and_resets_temp_storage() {
             "reminders": [{ "id": "80000000-0000-4000-8000-000000000001", "minutesBefore": 15 }],
             "createdAtMs": 1, "updatedAtMs": 2
         }]);
-        v3["data"]["notificationSettings"] = serde_json::Value::Null;
-        std::fs::write(&import_path, serde_json::to_vec(&v3).unwrap()).unwrap();
-        assert!(matches!(
-            service.prepare_import_backup().await,
-            Err(
-                xwork_lib::settings::DataManagementError::DomainValidationFailed {
-                    domain: xwork_lib::settings::BackupDomainDto::Settings
-                }
-            )
-        ));
+        let invalid_watch = app.state::<SettingsService>().subscribe().unwrap();
+        let before_invalid = app.state::<SettingsService>().snapshot().unwrap();
+        for invalid in [
+            serde_json::Value::Null,
+            serde_json::json!({}),
+            serde_json::json!({"eventRemindersEnabled": 1}),
+        ] {
+            v3["data"]["notificationSettings"] = invalid;
+            std::fs::write(&import_path, serde_json::to_vec(&v3).unwrap()).unwrap();
+            assert!(matches!(
+                service.prepare_import_backup().await,
+                Err(
+                    xwork_lib::settings::DataManagementError::DomainValidationFailed {
+                        domain: xwork_lib::settings::BackupDomainDto::Settings
+                    }
+                )
+            ));
+            assert_eq!(
+                app.state::<SettingsService>().snapshot().unwrap(),
+                before_invalid
+            );
+            assert!(!invalid_watch.has_changed().unwrap());
+        }
         v3["data"]
             .as_object_mut()
             .unwrap()
@@ -2438,6 +2497,92 @@ fn phase_one_service_round_trips_and_resets_temp_storage() {
             .confirm_import_backup(preview.request_id)
             .await
             .unwrap();
+        assert_eq!(
+            app.state::<SettingsService>()
+                .snapshot()
+                .unwrap()
+                .notifications,
+            local_policy
+        );
+        let incoming_policy = xwork_lib::settings::NotificationSettingsDto {
+            terminal_activity_enabled: false,
+            terminal_os_states: xwork_lib::settings::CliOsNotificationStatesDto {
+                needs_input: false,
+                process_finished: true,
+                process_exited_with_error: false,
+            },
+            event_reminders_enabled: true,
+        };
+        v3["data"]["notificationSettings"] = serde_json::to_value(&incoming_policy).unwrap();
+        v3["data"]["events"][0]["title"] = serde_json::json!("Policy and event import");
+        v3["data"]["events"][0]["updatedAtMs"] = serde_json::json!(3);
+        std::fs::write(&import_path, serde_json::to_vec(&v3).unwrap()).unwrap();
+        let PrepareBackupImportOutcomeDto::Ready { preview } =
+            service.prepare_import_backup().await.unwrap()
+        else {
+            panic!("selected fixture")
+        };
+        let policy_before = app.state::<SettingsService>().snapshot().unwrap();
+        let mut policy_watch = app.state::<SettingsService>().subscribe().unwrap();
+        app.state::<Storage>().with_connection(
+            // Rejects the final Shortcuts owner after Events and Settings apply to prove aggregate rollback.
+            |db| { db.execute_batch("CREATE TRIGGER reject_policy_event BEFORE DELETE ON keyboard_shortcut_overrides BEGIN SELECT RAISE(ABORT,'injected'); END;").unwrap(); Ok::<_, xwork_lib::storage::StorageError>(()) }
+        ).unwrap();
+        assert!(
+            service
+                .confirm_import_backup(preview.request_id)
+                .await
+                .is_err()
+        );
+        assert_eq!(
+            app.state::<SettingsService>().snapshot().unwrap(),
+            policy_before
+        );
+        assert_eq!(
+            app.state::<Storage>()
+                .with_transaction(SettingsService::export_persisted_settings_in)
+                .unwrap()
+                .notification_settings,
+            Some(policy_before.notifications.clone())
+        );
+        assert_eq!(
+            app.state::<Storage>()
+                .with_transaction(
+                    // Proves the tentative Calendar update rolled back with notification policy.
+                    |tx| app
+                        .state::<xwork_lib::calendar::CalendarService>()
+                        .export_events_in(tx)
+                )
+                .unwrap()[0]
+                .title,
+            "Backup event"
+        );
+        assert!(!policy_watch.has_changed().unwrap());
+        app.state::<Storage>()
+            .with_connection(
+                // Removes the transaction failure so the exact prepared import can commit.
+                |db| {
+                    db.execute_batch("DROP TRIGGER reject_policy_event;")
+                        .unwrap();
+                    Ok::<_, xwork_lib::storage::StorageError>(())
+                },
+            )
+            .unwrap();
+        service
+            .confirm_import_backup(preview.request_id)
+            .await
+            .unwrap();
+        assert_eq!(
+            app.state::<SettingsService>()
+                .snapshot()
+                .unwrap()
+                .notifications,
+            incoming_policy
+        );
+        assert_eq!(
+            policy_watch.borrow_and_update().notifications,
+            incoming_policy
+        );
         let calendar = app.state::<xwork_lib::calendar::CalendarService>();
         let stored = app
             .state::<Storage>()
@@ -2455,6 +2600,10 @@ fn phase_one_service_round_trips_and_resets_temp_storage() {
         let exported: serde_json::Value =
             serde_json::from_slice(&std::fs::read(&export_path).unwrap()).unwrap();
         assert_eq!(exported["data"]["events"], v3["data"]["events"]);
+        assert_eq!(
+            exported["data"]["notificationSettings"],
+            serde_json::to_value(&incoming_policy).unwrap()
+        );
         assert!(exported["data"]["events"][0].get("revision").is_none());
         assert!(
             exported["data"]["events"][0]["time"]
@@ -2564,6 +2713,60 @@ fn phase_one_service_round_trips_and_resets_temp_storage() {
                 .unwrap(),
             stored
         );
+        assert_eq!(
+            app.state::<SettingsService>()
+                .snapshot()
+                .unwrap()
+                .notifications,
+            incoming_policy
+        );
+        let reminders = app.state::<xwork_lib::calendar::ReminderService>();
+        app.state::<Storage>().with_connection(
+            // Seeds durable runtime state only in this fixture; the mock builder starts no timer worker.
+            |db| {
+                db.execute_batch("UPDATE reminder_scheduler_state SET scan_through_ms=1699999999999, updated_at_ms=1699999999999;
+                    INSERT INTO reminder_deliveries (id,reminder_id,event_id,occurrence_id,project_id,title_snapshot,
+                        starts_at_ms,original_due_at_ms,time_zone_id,minutes_before,status,next_fire_at_ms,generation,version,
+                        notification_sync,notification_retry_at_ms,notification_retry_count,os_state,created_at_ms,updated_at_ms)
+                    VALUES ('reminder-delivery-60000000-0000-4000-8000-000000000001','80000000-0000-4000-8000-000000000001',
+                        '70000000-0000-4000-8000-000000000001','2026-09-09T10:00',NULL,'REMINDER_RUNTIME_CANARY',
+                        1700000900000,1700000000000,'Asia/Bangkok',15,'missed',NULL,1,1,'synced',NULL,0,'none',1,1);").unwrap();
+                Ok::<_, xwork_lib::storage::StorageError>(())
+            }
+        ).unwrap();
+        app.state::<NotificationService>()
+            .upsert_reminder(xwork_lib::notifications::ReminderNotificationInput {
+                delivery_id: "reminder-delivery-60000000-0000-4000-8000-000000000001".into(),
+                delivery_version: 1,
+                kind: xwork_lib::notifications::ReminderNotificationKind::Missed,
+                title: "REMINDER_RUNTIME_CANARY".into(),
+                context: "INBOX_RUNTIME_CANARY".into(),
+                project_id: None,
+                event_id: "70000000-0000-4000-8000-000000000001".into(),
+                occurrence_id: "2026-09-09T10:00".into(),
+                created_at_ms: 1,
+            })
+            .await
+            .unwrap();
+        let reminders_before_reset = reminders.get_missed_reminders(None, None).await.unwrap();
+        assert_eq!(reminders_before_reset.missed_count, 1);
+        assert_eq!(
+            reminder_reset_state(&app.state::<Storage>()),
+            (1, 1, Some(1699999999999))
+        );
+        let settings_before_reset = app.state::<SettingsService>().snapshot().unwrap();
+        let settings_reset_watch = app.state::<SettingsService>().subscribe().unwrap();
+        service.export_backup().await.unwrap();
+        let export_bytes = std::fs::read(&export_path).unwrap();
+        for prohibited in [
+            "REMINDER_RUNTIME_CANARY",
+            "INBOX_RUNTIME_CANARY",
+            "scanThroughMs",
+            "notificationSync",
+            "deliveryVersion",
+        ] {
+            assert!(!String::from_utf8_lossy(&export_bytes).contains(prohibited));
+        }
         let merged = notes.get_note(original.id.clone()).await.unwrap();
         let impact = service
             .prepare_reset_xwork()
@@ -2597,6 +2800,19 @@ fn phase_one_service_round_trips_and_resets_temp_storage() {
         );
         assert_eq!(notes.get_note(original.id.clone()).await.unwrap(), merged);
         assert_eq!(
+            reminder_reset_state(&app.state::<Storage>()),
+            (1, 1, Some(1699999999999))
+        );
+        assert_eq!(
+            reminders.get_missed_reminders(None, None).await.unwrap(),
+            reminders_before_reset
+        );
+        assert_eq!(
+            app.state::<SettingsService>().snapshot().unwrap(),
+            settings_before_reset
+        );
+        assert!(!settings_reset_watch.has_changed().unwrap());
+        assert_eq!(
             app.state::<ProjectService>()
                 .list_projects(None)
                 .await
@@ -2618,6 +2834,25 @@ fn phase_one_service_round_trips_and_resets_temp_storage() {
             .await
             .expect("reset should commit");
         assert_eq!(reset.events_removed, 1);
+        assert_eq!(
+            reminder_reset_state(&app.state::<Storage>()),
+            (0, 0, Some(1_700_000_000_000))
+        );
+        let after_reset = reminders.get_missed_reminders(None, None).await.unwrap();
+        assert_eq!(after_reset.missed_count, 0);
+        assert!(after_reset.items.is_empty());
+        assert_eq!(
+            after_reset.sequence.parse::<u64>().unwrap(),
+            reminders_before_reset.sequence.parse::<u64>().unwrap() + 1
+        );
+        assert!(settings_reset_watch.has_changed().unwrap());
+        assert_eq!(
+            app.state::<SettingsService>()
+                .snapshot()
+                .unwrap()
+                .notifications,
+            xwork_lib::settings::NotificationSettingsDto::default()
+        );
         assert!(
             app.state::<Storage>()
                 .with_transaction(
@@ -2672,4 +2907,16 @@ impl ProjectEventSink for UnusedProjectEvents {
     fn publish(&self, _event: ProjectChangedEventDto) -> Result<(), ProjectsError> {
         Ok(())
     }
+}
+
+/// Reads reset-owned delivery, inbox and checkpoint state from the isolated shared database.
+fn reminder_reset_state(storage: &Storage) -> (u32, u32, Option<i64>) {
+    storage.with_connection(
+        // Reads only the runtime rows that backups must exclude and reset must atomically remove.
+        |db| db.query_row("SELECT (SELECT count(*) FROM reminder_deliveries),
+            (SELECT count(*) FROM notifications), scan_through_ms FROM reminder_scheduler_state WHERE singleton_id=1", [],
+            // Copies the aggregate state into owned values before the connection borrow ends.
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
+            .map_err(xwork_lib::calendar::ReminderError::from),
+    ).unwrap()
 }

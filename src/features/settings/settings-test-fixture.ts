@@ -49,6 +49,11 @@ export function createSettingsSnapshot(
 ): AppSettingsDto {
   return {
     revision: "0",
+    notifications: {
+      terminalActivityEnabled: true,
+      terminalOsStates: { needsInput: true, processFinished: false, processExitedWithError: true },
+      eventRemindersEnabled: true,
+    },
     general: {
       interfaceLanguage: "english",
       closeToTray: true,

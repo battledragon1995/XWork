@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::{future::Future, pin::Pin};
 use ts_rs::TS;
 
-/// Identifies the three Phase 1 terminal occurrences.
+/// Identifies terminal occurrences and durable Calendar reminders.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(rename_all = "camelCase")]
@@ -12,6 +12,8 @@ pub enum NotificationKindDto {
     TerminalNeedsInput,
     TerminalProcessFinished,
     TerminalProcessFailed,
+    EventReminderDue,
+    EventReminderMissed,
 }
 
 /// Returns an opaque live route without exposing terminal source identity.
@@ -33,6 +35,13 @@ pub enum NotificationTargetDto {
         session_id: String,
         tab_id: String,
         pane_id: String,
+    },
+    EventReminder {
+        project_id: Option<String>,
+        event_id: String,
+        occurrence_id: String,
+        reminder_delivery_id: String,
+        delivery_version: String,
     },
 }
 
@@ -148,7 +157,26 @@ pub struct TerminalNotificationPolicy {
     pub os_process_finished: bool,
     pub os_process_failed: bool,
 }
-/// Reserves the documented Rust consumer shape for the later Calendar adapter.
+/// Identifies the reminder bell presentation independently of terminal occurrences.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ReminderNotificationKind {
+    Due,
+    Missed,
+}
+/// Carries an owned reminder generation into the durable inbox without OS dispatch.
+#[derive(Clone, Debug)]
+pub struct ReminderNotificationInput {
+    pub delivery_id: String,
+    pub delivery_version: u64,
+    pub kind: ReminderNotificationKind,
+    pub title: String,
+    pub context: String,
+    pub project_id: Option<String>,
+    pub event_id: String,
+    pub occurrence_id: String,
+    pub created_at_ms: i64,
+}
+/// Carries the current Calendar target through a consumer-owned boundary.
 pub struct NotificationEventTarget {
     pub event_id: String,
     pub occurrence_id: String,
@@ -171,7 +199,7 @@ pub trait NotificationDependencies: Send + Sync {
         pane_id: &'a str,
         terminal_id: &'a str,
     ) -> NotificationFuture<'a, Result<bool, NotificationError>>;
-    /// Resolves future Calendar occurrences; Phase 1 returns None.
+    /// Resolves one current Calendar occurrence without importing its owner implementation.
     fn event_target<'a>(
         &'a self,
         event_id: &'a str,
@@ -217,4 +245,17 @@ pub(crate) fn normalize(value: &str, limit: usize) -> String {
         .chars()
         .take(limit)
         .collect()
+}
+
+/// Validates the backend-generated reminder delivery identity.
+pub(crate) fn delivery_id_valid(value: &str) -> bool {
+    value
+        .strip_prefix("reminder-delivery-")
+        .is_some_and(uuid_valid)
+}
+/// Validates a bounded opaque occurrence identity without accepting control characters.
+pub(crate) fn occurrence_valid(value: &str) -> bool {
+    !value.is_empty() && value.chars().count() <= 80
+        // Excludes invisible control characters from opaque navigation identities.
+        && !value.chars().any(char::is_control)
 }

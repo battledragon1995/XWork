@@ -90,6 +90,9 @@ struct Seen {
 /// Identifies the small set of fixed SQL mutations accepted by commands and workers.
 enum Mutation {
     Read(String),
+    ReadTarget(String, NotificationTargetDto),
+    Reminder(Box<ReminderNotificationInput>, String),
+    RemoveReminder(String),
     ReadAll,
     Delete(String),
     ClearRead,
@@ -232,6 +235,12 @@ impl NotificationService {
                 let mut inserted=false;
                 let count = match mutation {
                     Mutation::Read(id) => { repository::get(tx,&id)?; tx.execute("UPDATE notifications SET read_at_ms=max(?1,created_at_ms) WHERE id=?2 AND read_at_ms IS NULL", rusqlite::params![now,id])? },
+                    Mutation::ReadTarget(id, expected) => {
+                        if repository::get(tx, &id)?.dto.target != expected { return Err(NotificationError::TargetUnavailable); }
+                        tx.execute("UPDATE notifications SET read_at_ms=max(?1,created_at_ms) WHERE id=?2 AND read_at_ms IS NULL", rusqlite::params![now,id])?
+                    },
+                    Mutation::Reminder(input, id) => repository::upsert_reminder(tx, &id, &input)?,
+                    Mutation::RemoveReminder(id) => tx.execute("DELETE FROM notifications WHERE source_kind='event_reminder' AND source_id=?1", [id])?,
                     Mutation::ReadAll => tx.execute("UPDATE notifications SET read_at_ms=max(?1,created_at_ms) WHERE read_at_ms IS NULL", [now])?,
                     Mutation::Delete(id) => { repository::get(tx,&id)?; tx.execute("DELETE FROM notifications WHERE id=?1", [id])? },
                     Mutation::ClearRead => tx.execute("DELETE FROM notifications WHERE read_at_ms IS NOT NULL", [])?,
@@ -290,25 +299,86 @@ impl NotificationService {
         id: &str,
     ) -> Result<OpenNotificationDto, NotificationError> {
         let stored = self.stored(id).await?;
-        let NotificationTargetDto::Session {
-            project_id,
-            session_id,
-            tab_id,
-            pane_id,
-        } = &stored.dto.target;
-        if !self
-            .inner
-            .dependencies
-            .session_target_exists(project_id, session_id, tab_id, pane_id, &stored.source_id)
-            .await?
-        {
-            return Err(NotificationError::TargetUnavailable);
+        let mut target = stored.dto.target.clone();
+        match &mut target {
+            NotificationTargetDto::Session {
+                project_id,
+                session_id,
+                tab_id,
+                pane_id,
+            } => {
+                if !self
+                    .inner
+                    .dependencies
+                    .session_target_exists(
+                        project_id,
+                        session_id,
+                        tab_id,
+                        pane_id,
+                        &stored.source_id,
+                    )
+                    .await?
+                {
+                    return Err(NotificationError::TargetUnavailable);
+                }
+            }
+            NotificationTargetDto::EventReminder {
+                project_id,
+                event_id,
+                occurrence_id,
+                ..
+            } => {
+                let current = self
+                    .inner
+                    .dependencies
+                    .event_target(event_id, occurrence_id)
+                    .await?
+                    .ok_or(NotificationError::TargetUnavailable)?;
+                if current.event_id != *event_id || current.occurrence_id != *occurrence_id {
+                    return Err(NotificationError::TargetUnavailable);
+                }
+                *project_id = current.project_id;
+            }
         }
-        let state = self.mark_notification_read(id).await?;
-        Ok(OpenNotificationDto {
-            target: stored.dto.target,
-            state,
-        })
+        // Rejects a replacement generation committed while the owner lookup was pending.
+        let state = self
+            .mutate(Mutation::ReadTarget(id.into(), stored.dto.target))
+            .await?
+            .0;
+        Ok(OpenNotificationDto { target, state })
+    }
+    /// Inserts or refreshes a durable reminder bell item without dispatching an OS notification.
+    pub async fn upsert_reminder(
+        &self,
+        mut input: ReminderNotificationInput,
+    ) -> Result<(), NotificationError> {
+        if !delivery_id_valid(&input.delivery_id) || !uuid_valid(&input.event_id)
+            || !occurrence_valid(&input.occurrence_id)
+            // Validates the optional backend project snapshot before persistence.
+            || input.project_id.as_deref().is_some_and(|id| !uuid_valid(id))
+            || input.delivery_version == 0 || input.delivery_version > i64::MAX as u64
+            || input.created_at_ms < 0
+        {
+            return Err(NotificationError::PersistenceFailed);
+        }
+        input.title = normalize(&input.title, 120);
+        input.context = normalize(&input.context, 240);
+        if input.title.is_empty() || input.context.is_empty() {
+            return Err(NotificationError::PersistenceFailed);
+        }
+        let id = (self.inner.collaborators.ids)();
+        validate_id(&id)?;
+        self.mutate(Mutation::Reminder(Box::new(input), id)).await?;
+        Ok(())
+    }
+    /// Removes only the bell row belonging to a reminder delivery, including absent-row retries.
+    pub async fn remove_reminder(&self, delivery_id: &str) -> Result<(), NotificationError> {
+        if !delivery_id_valid(delivery_id) {
+            return Err(NotificationError::PersistenceFailed);
+        }
+        self.mutate(Mutation::RemoveReminder(delivery_id.into()))
+            .await?;
+        Ok(())
     }
     /// Enqueues a committed terminal snapshot without waiting for database work.
     pub fn observe_terminal_state(&self, event: TerminalStateChangedDto) {
@@ -599,6 +669,9 @@ async fn process_terminal(
             NotificationKindDto::TerminalNeedsInput => "needs input",
             NotificationKindDto::TerminalProcessFinished => "finished",
             NotificationKindDto::TerminalProcessFailed => "exited with an error",
+            NotificationKindDto::EventReminderDue | NotificationKindDto::EventReminderMissed => {
+                unreachable!("terminal intake constructs only terminal kinds")
+            }
         };
         let title = normalize(&format!("{} {suffix}", terminal.title), 120);
         let context_text = normalize(&context.session_name, 240);
@@ -634,6 +707,9 @@ async fn process_terminal(
             NotificationKindDto::TerminalNeedsInput => policy.os_needs_input,
             NotificationKindDto::TerminalProcessFinished => policy.os_process_finished,
             NotificationKindDto::TerminalProcessFailed => policy.os_process_failed,
+            NotificationKindDto::EventReminderDue | NotificationKindDto::EventReminderMissed => {
+                false
+            }
         };
         if inserted && os {
             let _ = service

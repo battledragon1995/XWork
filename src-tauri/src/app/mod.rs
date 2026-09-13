@@ -1,5 +1,5 @@
 use self::search_sources::AppNoteSearchSource;
-use crate::calendar::{CalendarService, SystemCalendarClock, TauriCalendarEventSink};
+use crate::calendar::{CalendarService, SystemCalendarClock};
 use crate::notes::{NotesService, SystemNotesClock, TauriNotesEventSink};
 use std::{
     path::{Path, PathBuf},
@@ -53,6 +53,7 @@ pub mod data_runtime;
 pub mod lifecycle;
 mod notification_dependencies;
 pub mod quick_note;
+mod reminder_dependencies;
 mod search_sources;
 pub mod tray;
 
@@ -326,6 +327,9 @@ pub fn apply_close_requested<R: Runtime>(
 
 /// Reports a successful native show or hide to the Sessions visibility owner.
 pub(crate) fn notify_sessions_visibility<R: Runtime>(app: &AppHandle<R>, visible: bool) {
+    if let Some(reminders) = app.try_state::<crate::calendar::ReminderService>() {
+        reminders.observe_main_window_visibility(visible);
+    }
     if let Some(ordering) = app.try_state::<NotificationVisibility>() {
         ordering.set(visible);
         return;
@@ -389,6 +393,13 @@ fn app_invoke_handler<R: Runtime>() -> impl Fn(tauri::ipc::Invoke<R>) -> bool + 
         quick_note::close_quick_note_window,
         quick_note::start_quick_note_window_drag,
         quick_note::get_quick_note_global_shortcut_status,
+        crate::calendar::reminder_commands::get_missed_reminders,
+        crate::calendar::reminder_commands::get_event_reminder_deliveries,
+        crate::calendar::reminder_commands::open_reminder,
+        crate::calendar::reminder_commands::snooze_reminder,
+        crate::calendar::reminder_commands::dismiss_reminder,
+        crate::calendar::reminder_commands::dismiss_all_missed_reminders,
+        crate::calendar::reminder_commands::set_visible_calendar_event,
         crate::calendar::commands::list_calendar_occurrences,
         crate::calendar::commands::get_calendar_event,
         crate::calendar::commands::create_calendar_event,
@@ -561,7 +572,9 @@ where
                     storage.clone(),
                     app.state::<ProjectService>().inner().clone(),
                     Arc::new(SystemCalendarClock::default()),
-                    Arc::new(TauriCalendarEventSink(app.handle().clone())),
+                    Arc::new(reminder_dependencies::AppCalendarEvents(
+                        app.handle().clone(),
+                    )),
                     app.state::<DataMaintenanceGate>().inner().clone(),
                 ));
                 setup_search(app, sessions.clone())?;
@@ -583,6 +596,8 @@ where
                     Arc::new(AppNotificationDependencies {
                         sessions: sessions.clone(),
                         visibility,
+                        calendar: Some(app.state::<CalendarService>().inner().clone()),
+                        settings: Some(app.state::<SettingsService>().inner().clone()),
                     }),
                     NotificationCollaborators::system(
                         // Delivers badge invalidations only to the authorized main window.
@@ -591,10 +606,13 @@ where
                                 .emit_to("main", NOTIFICATIONS_CHANGED_EVENT, event)
                                 .map_err(|_| crate::notifications::NotificationError::Unavailable)
                         }),
-                        os,
+                        os.clone(),
                     ),
                 ))?;
                 app.manage(notifications.clone());
+                let reminders =
+                    reminder_dependencies::setup(app, os, native_terminal_interactions)?;
+                app.manage(reminders.clone());
                 setup_data_management(
                     app,
                     storage.clone(),
@@ -610,6 +628,7 @@ where
                             app.state::<ProjectService>().inner().clone(),
                             terminal.clone(),
                             notifications.clone(),
+                            reminders.clone(),
                             app.state::<FilesService>().inner().clone(),
                         ))
                     },
@@ -761,12 +780,23 @@ fn setup_data_management<R: Runtime>(
             .inner()
             .clone(),
         notifications: notifications.clone(),
+        reminders: Some(
+            app.state::<crate::calendar::ReminderService>()
+                .inner()
+                .clone(),
+        ),
     };
     let service = DataManagementService::with_files_seams(
         storage,
         app.state::<DataMaintenanceGate>().inner().clone(),
         participants,
-        Arc::new(AppDataRuntime::new(sessions, notifications)),
+        Arc::new(AppDataRuntime::new(
+            sessions,
+            notifications,
+            app.state::<crate::calendar::ReminderService>()
+                .inner()
+                .clone(),
+        )),
         Arc::new(TauriDataPlatform::new(app.handle().clone(), app_data_dir)),
         Arc::new(SystemDataClock::new()),
         Arc::new(TauriDataEventSink(app.handle().clone())),

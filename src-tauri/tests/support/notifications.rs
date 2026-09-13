@@ -23,6 +23,7 @@ pub struct Dependencies {
     pub fail: AtomicBool,
     pub calls: AtomicU64,
     pub disabled: AtomicBool,
+    pub event_project: Mutex<Option<String>>,
     pub target_pause: Mutex<
         Option<(
             tokio::sync::oneshot::Sender<()>,
@@ -81,14 +82,31 @@ impl NotificationDependencies for Dependencies {
             Ok(exists)
         })
     }
-    /// Leaves future Calendar resolution absent in Phase 1.
+    /// Returns the current event route with independently controlled missing and failure outcomes.
     fn event_target<'a>(
         &'a self,
-        _: &'a str,
-        _: &'a str,
+        event_id: &'a str,
+        occurrence_id: &'a str,
     ) -> NotificationFuture<'a, Result<Option<NotificationEventTarget>, NotificationError>> {
-        // Awaits owner work without retaining a calling state borrow.
-        Box::pin(async { Ok(None) })
+        // Models owner lookup without holding a synchronous mutex across the await.
+        Box::pin(async move {
+            if self.fail.load(Ordering::SeqCst) {
+                return Err(NotificationError::DependencyUnavailable);
+            }
+            if self.target_missing.load(Ordering::SeqCst) {
+                return Ok(None);
+            }
+            let pause = self.target_pause.lock().unwrap().take();
+            if let Some((entered, resume)) = pause {
+                let _ = entered.send(());
+                resume.await.unwrap();
+            }
+            Ok(Some(NotificationEventTarget {
+                event_id: event_id.into(),
+                occurrence_id: occurrence_id.into(),
+                project_id: self.event_project.lock().unwrap().clone(),
+            }))
+        })
     }
     /// Returns defaults with one test-local activity opt-out switch.
     fn terminal_policy(&self) -> Result<TerminalNotificationPolicy, NotificationError> {
@@ -340,5 +358,20 @@ impl TerminalDependencies for CommandDependencies {
     ) -> TerminalFuture<'a, Result<(), TerminalError>> {
         // Awaits owner work without retaining a calling state borrow.
         Box::pin(async { Ok(()) })
+    }
+}
+
+/// Builds a valid reminder generation using deterministic backend-owned identities.
+pub fn reminder(version: u64) -> ReminderNotificationInput {
+    ReminderNotificationInput {
+        delivery_id: "reminder-delivery-00000000-0000-4000-8000-000000000002".into(),
+        delivery_version: version,
+        kind: ReminderNotificationKind::Due,
+        title: "Meeting starts now".into(),
+        context: "2026-09-13 10:00 (UTC) · reminder now".into(),
+        project_id: Some(PROJECT.into()),
+        event_id: "00000000-0000-4000-8000-000000000003".into(),
+        occurrence_id: "single".into(),
+        created_at_ms: 100,
     }
 }

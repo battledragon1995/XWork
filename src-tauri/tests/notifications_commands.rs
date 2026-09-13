@@ -169,7 +169,7 @@ fn notification_schema_is_version_five() {
             },
         )
         .unwrap();
-    assert_eq!(version, 8);
+    assert_eq!(version, 10);
 }
 
 /// Invokes the real Tauri wrapper rather than bypassing window authorization.
@@ -708,5 +708,276 @@ fn shared_gate_and_concurrent_revision_order() {
         for (index, event) in events.iter().enumerate() {
             assert_eq!(event.revision, (index + 1).to_string());
         }
+    });
+}
+
+/// Preserves valid durable event rows while startup discards terminal runtime rows.
+#[test]
+fn reminder_event_row_survives_restart() {
+    // Exercises the migration-nine shape through the existing public notification boundary.
+    tauri::async_runtime::block_on(async {
+        let h = Harness::new().await;
+        h.sql("INSERT INTO notifications(id,source_kind,source_id,source_key,kind,title,context,target_kind,project_id,target_id,occurrence_id,reminder_delivery_id,delivery_version,created_at_ms) VALUES('notification-00000000-0000-4000-8000-000000000099','event_reminder','reminder-delivery-00000000-0000-4000-8000-000000000002','event-reminder:reminder-delivery-00000000-0000-4000-8000-000000000002','event_reminder_due','Meeting starts now','2026-09-13 10:00 (UTC)','event',NULL,'00000000-0000-4000-8000-000000000003','single','reminder-delivery-00000000-0000-4000-8000-000000000002',1,100)");
+        let page = h.service.get_notifications(None, None).await;
+        assert!(
+            page.is_ok(),
+            "valid migration-nine event row must decode: {page:?}"
+        );
+        let restarted = NotificationService::new(
+            h.storage.clone(),
+            h.gate.clone(),
+            h.dependencies.clone(),
+            NotificationCollaborators::system(
+                // Ignores restarted events while checking durable row decoding.
+                Arc::new(|_| Ok(())),
+                h.os.clone(),
+            ),
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            restarted
+                .get_notifications(None, None)
+                .await
+                .unwrap()
+                .items
+                .len(),
+            1
+        );
+    });
+}
+
+/// Keeps retries and older versions from replacing the read state, content or revision.
+#[test]
+fn reminder_intake_is_idempotent_and_new_generation_retains_identity() {
+    // Drives generation changes without the scheduler or native side effects.
+    tauri::async_runtime::block_on(async {
+        let h = Harness::new().await;
+        h.service.upsert_reminder(reminder(1)).await.unwrap();
+        let original = h.page().await;
+        let id = original.items[0].id.clone();
+        h.service.mark_notification_read(&id).await.unwrap();
+        let read = h.page().await;
+        let mut retry = reminder(1);
+        retry.title = "Retry must not replace the snapshot".into();
+        retry.created_at_ms = 900;
+        h.service.upsert_reminder(retry).await.unwrap();
+        assert_eq!(h.page().await, read);
+        let mut next = reminder(2);
+        next.created_at_ms = 200;
+        next.title = "  Meeting\n \tstarts\u{0001} now  ".into();
+        next.context = format!("  {}\n ", "界".repeat(250));
+        next.kind = ReminderNotificationKind::Missed;
+        h.service.upsert_reminder(next).await.unwrap();
+        let refreshed = h.page().await;
+        assert_eq!(refreshed.revision, "3");
+        assert_eq!(refreshed.unread_count, 1);
+        assert_eq!(refreshed.items[0].id, id);
+        assert_eq!(refreshed.items[0].created_at_ms, "200");
+        assert_eq!(refreshed.items[0].title, "Meeting starts now");
+        assert_eq!(refreshed.items[0].context.chars().count(), 240);
+        assert_eq!(
+            refreshed.items[0].kind,
+            NotificationKindDto::EventReminderMissed
+        );
+        assert!(
+            matches!(&refreshed.items[0].target, NotificationTargetDto::EventReminder { delivery_version, .. } if delivery_version == "2")
+        );
+        h.service.upsert_reminder(reminder(1)).await.unwrap();
+        assert_eq!(h.page().await, refreshed);
+        h.service.flush().await.unwrap();
+        assert_eq!(h.events.lock().unwrap().len(), 3);
+        assert!(h.os.calls.lock().unwrap().is_empty());
+        h.service
+            .remove_reminder(&reminder(1).delivery_id)
+            .await
+            .unwrap();
+        assert_eq!(h.page().await.revision, "4");
+        h.service
+            .remove_reminder(&reminder(1).delivery_id)
+            .await
+            .unwrap();
+        assert_eq!(h.page().await.revision, "4");
+    });
+}
+
+/// Resolves the current project and leaves stale or unavailable event rows unread.
+#[test]
+fn reminder_open_uses_current_calendar_target_before_mark_read() {
+    // Exercises the event dependency independently of the delivery snapshot project.
+    tauri::async_runtime::block_on(async {
+        let h = Harness::new().await;
+        h.service.upsert_reminder(reminder(1)).await.unwrap();
+        let id = h.page().await.items[0].id.clone();
+        h.dependencies.target_missing.store(true, Ordering::SeqCst);
+        assert_eq!(
+            h.service.open_notification(&id).await,
+            Err(NotificationError::TargetUnavailable)
+        );
+        assert_eq!(h.page().await.unread_count, 1);
+        h.dependencies.target_missing.store(false, Ordering::SeqCst);
+        h.dependencies.fail.store(true, Ordering::SeqCst);
+        assert_eq!(
+            h.service.open_notification(&id).await,
+            Err(NotificationError::DependencyUnavailable)
+        );
+        assert_eq!(h.page().await.unread_count, 1);
+        h.dependencies.fail.store(false, Ordering::SeqCst);
+        let project = "00000000-0000-4000-8000-000000000009";
+        *h.dependencies.event_project.lock().unwrap() = Some(project.into());
+        let opened = h.service.open_notification(&id).await.unwrap();
+        let target_json = serde_json::to_value(&opened.target).unwrap();
+        assert_eq!(target_json["kind"], "eventReminder");
+        assert_eq!(target_json["reminderDeliveryId"], reminder(1).delivery_id);
+        assert_eq!(target_json["deliveryVersion"], "1");
+        assert!(target_json.get("sourceId").is_none());
+        assert!(
+            matches!(opened.target, NotificationTargetDto::EventReminder { project_id, .. } if project_id.as_deref() == Some(project))
+        );
+        assert_eq!(opened.state.affected_count, 1);
+        *h.dependencies.event_project.lock().unwrap() = None;
+        let opened = h.service.open_notification(&id).await.unwrap();
+        assert!(matches!(
+            opened.target,
+            NotificationTargetDto::EventReminder {
+                project_id: None,
+                ..
+            }
+        ));
+        assert_eq!(opened.state.affected_count, 0);
+    });
+}
+
+/// Rejects an old navigation lookup when a newer generation arrives during the owner await.
+#[test]
+fn reminder_open_generation_race_preserves_new_unread_row() {
+    // Uses a dependency barrier to interleave a refresh deterministically.
+    tauri::async_runtime::block_on(async {
+        let h = Harness::new().await;
+        h.service.upsert_reminder(reminder(1)).await.unwrap();
+        let id = h.page().await.items[0].id.clone();
+        let (entered, observed) = tokio::sync::oneshot::channel();
+        let (resume, paused) = tokio::sync::oneshot::channel();
+        *h.dependencies.target_pause.lock().unwrap() = Some((entered, paused));
+        let service = h.service.clone();
+        // Waits for owner validation while the caller advances the stored generation.
+        let open = tauri::async_runtime::spawn(async move { service.open_notification(&id).await });
+        observed.await.unwrap();
+        h.service.upsert_reminder(reminder(2)).await.unwrap();
+        resume.send(()).unwrap();
+        assert_eq!(
+            open.await.unwrap(),
+            Err(NotificationError::TargetUnavailable)
+        );
+        assert_eq!(h.page().await.unread_count, 1);
+    });
+}
+
+/// Preserves durable event notifications when startup and true Quit remove terminal runtime rows.
+#[test]
+fn reminder_rows_survive_runtime_cleanup_and_generic_delete_is_local() {
+    // Drives runtime cleanup and inbox deletion without any reminder action collaborator.
+    tauri::async_runtime::block_on(async {
+        let h = Harness::new().await;
+        h.service.upsert_reminder(reminder(1)).await.unwrap();
+        h.send(attention("terminal-1", 1)).await;
+        assert_eq!(h.count(), 2);
+        h.service.shutdown_runtime_sources().await.unwrap();
+        assert_eq!(h.count(), 1);
+        let restarted = NotificationService::new(
+            h.storage.clone(),
+            h.gate.clone(),
+            h.dependencies.clone(),
+            NotificationCollaborators::system(
+                // Ignores the restarted service's committed events in this persistence check.
+                Arc::new(|_| Ok(())),
+                h.os.clone(),
+            ),
+        )
+        .await
+        .unwrap();
+        let page = restarted.get_notifications(None, None).await.unwrap();
+        restarted
+            .delete_notification(&page.items[0].id)
+            .await
+            .unwrap();
+        restarted.flush().await.unwrap();
+        assert_eq!(h.count(), 0);
+    });
+}
+
+/// Rejects malformed intake and rolls back failed refreshes without revising the inbox.
+#[test]
+fn reminder_invalid_input_and_sql_failure_preserve_state() {
+    // Injects invalid owner input and one temporary SQLite failure independently.
+    tauri::async_runtime::block_on(async {
+        let h = Harness::new().await;
+        for index in 0..7 {
+            let mut input = reminder(1);
+            match index {
+                0 => input.delivery_id = "private invalid identity".into(),
+                1 => input.delivery_version = 0,
+                2 => input.delivery_version = u64::MAX,
+                3 => input.event_id = "invalid".into(),
+                4 => input.occurrence_id = String::new(),
+                5 => input.created_at_ms = -1,
+                _ => input.title = " \n\t".into(),
+            }
+            assert_eq!(
+                h.service.upsert_reminder(input).await,
+                Err(NotificationError::PersistenceFailed)
+            );
+        }
+        assert_eq!(h.page().await.revision, "0");
+        h.service.upsert_reminder(reminder(1)).await.unwrap();
+        let before = h.page().await;
+        h.sql("CREATE TRIGGER fail_update BEFORE UPDATE ON notifications BEGIN SELECT RAISE(ABORT,'private fixture'); END;");
+        assert_eq!(
+            h.service.upsert_reminder(reminder(2)).await,
+            Err(NotificationError::PersistenceFailed)
+        );
+        assert_eq!(h.page().await, before);
+        h.sql("DROP TRIGGER fail_update");
+        h.service.upsert_reminder(reminder(2)).await.unwrap();
+        assert_eq!(h.page().await.revision, "2");
+    });
+}
+
+/// Serializes concurrent duplicate reminder intake into a single committed notification revision.
+#[test]
+fn reminder_concurrent_retry_publishes_once() {
+    // Races public intake calls without involving wall-clock scheduling.
+    tauri::async_runtime::block_on(async {
+        let h = Harness::new().await;
+        let first = h.service.clone();
+        let second = h.service.clone();
+        // Admits the first intake concurrently with the second public call.
+        let left =
+            tauri::async_runtime::spawn(async move { first.upsert_reminder(reminder(1)).await });
+        second.upsert_reminder(reminder(1)).await.unwrap();
+        left.await.unwrap().unwrap();
+        h.service.flush().await.unwrap();
+        assert_eq!(h.page().await.revision, "1");
+        assert_eq!(h.count(), 1);
+        assert_eq!(h.events.lock().unwrap().len(), 1);
+        assert!(h.os.calls.lock().unwrap().is_empty());
+    });
+}
+
+/// Fails closed on inconsistent reminder source identities without disclosing stored values.
+#[test]
+fn reminder_corrupt_source_key_is_sanitized() {
+    // Corrupts only an isolated notification row after a valid intake commit.
+    tauri::async_runtime::block_on(async {
+        let h = Harness::new().await;
+        h.service.upsert_reminder(reminder(1)).await.unwrap();
+        h.sql("UPDATE notifications SET source_key='private fixture secret'");
+        assert_eq!(
+            h.service.get_notifications(None, None).await,
+            Err(NotificationError::CorruptStoredNotification {
+                field: "source_key".into()
+            })
+        );
+        assert_eq!(h.count(), 1);
     });
 }

@@ -20,6 +20,7 @@ pub struct DataParticipants {
     pub cli_profiles: CliProfilesDataParticipant,
     pub keyboard_shortcuts: KeyboardShortcutsDataParticipant,
     pub notifications: NotificationService,
+    pub reminders: Option<crate::calendar::ReminderService>,
 }
 
 /// Owns every validated Phase 1 import plan until one transaction applies it.
@@ -51,5 +52,6 @@ pub struct ResetCommittedProjections {
     pub cli_profiles: CliProfilesCommittedProjection,
     pub keyboard_shortcuts: KeyboardShortcutsCommittedProjection,
     pub notifications: NotificationCommittedProjection,
+    pub reminders: Option<crate::calendar::ReminderResetProjection>,
     pub recent_files: Option<RecentFilesResetProjection>,
 }

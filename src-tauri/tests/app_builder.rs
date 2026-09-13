@@ -158,7 +158,7 @@ fn composition_root_builds_and_manages_storage() {
     let mut app = build_isolated_app(directory.path().to_path_buf());
     run_setup(&mut app);
 
-    assert_eq!(managed_schema_version(&app), 8);
+    assert_eq!(managed_schema_version(&app), 10);
     assert!(
         app.state::<xwork_lib::notes::NotesService>()
             .maintenance_gate()
@@ -398,7 +398,7 @@ fn composition_root_fails_for_newer_database() {
     let database_path = directory.path().join(Storage::DATABASE_FILE_NAME);
     let connection = Connection::open(database_path).expect("the fixture database should open");
     connection
-        .pragma_update(None, "user_version", 9)
+        .pragma_update(None, "user_version", 11)
         .expect("the fixture schema version should be set");
     drop(connection);
 
@@ -461,7 +461,7 @@ fn projects_composition_manages_storage_project_and_gate() {
     let mut app = build_isolated_app(directory.path().to_path_buf());
     run_setup(&mut app);
 
-    assert_eq!(managed_schema_version(&app), 8);
+    assert_eq!(managed_schema_version(&app), 10);
     assert!(
         app.state::<xwork_lib::notes::NotesService>()
             .maintenance_gate()
@@ -770,7 +770,7 @@ fn projects_composition_publishes_nothing_for_a_newer_database() {
     let database_path = directory.path().join(Storage::DATABASE_FILE_NAME);
     let connection = Connection::open(database_path).expect("the fixture database should open");
     connection
-        .pragma_update(None, "user_version", 9)
+        .pragma_update(None, "user_version", 11)
         .expect("the fixture schema version should be set");
     drop(connection);
     let mut app = build_isolated_app(directory.path().to_path_buf());
@@ -798,7 +798,7 @@ fn keyboard_shortcuts_composition_manages_state_and_participant() {
     let directory = tempfile::TempDir::new().unwrap();
     let mut app = build_isolated_app(directory.path().to_path_buf());
     run_setup(&mut app);
-    assert_eq!(managed_schema_version(&app), 8);
+    assert_eq!(managed_schema_version(&app), 10);
     assert!(
         app.state::<xwork_lib::notes::NotesService>()
             .maintenance_gate()
@@ -838,4 +838,52 @@ fn keyboard_shortcuts_corruption_fails_composition() {
         app.try_state::<KeyboardShortcutsDataParticipant>()
             .is_none()
     );
+}
+/// Verifies all seven reminder commands are registered and reject an auxiliary caller before validation.
+#[test]
+fn reminder_commands_are_registered_and_main_window_only() {
+    let directory = tempfile::tempdir().unwrap();
+    let mut app = build_isolated_app(directory.path().to_path_buf());
+    run_setup(&mut app);
+    assert!(
+        app.try_state::<xwork_lib::calendar::ReminderService>()
+            .is_some()
+    );
+    let main = window(&app, "main");
+    let other = window(&app, "reminder-auxiliary");
+    for (command, body) in [
+        ("get_missed_reminders", serde_json::json!({})),
+        (
+            "get_event_reminder_deliveries",
+            serde_json::json!({"eventId":"invalid","occurrenceId":"single"}),
+        ),
+        ("open_reminder", serde_json::json!({"deliveryId":"invalid"})),
+        (
+            "snooze_reminder",
+            serde_json::json!({"deliveryId":"invalid","expectedVersion":"1","minutes":5}),
+        ),
+        (
+            "dismiss_reminder",
+            serde_json::json!({"deliveryId":"invalid","expectedVersion":"1"}),
+        ),
+        ("dismiss_all_missed_reminders", serde_json::json!({})),
+        (
+            "set_visible_calendar_event",
+            serde_json::json!({"input":{"kind":"hide","viewToken":"invalid"}}),
+        ),
+    ] {
+        let result =
+            tauri::test::get_ipc_response(&other, invoke_request_with_body(command, body.clone()));
+        assert_eq!(
+            result.unwrap_err(),
+            serde_json::json!({"code":"unauthorized_window"}),
+            "{command}"
+        );
+        let main_result =
+            tauri::test::get_ipc_response(&main, invoke_request_with_body(command, body));
+        if let Err(error) = main_result {
+            assert_ne!(error, serde_json::json!({"code":"unauthorized_window"}));
+            assert!(error.get("code").is_some(), "{command}: {error}");
+        }
+    }
 }

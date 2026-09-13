@@ -1,7 +1,7 @@
 use super::models::*;
 use rusqlite::{Connection, Row, params};
 
-const COLUMNS: &str = "id,source_kind,source_id,source_key,kind,title,context,target_kind,project_id,target_id,tab_id,pane_id,status_code,created_at_ms,read_at_ms";
+const COLUMNS: &str = "id,source_kind,source_id,source_key,kind,title,context,target_kind,project_id,target_id,tab_id,pane_id,status_code,created_at_ms,read_at_ms,occurrence_id,reminder_delivery_id,delivery_version";
 
 /// Retains source identity privately for target validation and dedupe.
 pub(crate) struct StoredNotification {
@@ -33,17 +33,21 @@ fn decode(row: &Row<'_>) -> Result<StoredNotification, NotificationError> {
     // Maps the failure to a sanitized boundary error.
     validate_id(&id).map_err(|_| corrupt("id"))?;
     let source: String = read_field(row, 1, "source_kind")?;
-    if source != "terminal_activity" {
-        return Err(corrupt("source_kind"));
-    }
     let source_id: String = read_field(row, 2, "source_id")?;
     let source_key: String = read_field(row, 3, "source_key")?;
     let kind: String = read_field(row, 4, "kind")?;
-    let kind = match kind.as_str() {
-        "terminal_needs_input" => NotificationKindDto::TerminalNeedsInput,
-        "terminal_process_finished" => NotificationKindDto::TerminalProcessFinished,
-        "terminal_process_failed" => NotificationKindDto::TerminalProcessFailed,
-        _ => return Err(corrupt("kind")),
+    let kind = match (source.as_str(), kind.as_str()) {
+        ("terminal_activity", "terminal_needs_input") => NotificationKindDto::TerminalNeedsInput,
+        ("terminal_activity", "terminal_process_finished") => {
+            NotificationKindDto::TerminalProcessFinished
+        }
+        ("terminal_activity", "terminal_process_failed") => {
+            NotificationKindDto::TerminalProcessFailed
+        }
+        ("event_reminder", "event_reminder_due") => NotificationKindDto::EventReminderDue,
+        ("event_reminder", "event_reminder_missed") => NotificationKindDto::EventReminderMissed,
+        ("terminal_activity" | "event_reminder", _) => return Err(corrupt("kind")),
+        _ => return Err(corrupt("source_kind")),
     };
     let title: String = read_field(row, 5, "title")?;
     let context: String = read_field(row, 6, "context")?;
@@ -54,53 +58,119 @@ fn decode(row: &Row<'_>) -> Result<StoredNotification, NotificationError> {
         return Err(corrupt("context"));
     }
     let target_kind: String = read_field(row, 7, "target_kind")?;
-    if target_kind != "session" {
-        return Err(corrupt("target_kind"));
-    }
-    let project_id: String = read_field(row, 8, "project_id")?;
-    if !uuid_valid(&project_id) {
+    let project_id: Option<String> = read_field(row, 8, "project_id")?;
+    // Rejects malformed optional project snapshots before routing.
+    if project_id.as_deref().is_some_and(|id| !uuid_valid(id)) {
         return Err(corrupt("project_id"));
     }
-    let session_id: String = read_field(row, 9, "target_id")?;
-    let tab_id: String = read_field(row, 10, "tab_id")?;
-    let pane_id: String = read_field(row, 11, "pane_id")?;
-    for (name, value) in [
-        ("source_id", &source_id),
-        ("target_id", &session_id),
-        ("tab_id", &tab_id),
-        ("pane_id", &pane_id),
-    ] {
-        if value.is_empty()
-            || value.len() > 255
-            // Restricts opaque identifiers to their safe runtime alphabet.
-            || !value.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
-        {
-            return Err(corrupt(name));
-        }
-    }
-    let prefix = format!("terminal:{source_id}:");
-    let valid_key = if kind == NotificationKindDto::TerminalNeedsInput {
-        source_key
-            .strip_prefix(&format!("{prefix}attention:"))
-            // Checks the canonical value before accepting the snapshot.
-            .is_some_and(|s| s.parse::<u64>().is_ok_and(|n| n.to_string() == s))
-    } else {
-        source_key == format!("{prefix}process_final")
-    };
-    if !valid_key {
-        return Err(corrupt("source_key"));
-    }
+    let target_id: String = read_field(row, 9, "target_id")?;
+    let tab_id: Option<String> = read_field(row, 10, "tab_id")?;
+    let pane_id: Option<String> = read_field(row, 11, "pane_id")?;
     let status_code: Option<String> = read_field(row, 12, "status_code")?;
-    if status_code
-        .as_ref()
-        // Checks the canonical value before accepting the snapshot.
-        .is_some_and(|s| s.parse::<i64>().map_or(true, |n| n.to_string() != *s))
-        || (kind == NotificationKindDto::TerminalNeedsInput && status_code.is_some())
-        || (kind == NotificationKindDto::TerminalProcessFinished
-            && status_code.as_deref() != Some("0"))
-    {
-        return Err(corrupt("status_code"));
-    }
+    let occurrence_id: Option<String> = read_field(row, 15, "occurrence_id")?;
+    let delivery_id: Option<String> = read_field(row, 16, "reminder_delivery_id")?;
+    let delivery_version: Option<i64> = read_field(row, 17, "delivery_version")?;
+    let target = if source == "event_reminder" {
+        if target_kind != "event" || tab_id.is_some() || pane_id.is_some() || status_code.is_some()
+        {
+            return Err(corrupt("target_kind"));
+        }
+        if !uuid_valid(&target_id) {
+            return Err(corrupt("target_id"));
+        }
+        let occurrence_id = occurrence_id.ok_or_else(
+            // Reports the missing field without returning stored content.
+            || corrupt("occurrence_id"),
+        )?;
+        if !occurrence_valid(&occurrence_id) {
+            return Err(corrupt("occurrence_id"));
+        }
+        let delivery_id = delivery_id.ok_or_else(
+            // Reports the missing field without returning stored content.
+            || corrupt("reminder_delivery_id"),
+        )?;
+        if !delivery_id_valid(&delivery_id) || source_id != delivery_id {
+            return Err(corrupt("reminder_delivery_id"));
+        }
+        let version = delivery_version.ok_or_else(
+            // Reports the missing field without returning stored content.
+            || corrupt("delivery_version"),
+        )?;
+        if version < 1 {
+            return Err(corrupt("delivery_version"));
+        }
+        if source_key != format!("event-reminder:{delivery_id}") {
+            return Err(corrupt("source_key"));
+        }
+        NotificationTargetDto::EventReminder {
+            project_id,
+            event_id: target_id,
+            occurrence_id,
+            reminder_delivery_id: delivery_id,
+            delivery_version: version.to_string(),
+        }
+    } else {
+        if target_kind != "session"
+            || occurrence_id.is_some()
+            || delivery_id.is_some()
+            || delivery_version.is_some()
+        {
+            return Err(corrupt("target_kind"));
+        }
+        let project_id = project_id.ok_or_else(
+            // Reports the missing field without returning stored content.
+            || corrupt("project_id"),
+        )?;
+        let tab_id = tab_id.ok_or_else(
+            // Reports the missing field without returning stored content.
+            || corrupt("tab_id"),
+        )?;
+        let pane_id = pane_id.ok_or_else(
+            // Reports the missing field without returning stored content.
+            || corrupt("pane_id"),
+        )?;
+        for (name, value) in [
+            ("source_id", &source_id),
+            ("target_id", &target_id),
+            ("tab_id", &tab_id),
+            ("pane_id", &pane_id),
+        ] {
+            if value.is_empty() || value.len() > 255
+                // Restricts runtime identifiers to their existing safe alphabet.
+                || !value.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
+            {
+                return Err(corrupt(name));
+            }
+        }
+        let prefix = format!("terminal:{source_id}:");
+        let valid_key = if kind == NotificationKindDto::TerminalNeedsInput {
+            source_key
+                .strip_prefix(&format!("{prefix}attention:"))
+                // Accepts only the canonical runtime sequence.
+                .is_some_and(|s| s.parse::<u64>().is_ok_and(|n| n.to_string() == s))
+        } else {
+            source_key == format!("{prefix}process_final")
+        };
+        if !valid_key {
+            return Err(corrupt("source_key"));
+        }
+        if status_code
+            .as_ref()
+            // Validates the canonical exit status without exposing its contents.
+            .is_some_and(|s| s.parse::<i64>().map_or(true, |n| n.to_string() != *s))
+            || (kind == NotificationKindDto::TerminalNeedsInput && status_code.is_some())
+            || (kind == NotificationKindDto::TerminalProcessFinished
+                && status_code.as_deref() != Some("0"))
+        {
+            return Err(corrupt("status_code"));
+        }
+        NotificationTargetDto::Session {
+            project_id,
+            session_id: target_id,
+            tab_id,
+            pane_id,
+        }
+    };
     let created: i64 = read_field(row, 13, "created_at_ms")?;
     let read: Option<i64> = read_field(row, 14, "read_at_ms")?;
     // Checks the canonical value before accepting the snapshot.
@@ -115,12 +185,7 @@ fn decode(row: &Row<'_>) -> Result<StoredNotification, NotificationError> {
             kind,
             title,
             context,
-            target: NotificationTargetDto::Session {
-                project_id,
-                session_id,
-                tab_id,
-                pane_id,
-            },
+            target,
             status_code,
             created_at_ms: created.to_string(),
             // Projects the verified result into the required output shape.
@@ -215,13 +280,19 @@ pub(crate) fn insert(
         NotificationKindDto::TerminalNeedsInput => "terminal_needs_input",
         NotificationKindDto::TerminalProcessFinished => "terminal_process_finished",
         NotificationKindDto::TerminalProcessFailed => "terminal_process_failed",
+        NotificationKindDto::EventReminderDue | NotificationKindDto::EventReminderMissed => {
+            return Err(corrupt("kind"));
+        }
     };
     let NotificationTargetDto::Session {
         project_id,
         session_id,
         tab_id,
         pane_id,
-    } = &dto.target;
+    } = &dto.target
+    else {
+        return Err(corrupt("target_kind"));
+    };
     Ok(connection.execute("INSERT INTO notifications(id,source_kind,source_id,source_key,kind,title,context,target_kind,project_id,target_id,tab_id,pane_id,status_code,created_at_ms) VALUES(?1,'terminal_activity',?2,?3,?4,?5,?6,'session',?7,?8,?9,?10,?11,?12) ON CONFLICT(source_key) DO NOTHING",
         params![dto.id,stored.source_id,stored.source_key,kind,dto.title,dto.context,project_id,session_id,tab_id,pane_id,dto.status_code,timestamp(&dto.created_at_ms)?])?)
 }
@@ -233,4 +304,20 @@ pub(crate) fn read_attention(
     now: i64,
 ) -> Result<usize, NotificationError> {
     Ok(connection.execute("UPDATE notifications SET read_at_ms=max(?1,created_at_ms) WHERE source_id=?2 AND source_kind='terminal_activity' AND kind='terminal_needs_input' AND read_at_ms IS NULL", params![now,terminal])?)
+}
+
+/// Refreshes only a newer reminder version, preserving the stable inbox identity on retries.
+pub(crate) fn upsert_reminder(
+    connection: &Connection,
+    id: &str,
+    input: &ReminderNotificationInput,
+) -> Result<usize, NotificationError> {
+    let kind = match input.kind {
+        ReminderNotificationKind::Due => "event_reminder_due",
+        ReminderNotificationKind::Missed => "event_reminder_missed",
+    };
+    Ok(connection.execute(
+        "INSERT INTO notifications(id,source_kind,source_id,source_key,kind,title,context,target_kind,project_id,target_id,occurrence_id,reminder_delivery_id,delivery_version,created_at_ms) VALUES(?1,'event_reminder',?2,?3,?4,?5,?6,'event',?7,?8,?9,?2,?10,?11) ON CONFLICT(source_key) DO UPDATE SET kind=excluded.kind,title=excluded.title,context=excluded.context,project_id=excluded.project_id,target_id=excluded.target_id,occurrence_id=excluded.occurrence_id,delivery_version=excluded.delivery_version,created_at_ms=excluded.created_at_ms,read_at_ms=NULL WHERE notifications.delivery_version < excluded.delivery_version",
+        params![id,input.delivery_id,format!("event-reminder:{}", input.delivery_id),kind,input.title,input.context,input.project_id,input.event_id,input.occurrence_id,input.delivery_version as i64,input.created_at_ms],
+    )?)
 }
