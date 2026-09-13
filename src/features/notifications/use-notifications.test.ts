@@ -8,7 +8,15 @@ import type {
 } from "@/bindings/notifications/notifications";
 import { IpcCallError } from "@/lib/ipc/ipc-error";
 import * as ipc from "@/lib/ipc/notifications";
+import * as reminders from "@/lib/ipc/reminders";
 import { useNotifications } from "./use-notifications";
+
+// Own reminder operations without accessing a native event bridge.
+vi.mock("@/lib/ipc/reminders", () => ({
+  onRemindersChanged: vi.fn(),
+  snoozeReminder: vi.fn(),
+  dismissReminder: vi.fn(),
+}));
 
 // Substitute all native notification operations with test-owned promises.
 vi.mock("@/lib/ipc/notifications", () => ({
@@ -63,6 +71,7 @@ const stop = vi.fn();
 // Restore isolated fixtures for each lifecycle test.
 beforeEach(() => {
   vi.resetAllMocks();
+  vi.mocked(reminders.onRemindersChanged).mockResolvedValue(vi.fn());
   vi.mocked(ipc.getNotifications).mockResolvedValue(page());
   // Retain the current owner's event callback.
   vi.mocked(ipc.onNotificationsChanged).mockImplementation(async (callback) => {
@@ -94,6 +103,138 @@ function mount() {
 async function ready(view: ReturnType<typeof mount>) {
   await waitFor(() => expect(view.result.current.disabled).toBe(false));
 }
+
+/** Supplies an opaque reminder target unrelated to the inbox revision. */
+function reminderRow(
+  kind: "eventReminderDue" | "eventReminderMissed" = "eventReminderDue",
+): NotificationDto {
+  return {
+    ...row,
+    kind,
+    target: {
+      kind: "eventReminder",
+      eventId: "event",
+      occurrenceId: "opaque",
+      projectId: null,
+      reminderDeliveryId: "delivery",
+      deliveryVersion: "17",
+    },
+  };
+}
+
+// Acknowledgements refetch even when the best-effort event is never delivered.
+it("uses delivery versions for Snooze and Dismiss and refetches every acknowledgement", async () => {
+  vi.mocked(ipc.getNotifications).mockResolvedValue(page({ items: [reminderRow()] }));
+  const view = mount();
+  await ready(view);
+  for (const minutes of [5, 10, 30] as const) {
+    const count = vi.mocked(ipc.getNotifications).mock.calls.length;
+    await act(async () => {
+      await view.result.current.mutate("snooze", row.id, minutes);
+    });
+    await ready(view);
+    expect(reminders.snoozeReminder).toHaveBeenLastCalledWith("delivery", "17", minutes);
+    expect(vi.mocked(ipc.getNotifications).mock.calls.length).toBeGreaterThan(count);
+  }
+  await act(async () => {
+    await view.result.current.mutate("dismiss", row.id);
+  });
+  await ready(view);
+  expect(reminders.dismissReminder).toHaveBeenCalledWith("delivery", "17");
+  expect(ipc.deleteNotification).not.toHaveBeenCalled();
+});
+
+// Unknown completion cannot replay a mutation before its replacement snapshot arrives.
+it.each(["delivery_changed", "unknown"])(
+  "reconciles %s reminder failure under the mutation lock",
+  async (code) => {
+    vi.mocked(ipc.getNotifications).mockResolvedValue(page({ items: [reminderRow()] }));
+    vi.mocked(reminders.dismissReminder).mockRejectedValue(
+      new IpcCallError("dismiss_reminder", code === "unknown" ? null : { code }),
+    );
+    const view = mount();
+    await ready(view);
+    const replacement = deferred<NotificationPageDto>();
+    vi.mocked(ipc.getNotifications).mockReturnValueOnce(replacement.promise);
+    await act(async () => {
+      await view.result.current.mutate("dismiss", row.id);
+    });
+    expect(view.result.current.disabled).toBe(true);
+    expect(view.result.current.errorMessage).toBe(
+      code === "unknown"
+        ? "Couldn't update reminders. Refresh and try again."
+        : "This reminder changed. Refresh and try again.",
+    );
+    await act(async () => {
+      await view.result.current.mutate("dismiss", row.id);
+    });
+    expect(reminders.dismissReminder).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      replacement.resolve(page({ items: [] }));
+    });
+    await ready(view);
+    expect(view.result.current.items).toEqual([]);
+  },
+);
+
+// Opening and generic inbox actions preserve reminder delivery ownership.
+it("opens reminder by notification ID and keeps read/delete separate from delivery mutations", async () => {
+  const reminder = reminderRow("eventReminderMissed");
+  vi.mocked(ipc.getNotifications).mockResolvedValue(page({ items: [reminder] }));
+  const state = { revision: page().revision, unreadCount: 105, affectedCount: 0 };
+  vi.mocked(ipc.openNotification).mockResolvedValue({ target: reminder.target, state });
+  vi.mocked(ipc.markNotificationRead).mockResolvedValue(state);
+  vi.mocked(ipc.deleteNotification).mockResolvedValue(state);
+  vi.mocked(ipc.clearReadNotifications).mockResolvedValue(state);
+  const view = mount();
+  await ready(view);
+  await act(async () => {
+    await view.result.current.mutate("snooze", row.id, 5);
+  });
+  await ready(view);
+  for (const action of ["open", "read", "delete", "clearRead"] as const) {
+    await act(async () => {
+      await view.result.current.mutate(action, row.id);
+    });
+    await ready(view);
+  }
+  expect(ipc.openNotification).toHaveBeenCalledWith(row.id);
+  expect(view.onOpenTarget).toHaveBeenCalledWith(reminder.target, expect.any(AbortSignal));
+  expect(reminders.snoozeReminder).not.toHaveBeenCalled();
+  expect(reminders.dismissReminder).not.toHaveBeenCalled();
+});
+
+// Reminder invalidation uses its own domain and registration is owned until late cleanup.
+it("invalidates from reminder events without comparing inbox revision and cleans its listener", async () => {
+  const reminderStop = vi.fn();
+  vi.mocked(reminders.onRemindersChanged).mockResolvedValue(reminderStop);
+  const view = mount();
+  await ready(view);
+  act(() => view.result.current.setOpen(true));
+  await ready(view);
+  const count = vi.mocked(ipc.getNotifications).mock.calls.length;
+  await act(async () => {
+    vi.mocked(reminders.onRemindersChanged).mock.calls[0]?.[0]({ sequence: "1", missedCount: 1 });
+  });
+  await ready(view);
+  expect(vi.mocked(ipc.getNotifications).mock.calls.length).toBeGreaterThan(count);
+  view.unmount();
+  expect(reminderStop).toHaveBeenCalledTimes(1);
+});
+
+// A delayed native registration cannot retain a listener for a retired inbox owner.
+it("closes a reminder subscription that resolves after unmount", async () => {
+  const registration = deferred<() => void>();
+  const reminderStop = vi.fn();
+  vi.mocked(reminders.onRemindersChanged).mockReturnValue(registration.promise);
+  const view = mount();
+  await waitFor(() => expect(reminders.onRemindersChanged).toHaveBeenCalledOnce());
+  view.unmount();
+  await act(async () => {
+    registration.resolve(reminderStop);
+  });
+  expect(reminderStop).toHaveBeenCalledOnce();
+});
 
 // Listener completion precedes any initial snapshot query.
 it("subscribes before querying and exposes the authoritative global count", async () => {

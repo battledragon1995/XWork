@@ -3,6 +3,7 @@ import type {
   AppearanceSettingsDto,
   AppearanceSettingsPatchDto,
   AppSettingsDto,
+  NotificationSettingsPatchDto,
   SettingsError,
 } from "@/bindings/settings";
 import { IpcCallError } from "@/lib/ipc/ipc-error";
@@ -27,6 +28,11 @@ export interface SettingsState {
   saveErrorCode: SettingsErrorCode | null;
   saveError: SettingsError | null;
   lastFailedPatch: AppearanceSettingsPatchDto | null;
+  notificationSaveStatus: SettingsSaveStatus;
+  notificationErrorCode: SettingsErrorCode | null;
+  notificationUncertain: boolean;
+  dataChangeBlocked: boolean;
+  commitNotifications(patch: NotificationSettingsPatchDto): Promise<void>;
   settleBeforeDataChange(): Promise<void>;
   releaseDataChangeBarrier(): void;
   refreshAfterDataChange(): Promise<void>;
@@ -37,8 +43,17 @@ export interface SettingsState {
   discardAppearanceDraft(): void;
 }
 
-/** One queued durable Appearance operation waiting for the single write slot. */
-type QueuedMutation = { kind: "update"; patch: AppearanceSettingsPatchDto } | { kind: "restore" };
+/** One durable operation sharing the same settings write slot. */
+type QueuedMutation =
+  | { kind: "update"; patch: AppearanceSettingsPatchDto }
+  | { kind: "restore" }
+  | { kind: "notifications"; patch: NotificationSettingsPatchDto };
+
+/** Adjacent Appearance edits may share a response; different categories keep their order. */
+interface PendingMutation {
+  operation: QueuedMutation;
+  resolvers: Array<() => void>;
+}
 
 /** Recognized error codes emitted by the generated Settings contract. */
 const SETTINGS_ERROR_CODES = new Set<SettingsError["code"]>([
@@ -80,14 +95,11 @@ let mutationGeneration = 0;
 let mutationRunning = false;
 let dataBarrier = false;
 let activeWrite: Promise<void> | null = null;
-let uncertainAppearanceWrite = false;
+let uncertainSettingsWrite = false;
 let drainToken = 0;
 
-/** The single coalesced operation waiting for the write slot. */
-let pendingMutation: QueuedMutation | null = null;
-
-/** Callers waiting for the pending operation to be processed. */
-let pendingResolvers: Array<() => void> = [];
+/** Durable operations waiting for the single write slot. */
+let pendingMutations: PendingMutation[] = [];
 
 /** True once the application has taken its one startup read of the settings snapshot. */
 let bootstrapped = false;
@@ -138,15 +150,54 @@ function coalesceAppearancePatch(
   return merged;
 }
 
-/** Queue one operation, replacing whatever compatible work was still waiting. */
+/** Queue category-preserving operations, coalescing only adjacent Appearance edits. */
 function enqueueMutation(operation: QueuedMutation): Promise<void> {
-  if (dataBarrier) return Promise.resolve();
-  pendingMutation = operation;
-  const settled = new Promise<void>((resolve) => {
-    pendingResolvers.push(resolve);
-  });
+  if (dataBarrier || uncertainSettingsWrite) return Promise.resolve();
+  const tail = pendingMutations.at(-1);
+  const compatible =
+    tail && tail.operation.kind !== "notifications" && operation.kind !== "notifications";
+  if (compatible) {
+    if (operation.kind === "update" && tail.operation.kind === "update") {
+      operation = {
+        kind: "update",
+        patch: coalesceAppearancePatch(tail.operation.patch, operation.patch),
+      };
+    }
+    tail.operation = operation;
+  }
+  const entry = compatible ? tail : { operation, resolvers: [] };
+  if (!compatible) pendingMutations.push(entry);
+  if (operation.kind === "notifications") {
+    useSettingsStore.setState({ notificationSaveStatus: "saving", notificationErrorCode: null });
+  }
+  const settled = new Promise<void>(
+    /** Resolve when this admitted intent settles or is retired. */ (resolve) => {
+      entry.resolvers.push(resolve);
+    },
+  );
   void drainMutationQueue();
   return settled;
+}
+
+/** Retire unsent edits without leaving callers or notification controls pending. */
+function discardPendingMutations(): void {
+  const policyQueued = pendingMutations.some(
+    /** Release only notification work that was never sent. */ (entry) =>
+      entry.operation.kind === "notifications",
+  );
+  for (const entry of pendingMutations) {
+    for (const resolve of entry.resolvers) resolve();
+  }
+  pendingMutations = [];
+  if (policyQueued && useSettingsStore.getState().notificationSaveStatus === "saving") {
+    useSettingsStore.setState({ notificationSaveStatus: "idle" });
+  }
+}
+
+/** Accept only snapshots at least as recent as the currently committed revision. */
+function currentSnapshot(snapshot: AppSettingsDto): AppSettingsDto {
+  const retained = useSettingsStore.getState().snapshot;
+  return retained && BigInt(retained.revision) > BigInt(snapshot.revision) ? retained : snapshot;
 }
 
 /** Run queued operations one at a time so a slow older write can never win a race. */
@@ -159,11 +210,10 @@ async function drainMutationQueue(): Promise<void> {
   const token = ++drainToken;
   mutationRunning = true;
   try {
-    while (pendingMutation !== null && generation === mutationGeneration) {
-      const operation = pendingMutation;
-      const resolvers = pendingResolvers;
-      pendingMutation = null;
-      pendingResolvers = [];
+    while (pendingMutations.length > 0 && generation === mutationGeneration) {
+      const entry = pendingMutations.shift();
+      if (!entry) break;
+      const { operation, resolvers } = entry;
 
       activeWrite = runMutation(operation);
       await activeWrite;
@@ -171,6 +221,7 @@ async function drainMutationQueue(): Promise<void> {
       for (const resolve of resolvers) {
         resolve();
       }
+      if (uncertainSettingsWrite) discardPendingMutations();
     }
   } finally {
     // A reset already handed the write slot to a fresh queue, so this drain owns nothing.
@@ -183,28 +234,58 @@ async function drainMutationQueue(): Promise<void> {
 /** Execute one operation and reconcile the store with whatever the backend answered. */
 async function runMutation(operation: QueuedMutation): Promise<void> {
   const generation = mutationGeneration;
-  useSettingsStore.setState({
-    saveStatus: "saving",
-    saveErrorCode: null,
-    saveError: null,
-    lastFailedPatch: null,
-  });
+  // Invalidate reads that began before this write was admitted.
+  requestGeneration += 1;
+  inFlight = null;
+  if (operation.kind !== "notifications")
+    useSettingsStore.setState({
+      saveStatus: "saving",
+      saveErrorCode: null,
+      saveError: null,
+      lastFailedPatch: null,
+    });
 
   try {
     const snapshot =
       operation.kind === "restore"
         ? await restoreAppearanceDefaults()
-        : await updateSettings({ appearance: operation.patch });
+        : await updateSettings(
+            operation.kind === "notifications"
+              ? { notifications: operation.patch }
+              : { appearance: operation.patch },
+          );
 
     if (generation !== mutationGeneration) {
       return;
     }
 
-    // A newer edit may already be queued behind this response, so its preview is kept.
-    const draftIsNewer = pendingMutation !== null;
+    // A focus read started during this write must not publish its older snapshot.
+    requestGeneration += 1;
+    inFlight = null;
+    if (operation.kind === "notifications") {
+      useSettingsStore.setState({
+        status: "ready",
+        snapshot: currentSnapshot(snapshot),
+        errorCode: null,
+        notificationSaveStatus: pendingMutations.some(
+          /** Keep controls locked for queued policy work. */ (entry) =>
+            entry.operation.kind === "notifications",
+        )
+          ? "saving"
+          : "idle",
+        notificationErrorCode: null,
+        notificationUncertain: false,
+      });
+      return;
+    }
+    // A newer Appearance edit may still be queued behind this response.
+    const draftIsNewer = pendingMutations.some(
+      /** Preserve only a newer Appearance preview. */ (entry) =>
+        entry.operation.kind !== "notifications",
+    );
     useSettingsStore.setState((state) => ({
       status: "ready",
-      snapshot,
+      snapshot: currentSnapshot(snapshot),
       errorCode: null,
       appearanceDraft: draftIsNewer ? state.appearanceDraft : null,
       saveStatus: "idle",
@@ -219,7 +300,23 @@ async function runMutation(operation: QueuedMutation): Promise<void> {
 
     const error = readSettingsError(rejection);
     const code = error?.code ?? "unknown";
-    if (code === "unknown") uncertainAppearanceWrite = true;
+    if (code === "unknown") {
+      uncertainSettingsWrite = true;
+      // A queued policy edit is also blocked when an Appearance response is lost.
+      useSettingsStore.setState({
+        notificationSaveStatus: "error",
+        notificationErrorCode: "unknown",
+        notificationUncertain: true,
+      });
+    }
+    if (operation.kind === "notifications") {
+      useSettingsStore.setState({
+        notificationSaveStatus: "error",
+        notificationErrorCode: code,
+        notificationUncertain: code === "unknown",
+      });
+      return;
+    }
     const retainDraft = RETAIN_DRAFT_CODES.has(code);
     useSettingsStore.setState((state) => ({
       saveStatus: "error",
@@ -240,28 +337,29 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   saveErrorCode: null,
   saveError: null,
   lastFailedPatch: null,
+  notificationSaveStatus: "idle",
+  notificationErrorCode: null,
+  notificationUncertain: false,
+  dataChangeBlocked: false,
 
   /** Claim synchronously, discard unsent edits, then await the actual write promise. */
   async settleBeforeDataChange() {
     dataBarrier = true;
-    pendingMutation = null;
-    for (const resolve of pendingResolvers) resolve();
-    pendingResolvers = [];
-    set({ appearanceDraft: null });
+    discardPendingMutations();
+    set({ appearanceDraft: null, dataChangeBlocked: true });
     await activeWrite;
-    if (uncertainAppearanceWrite) throw new Error("Uncertain settings write");
+    if (uncertainSettingsWrite) throw new Error("Uncertain settings write");
   },
   /** Release only the maintenance write gate. */
   releaseDataChangeBarrier() {
     dataBarrier = false;
+    set({ dataChangeBlocked: false });
   },
   /** Retire stale reads/drafts without discarding the application's permanent retain. */
   async refreshAfterDataChange() {
     const generation = ++requestGeneration;
     mutationGeneration += 1;
-    pendingMutation = null;
-    for (const resolve of pendingResolvers) resolve();
-    pendingResolvers = [];
+    discardPendingMutations();
     inFlight = null;
     set({
       appearanceDraft: null,
@@ -270,12 +368,14 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       saveError: null,
       saveErrorCode: null,
       status: "loading",
+      notificationSaveStatus: "idle",
+      notificationErrorCode: null,
     });
     try {
       const snapshot = await getSettings();
       if (generation === requestGeneration) {
-        uncertainAppearanceWrite = false;
-        set({ snapshot, status: "ready", errorCode: null });
+        uncertainSettingsWrite = false;
+        set({ snapshot, status: "ready", errorCode: null, notificationUncertain: false });
       }
     } catch (error) {
       if (generation === requestGeneration)
@@ -285,6 +385,8 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   },
   // Read one complete snapshot. Every caller receives the same promise while it is pending.
   async load() {
+    // A reconciliation must observe the outcome of the actual in-flight mutation.
+    while (activeWrite) await activeWrite;
     if (inFlight !== null) {
       if (activeFrames > 0 && get().status === "idle") {
         set({ status: "loading", snapshot: null, errorCode: null });
@@ -294,12 +396,20 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
 
     requestGeneration += 1;
     const generation = requestGeneration;
-    set({ status: "loading", snapshot: null, errorCode: null });
+    set({ status: "loading", errorCode: null });
 
     const request = getSettings()
       .then((snapshot) => {
         if (activeFrames > 0 && generation === requestGeneration) {
-          set({ status: "ready", snapshot, errorCode: null });
+          uncertainSettingsWrite = false;
+          set({
+            status: "ready",
+            snapshot: currentSnapshot(snapshot),
+            errorCode: null,
+            notificationSaveStatus: "idle",
+            notificationErrorCode: null,
+            notificationUncertain: false,
+          });
         }
       })
       .catch((rejection: unknown) => {
@@ -336,13 +446,28 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
 
   // Persist one Appearance patch, coalescing it with whatever is already waiting.
   async commitAppearance(patch) {
-    const queued = pendingMutation?.kind === "update" ? pendingMutation.patch : null;
-    const merged = coalesceAppearancePatch(queued, patch);
-    if (!hasAppearanceField(merged)) {
+    if (!hasAppearanceField(patch)) {
       return;
     }
 
-    return enqueueMutation({ kind: "update", patch: merged });
+    return enqueueMutation({ kind: "update", patch });
+  },
+
+  /** Persist one policy patch without previewing uncommitted values or blindly retrying. */
+  async commitNotifications(patch) {
+    if (
+      get().notificationSaveStatus === "saving" ||
+      get().notificationSaveStatus === "error" ||
+      get().status !== "ready"
+    )
+      return;
+    if (
+      !Object.values(patch).some(
+        /** Reject empty policy patches locally. */ (value) => value !== undefined,
+      )
+    )
+      return;
+    return enqueueMutation({ kind: "notifications", patch });
   },
 
   // Reset every Appearance field through the backend and adopt the returned snapshot.
@@ -399,12 +524,11 @@ export function resetSettingsStore(): void {
   activeFrames = 0;
   inFlight = null;
   mutationRunning = false;
-  pendingMutation = null;
-  pendingResolvers = [];
+  pendingMutations = [];
   bootstrapped = false;
   dataBarrier = false;
   activeWrite = null;
-  uncertainAppearanceWrite = false;
+  uncertainSettingsWrite = false;
   drainToken += 1;
   useSettingsStore.setState({
     status: "idle",
@@ -415,5 +539,9 @@ export function resetSettingsStore(): void {
     saveErrorCode: null,
     saveError: null,
     lastFailedPatch: null,
+    notificationSaveStatus: "idle",
+    notificationErrorCode: null,
+    notificationUncertain: false,
+    dataChangeBlocked: false,
   });
 }

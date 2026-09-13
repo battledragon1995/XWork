@@ -8,7 +8,15 @@ import {
   occurrenceLabel,
   occurrencesForDate,
   shiftMonth,
+  reminderTime,
 } from "./calendar-presentation";
+/** Reject malformed, out-of-domain and invalid-zone reminder display metadata. */
+it("formats only safe reminder timestamps", () => {
+  expect(reminderTime("0", "UTC")).toContain("1970");
+  for (const value of ["", "1.2", "Infinity", "9007199254740993", "8640000000000001"])
+    expect(reminderTime(value, "UTC")).toBe("Time unavailable");
+  expect(reminderTime("0", "invalid/zone")).toBe("Time unavailable");
+});
 /** Check leap dates and supported Gregorian bounds. */
 it("validates and clamps date arithmetic", () => {
   expect(isValidDate("2024-02-29")).toBe(true);

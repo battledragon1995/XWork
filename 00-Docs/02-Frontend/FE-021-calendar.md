@@ -234,3 +234,44 @@ Không có. Phân chia FE021/FE022/Giai đoạn 21 đã được quyết theo �
 ### Kết quả FE021
 Đã triển khai và kiểm chứng 160 file / 2624 FE tests, 590 Rust tests đạt (1 ignored có sẵn), format/lint/typecheck/build/Rustfmt/Clippy/Tauri build đạt. Native smoke còn pending vì native tools disabled; không có desktop E2E hoặc macOS test. Chi tiết command/log tại plan 20260909-fe021-calendar.md. FE022 mở rộng cùng owner để hoàn tất CRUD/Giai đoạn 20.
 
+
+## Mở rộng Giai đoạn 21 — Missed — 2026-09-13
+
+Theo ủy quyền user, extension này thay giới hạn GĐ20 chưa có Missed; không sửa plan lịch sử. Nguồn §13.1/13.3/18/20, `07-Calendar.html#missed`, BE019 đã triển khai. Không có câu hỏi mở.
+
+### File liên quan bổ sung
+
+| Đường dẫn | Vai trò |
+|---|---|
+| `src/features/calendar/calendar-missed.tsx`, `src/features/calendar/calendar-missed.test.tsx` | Panel Missed, actions, focus và paging |
+| `src/features/calendar/use-missed-reminders.ts`, `src/features/calendar/use-missed-reminders.test.ts` | Query/count/sequence/listener/action lifecycle |
+| `src/lib/ipc/reminders.ts`, `src/lib/ipc/reminders.test.ts` | Public wrappers theo extension FE010 |
+| `src/lib/ipc/reminder-error.ts`, `src/lib/ipc/reminder-error.test.ts` | Shared typed reminder error |
+| `src/bindings/reminders.ts` | Generated DTO, chỉ đọc |
+
+`calendar-route.tsx`/tests, `calendar-presentation.ts`/tests, `event-detail-panel.tsx`/tests, `calendar-entry.tsx`/tests và index đã thuộc bảng chính. Không mở rộng Home/Projects UI sang Missed.
+
+### UI và quyết định
+
+- Thêm tab `Missed` cạnh Day/Upcoming, badge `missedCount` toàn backend, giữ số thật trong accessible name và clamp hiển thị 99+ nếu cần. Unknown/loading không giả count 0. Tab keyboard tương đương hai tab hiện có.
+- Missed là toàn ứng dụng, độc lập tháng/ngày/project filter vì BE019 không có filter. Copy `Missed reminders across all projects` khi project đang scope; không tự lọc page gây sai count/paging. Grid tháng giữ filter bình thường, không suy Missed từ event quá khứ hoặc tô tất cả ngày quá khứ.
+- `getMissedReminders(null, 30)` lấy count/page; giữ listener/count khi Day/Upcoming để badge cập nhật. Chỉ load thêm khi Missed đang mở. Rows theo server order, title, original due, startsAt, reminder offset, optional project marker. Time decimal kiểm Date domain trước format bằng timezone delivery, fallback `Time unavailable`; không tính recurrence/scheduler trong JS.
+- Rows có `Open event` và `Dismiss`. `Dismiss all` ghi rõ `Dismiss all missed reminders` trong accessible name và mô tả áp dụng cả rows chưa tải, toàn project; không cần confirmation vì không xóa event, theo wireframe. Không Snooze missed. Open gọi openReminder, navigate target đã revalidate với event/occurrence/project và không đổi count/delivery.
+- Empty `No missed reminders`, giải thích reminder khi app đã Quit xuất hiện tại đây, cho chọn Upcoming. Loading `Loading missed reminders…`; catching-up giữ loading, không render empty. Lỗi `Could not load missed reminders.` + Retry; stale snapshot có nhãn và khóa actions. Listener error banner + Retry, focus recovery vẫn read.
+- Single/all dismiss chỉ publish acknowledgement của current epoch, refetch page đầu và count; outbox bell xóa eventual. Không decrement count theo rows loaded. Double-click và load-more/mutation được khóa đồng bộ; mutation lỗi không tự retry. Row mất restore focus row kế/trước hoặc heading Missed; banner/status không cướp focus.
+
+### State, boundary và IPC
+
+Dùng MissedReminderPageDto/ReminderDeliveryDto/ReminderCursorDto generated, wrapper và error mapping FE010. Hook nội bộ giữ page, nextCursor, sequence, loading/refreshing/pending/error và request generation. Public CalendarRoute/CalendarBoundary không đổi. `reminders://changed` invalidates count và page; `calendar://changed`, focus, Data epoch cũng refresh. Không persist state localStorage.
+
+Một request và tối đa một refresh pending; sequence decimal so BigInt, reject page cũ so latest invalidation. Append chỉ khi cùng page sequence/cursor/epoch, dedupe id, giữ server order; sequence đổi thì page đầu thay tất cả. Listener setup race được cover bằng second read; late listener cleanup, unmount/suspended/epoch retire mọi response và navigation. `readBoundary()` được kiểm tra trước mọi await-dependent publish; timer UI chỉ format giờ, không schedule reminder.
+
+### Tiêu chí và kiểm thử bổ sung
+
+- [x] Missed/count từ backend, >30 rows load-more đúng, Dismiss all áp dụng toàn backend kể cả filter và rows chưa tải.
+- [x] Component/hook tests có catch-up/loading/empty/error, sequence race/duplicate events, cursor invalidation, listener setup failure/late cleanup, transport unknown và Data/Quit retirement.
+- [x] Open trả đúng occurrence URL không dismiss; stale target không route; Dismiss lấy đúng version; không Snooze missed.
+- [x] CalendarRoute tests bảo đảm Day/Upcoming/month/project/create không regression và badge không hardcoded.
+- [x] Date presentation unit test cho malformed/out-of-range timestamps, timezone hợp lệ; native toast/restart không suy từ FE fake timers.
+
+Kết quả tích hợp FE023: automated gates Windows đạt (2.715 frontend tests, 633 Rust tests; 1 benchmark có sẵn ignored, Clippy/Rustfmt/build đạt). Native smoke chưa thực hiện; bằng chứng và giới hạn nằm trong `../98-Plan/20260913-fe023-reminder-notification-settings.md`. Không tuyên bố toàn bộ native/Phase 4 acceptance đã hoàn tất.

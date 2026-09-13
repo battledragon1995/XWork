@@ -251,3 +251,52 @@ GĐ20 đã hoàn tất phần triển khai và kiểm chứng tự động: focu
 Chi tiết commands, counts, log ngoài repo và deviation về thứ tự red-test nằm trong [implementation plan](../98-Plan/20260909-fe022-event.md). Không thay đổi generated binding, Rust/schema/command/capability, manifest, lockfile hoặc plan FE021 lịch sử.
 
 Native Windows smoke vẫn **pending** vì native controls bị tắt; chưa quan sát thao tác WebView2/focus/IME thật và không dùng desktop E2E thay thế. GĐ21 (Missed, scheduler, delivery/restart, notification settings) để lần sau; không tuyên bố toàn bộ native gate hoặc Phase 4 hoàn tất.
+## Mở rộng Giai đoạn 21 — Delivery detail và visibility — 2026-09-13
+
+Theo ủy quyền user, extension tích hợp cần thiết của lát cắt FE023 thay giới hạn GĐ20 chưa có delivery/visibility. Dựa §13.3, §18, wireframe `07-Calendar.html#detail`/`#reminder`, BE019. Không có câu hỏi mở; không sửa plan FE022 lịch sử.
+
+### File liên quan bổ sung
+
+| Đường dẫn | Vai trò |
+|---|---|
+| `src/features/calendar/use-event-reminders.ts`, `src/features/calendar/use-event-reminders.test.ts` | Delivery read và runtime visibility lifecycle |
+| `src/lib/ipc/reminders.ts`, `src/lib/ipc/reminders.test.ts` | Wrapper typed theo extension FE010 |
+| `src/lib/ipc/reminder-error.ts`, `src/lib/ipc/reminder-error.test.ts` | Shared error copy |
+| `src/bindings/reminders.ts` | Regenerate duy nhất từ Rust khi nullable visibility contract thay đổi |
+| `src-tauri/src/calendar/reminder_models.rs` | Nullable occurrence visibility input |
+| `src-tauri/src/calendar/reminder_service.rs` | Validate event-only visibility và giữ policy exact event |
+| `src-tauri/src/calendar/reminder_scheduler.rs` | Eligibility so đúng event ID, kể cả base detail và occurrence khác của cùng event |
+| `src-tauri/tests/reminder_actions.rs`, `src-tauri/tests/reminder_notifications.rs` | Null/supplied occurrence, invalid IDs và visibility token/policy regression |
+| `src-tauri/tests/export_bindings.rs` | Generator/drift verification |
+| `00-Docs/03-Backend/BE-019-reminder-scheduler.md` | Ghi contract adjustment và quyết định tích hợp |
+
+`calendar-route.tsx`/tests, `event-detail-panel.tsx`/tests, `src/app/calendar-entry.tsx`/tests và `src/app/notification-entry.tsx`/tests thuộc scope integration; các bảng chính của FE021/FE010 đã chứa đường dẫn. Không thay capabilities, commands registry, migration, manifest hoặc scheduler.
+
+### Quyết định contract visibility tối thiểu
+
+BE019 hiện bắt occurrenceId cho show nhưng Search/create thành công mở base detail chỉ có eventId; OS policy thật so exact eventId. Không dựng occurrence giả và không expand recurrence trong frontend. Điều chỉnh `VisibleCalendarEventInputDto` nhánh show thành `{ kind: 'show'; viewToken: string; eventId: string; occurrenceId: string | null }`; hide giữ nguyên `{ kind: 'hide'; viewToken: string }`. Rust dùng Option<String>, validate eventId luôn, validate shape và event association của occurrence khi Some như trước; null hợp lệ để báo base detail. Runtime lưu nullable occurrence nếu còn field, policy vẫn main-visible && exact eventId. Không đổi delivery query yêu cầu occurrenceId thực. Bindings phải regenerate bằng exporter, không sửa tay.
+
+### UI, route và vòng đời
+
+- CalendarRoute đọc optional `occurrence` URL và truyền opaque ID tách khỏi CalendarOccurrenceDto local; không cần occurrence nằm trong tháng hiện tại. Query getEventReminderDeliveries(eventId, occurrenceId) xác thực context; không parse occurrence để tạo thời gian/event giả. Khi chọn chip/row, lưu occurrence đúng; khi đóng/chọn event khác/create, bỏ occurrence cũ. Open từ bell/Missed giữ ID do backend trả.
+- Detail luôn hiển thị reminder definitions từ Calendar. Chỉ khi có occurrence cụ thể, đọc delivery và hiện `Active`, `Missed`, `Snoozed until …`, `Dismissed`, `Suppressed` đúng DTO. Không dịch active thành `Sent` hoặc tuyên bố OS đã nhận; không có delivery không có nghĩa future scheduled. Base detail không có occurrence chỉ hiện definitions, không query delivery bằng ID tự dựng.
+- Loading delivery `Loading reminder status…`; rỗng `No delivered reminders for this occurrence`; read lỗi/target stale báo an toàn + Retry, vẫn cho xem base event. Không tự đổi thành occurrence khác. Có thể hiển thị action Dismiss cho active/missed/snoozed, Snooze chỉ active theo đúng wrappers/version; nếu không cần action lặp trong detail, giữ actions tại bell/Missed và detail chỉ đọc status (quyết định tối giản: detail chỉ đọc).
+- Chỉ show visibility sau event read thành công và view detail đang thật sự hiển thị; khi editor/delete/discard mở, loading/error không có event, suspended, route đổi, unmount hoặc document hidden thì hide cùng token. View lại tạo token UUID v4 mới. Main hide-to-tray OS visibility vẫn do BE001 quyết định, không suy từ route. Edit/delete không tính detail đang hiển thị vì dialog nội dung đã thay.
+- IPC show/hide phải xếp đúng thứ tự trong một owner: hide cleanup chờ show tương ứng settle để show muộn không để projection mồ côi; selection mới không bị old show overwrite (serialize lifecycle commands trước show token mới). Token backend ngăn old hide xóa view mới. Late failures không setState sau retirement; failure đang view có banner `Reminder visibility could not be updated.` và Retry; không gọi OS từ React.
+- Invalidation reload delivery không overwrite dirty event draft. Sau Calendar update thành công, clear occurrence URL/context vì identity có thể đổi; visibility base event vẫn show nullable. Listener reminders setup + refresh/focus/cleanup có cùng epoch guard với event owner. Không dựa vào notification/OS event để chứng minh delivery state.
+
+### Quyết định triển khai bổ sung — 2026-09-13
+
+- Predicate BE019 trước tích hợp vẫn so cả event và occurrence; nullable DTO đơn thuần chưa đủ để thực thi policy đã chốt. Lát cắt FE023 sửa tối thiểu predicate scheduler thành cùng event ID và thêm regression same-event/different-occurrence. Không thêm command, capability hay migration.
+- Visibility queue dùng chung trong module của hook vì selection mới có thể là component instance mới; queue chờ show/hide cũ settle trước show mới, token vẫn do từng view sở hữu. Show chưa tới lượt và đã bị retire không được gửi.
+- Calendar invalidation thực tế hoặc update thành công xóa occurrence URL/context; focus và reminder-only refresh không sửa URL hoặc draft đang edit.
+
+### Tiêu chí và kiểm thử bổ sung
+
+- [x] Event detail từ month/day/Upcoming/bell/Missed có occurrence đúng; Search/create base detail show nullable, không query delivery giả.
+- [x] Hook/component deferred tests chứng minh show muộn → hide cuối cùng, A→B không old hide/show làm sai projection, edit/delete/hidden/close/Data/Quit retire, failure Retry không loop.
+- [x] Status đúng backend, empty không được ghi Sent; event/reminder changes refresh, stale context vẫn có base detail an toàn.
+- [x] Rust integration target `reminder_actions` kiểm null accepted, invalid event/supplied occurrence rejected, old-token hide không clear mới. Target `reminder_notifications` kiểm event-only visibility suppress OS cho cùng event nhưng bell vẫn có, event khác vẫn eligible, hidden main vẫn eligible.
+- [x] Exporter sinh nullable TS và drift test pass; full Rustfmt/Clippy/tests và Windows Tauri build theo plan FE023.
+
+Kết quả tích hợp FE023: automated gates Windows đạt (2.715 frontend tests, 633 Rust tests; 1 benchmark có sẵn ignored, Clippy/Rustfmt/build đạt). Native smoke chưa thực hiện; bằng chứng và giới hạn nằm trong `../98-Plan/20260913-fe023-reminder-notification-settings.md`. Không tuyên bố toàn bộ native/Phase 4 acceptance đã hoàn tất.

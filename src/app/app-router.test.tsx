@@ -204,17 +204,20 @@ describe("createAppRouter", () => {
     expect(await screen.findByRole("heading", { level: 1, name: "Notes" })).toBeInTheDocument();
   });
 
-  // Verify every deferred route keeps the frame and names the feature that will own it.
+  // Verify implemented sections retain the Settings frame and navigation state.
   it.each([
     ["/settings/notifications", "Notifications", "FE-023"],
     ["/settings/data", "Data", "FE-015"],
-  ])("renders %s with the %s placeholder", async (path, section, owner) => {
+  ])("renders %s with the %s controls", async (path, section) => {
     renderAt(path);
 
     expect(screen.getByRole("heading", { level: 1, name: section })).toBeInTheDocument();
     if (section === "Data")
       expect(screen.getByRole("button", { name: "Export backup…" })).toBeInTheDocument();
-    else expect(screen.getByText(`This section arrives with ${owner}.`)).toBeInTheDocument();
+    else
+      expect(
+        await screen.findByRole("switch", { name: "Terminal and AI CLI activity" }),
+      ).toBeInTheDocument();
     expect(readBreadcrumb()).toEqual(["Settings", section]);
     expect(screen.getByRole("link", { name: section })).toHaveAttribute("aria-current", "page");
   });

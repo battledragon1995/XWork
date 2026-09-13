@@ -180,3 +180,20 @@ export function reminderSummary(reminders: EventReminderDto[]): string {
         )
         .join(", ");
 }
+
+/** Format only a valid backend instant, keeping malformed metadata harmless to presentation. */
+export function reminderTime(decimal: string, zone: string): string {
+  if (!/^-?\d+$/.test(decimal)) return "Time unavailable";
+  const instant = Number(decimal);
+  if (!Number.isSafeInteger(instant) || Math.abs(instant) > 8_640_000_000_000_000)
+    return "Time unavailable";
+  try {
+    return new Intl.DateTimeFormat("en-US", {
+      timeZone: zone,
+      dateStyle: "medium",
+      timeStyle: "short",
+    }).format(instant);
+  } catch {
+    return "Time unavailable";
+  }
+}

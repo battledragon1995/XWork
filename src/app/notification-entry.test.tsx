@@ -264,4 +264,34 @@ it("routes reminder targets to the existing Calendar boundary", async () => {
   expect(sessions.setActivePane).not.toHaveBeenCalled();
   expect(screen.getByTestId("destination")).toHaveTextContent("/calendar");
   expect(screen.getByTestId("destination")).toHaveTextContent("event=event-one");
+  expect(screen.getByTestId("destination")).toHaveTextContent("occurrence=single");
+});
+
+/** Preserve backend-provided opaque context and honor navigation cancellation. */
+it("preserves reminder project and occurrence URL values without session activation", async () => {
+  mount();
+  const reminder: NotificationTargetDto = {
+    kind: "eventReminder",
+    eventId: "event /one",
+    occurrenceId: "opaque&two",
+    projectId: "project /one",
+    reminderDeliveryId: "d",
+    deliveryVersion: "9",
+  };
+  const aborted = new AbortController();
+  aborted.abort();
+  await act(async () => {
+    await bridge.props?.onOpenTarget(reminder, aborted.signal);
+  });
+  expect(screen.getByTestId("destination")).toHaveTextContent('"pathname":"/projects"');
+  await act(async () => {
+    await bridge.props?.onOpenTarget(reminder, new AbortController().signal);
+  });
+  const destination = JSON.parse(screen.getByTestId("destination").textContent ?? "{}");
+  const params = new URLSearchParams(destination.search);
+  expect(params.get("event")).toBe(reminder.eventId);
+  expect(params.get("occurrence")).toBe(reminder.occurrenceId);
+  expect(params.get("project")).toBe(reminder.projectId);
+  expect(sessions.setActivePane).not.toHaveBeenCalled();
+  expect(sessions.setMaximizedPane).not.toHaveBeenCalled();
 });

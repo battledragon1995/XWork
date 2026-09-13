@@ -28,10 +28,15 @@ import {
   type EventFormDraft,
 } from "./event-form-state";
 import type { CalendarBoundary } from "./use-calendar-query";
+import { useEventReminders } from "./use-event-reminders";
+import { reminderErrorMessage } from "@/lib/ipc/reminder-error";
+import { reminderTime } from "./calendar-presentation";
 
 interface Props {
   eventId: string;
   occurrence: CalendarOccurrenceDto | null;
+  occurrenceId?: string | null;
+  onOccurrenceInvalidated?(): void;
   zone: string;
   boundary: CalendarBoundary;
   readBoundary?(): CalendarBoundary;
@@ -52,6 +57,8 @@ type Action = "close" | "view" | "delete" | "reload";
 export function EventDetailPanel({
   eventId,
   occurrence,
+  occurrenceId,
+  onOccurrenceInvalidated,
   zone,
   boundary,
   readBoundary,
@@ -79,6 +86,13 @@ export function EventDetailPanel({
   currentIdentity.current = identity;
   const [retry, setRetry] = useState(0);
   const [listenerError, setListenerError] = useState(false);
+  const reminders = useEventReminders(
+    eventId,
+    occurrenceId ?? state.context?.occurrenceId ?? null,
+    !!state.event && !state.error && !state.loading && mode === "view" && !discard,
+    boundary,
+    readBoundary,
+  );
   const content = useRef<HTMLDivElement>(null);
   const userClosed = useRef(false);
   const admitted = useCallback(
@@ -191,9 +205,14 @@ export function EventDetailPanel({
           void load(true);
         }
       }
+      /** Drop recurrence context only after a real Calendar definition invalidation. */
+      function calendarChanged() {
+        if (admitted() && !retired) onOccurrenceInvalidated?.();
+        changed();
+      }
       setListenerError(false);
       for (const subscribe of [onCalendarChanged, onProjectsChanged]) {
-        void subscribe(changed)
+        void subscribe(subscribe === onCalendarChanged ? calendarChanged : changed)
           .then(
             /** Close late subscriptions or cover their setup race. */ (unlisten) => {
               if (retired) unlisten();
@@ -224,7 +243,7 @@ export function EventDetailPanel({
         window.removeEventListener("focus", changed);
       };
     },
-    [eventId, occurrence, admitted, retry, onChanged, publishEditor],
+    [eventId, occurrence, admitted, retry, onChanged, onOccurrenceInvalidated, publishEditor],
   );
   /** Complete an explicitly admitted close, discard, deletion or reload action. */
   function perform(action: Action) {
@@ -298,6 +317,7 @@ export function EventDetailPanel({
         }),
       );
       onChanged();
+      onOccurrenceInvalidated?.();
     } catch (error) {
       if (admitted())
         publishEditor({
@@ -478,6 +498,43 @@ export function EventDetailPanel({
                 <p className="whitespace-pre-wrap">{event.description || "No description"}</p>
                 <p>{recurrenceSummary(event.recurrence)}</p>
                 <p>{reminderSummary(event.reminders)}</p>
+                {(occurrenceId ?? state.context?.occurrenceId) && (
+                  <div className="space-y-1">
+                    {reminders.loading && <p role="status">Loading reminder status…</p>}
+                    {reminders.error != null && (
+                      <p role="alert">{reminderErrorMessage(reminders.error)}</p>
+                    )}
+                    {reminders.snapshot?.items.length === 0 && (
+                      <p>No delivered reminders for this occurrence</p>
+                    )}
+                    {reminders.snapshot?.items.map(
+                      /** Show stored delivery state without claiming OS delivery. */ (
+                        delivery,
+                      ) => (
+                        <p key={delivery.id}>
+                          {delivery.minutesBefore === 0
+                            ? "At start"
+                            : `${delivery.minutesBefore} minutes before`}
+                          :{" "}
+                          {delivery.status === "snoozed"
+                            ? `Snoozed until ${delivery.snoozedUntilMs ? reminderTime(delivery.snoozedUntilMs, delivery.timeZoneId) : "Time unavailable"}`
+                            : delivery.status[0].toUpperCase() + delivery.status.slice(1)}
+                        </p>
+                      ),
+                    )}
+                  </div>
+                )}
+                {reminders.visibilityError && (
+                  <p role="alert">Reminder visibility could not be updated.</p>
+                )}
+                {reminders.listenerError && <p role="alert">Reminder updates are unavailable.</p>}
+                {(reminders.error != null ||
+                  reminders.visibilityError ||
+                  reminders.listenerError) && (
+                  <Button type="button" variant="outline" onClick={reminders.retry}>
+                    Retry reminder status
+                  </Button>
+                )}
                 {state.project && (
                   <Link
                     to={`/projects/${encodeURIComponent(state.project.id)}`}

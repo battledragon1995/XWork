@@ -744,3 +744,190 @@ it("keeps uncertain settings writes blocked until a successful read", async () =
   useSettingsStore.getState().releaseDataChangeBarrier();
   resetSettingsStore();
 });
+
+/** Exercise mixed settings ownership through the real shared write queue. */
+describe("notification policy mutations", () => {
+  /** Start every case with isolated settings and one retained observer. */
+  beforeEach(() => {
+    resetSettingsStore();
+    getSettingsMock.mockReset();
+    updateSettingsMock.mockReset();
+    retainSettingsArea();
+    useSettingsStore.setState({ status: "ready", snapshot: createSettingsSnapshot() });
+  });
+  /** Retire unfinished requests between cases. */
+  afterEach(() => resetSettingsStore());
+
+  /** Both categories retain FIFO order even when an Appearance edit follows policy work. */
+  it("preserves Appearance, Notifications, Appearance intents without coalescing across policy", async () => {
+    const first = deferred<AppSettingsDto>();
+    updateSettingsMock
+      .mockReturnValueOnce(first.promise)
+      .mockResolvedValue(createSettingsSnapshot());
+    const one = useSettingsStore.getState().commitAppearance({ themeMode: "dark" });
+    const two = useSettingsStore.getState().commitNotifications({ terminalActivityEnabled: false });
+    const three = useSettingsStore.getState().commitAppearance({ interfaceFontSizePx: 18 });
+    expect(updateSettingsMock).toHaveBeenCalledOnce();
+    expect(useSettingsStore.getState().notificationSaveStatus).toBe("saving");
+    first.resolve(createSettingsSnapshot());
+    await Promise.all([one, two, three]);
+    expect(updateSettingsMock.mock.calls).toEqual([
+      [{ appearance: { themeMode: "dark" } }],
+      [{ notifications: { terminalActivityEnabled: false } }],
+      [{ appearance: { interfaceFontSizePx: 18 } }],
+    ]);
+  });
+
+  /** A policy response cannot discard a later Appearance preview or failure fields. */
+  it("keeps the Appearance preview while a notification write settles first", async () => {
+    const first = deferred<AppSettingsDto>();
+    const second = deferred<AppSettingsDto>();
+    updateSettingsMock.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
+    const one = useSettingsStore.getState().commitNotifications({ eventRemindersEnabled: false });
+    const draft = createAppearanceSettings({ themeMode: "dark" });
+    useSettingsStore.getState().previewAppearance(draft);
+    const two = useSettingsStore.getState().commitAppearance({ themeMode: "dark" });
+    first.resolve(createSettingsSnapshot({}, {}, { eventRemindersEnabled: false }));
+    await one;
+    expect(useSettingsStore.getState().appearanceDraft).toBe(draft);
+    second.resolve(
+      createSettingsSnapshot({}, { themeMode: "dark" }, { eventRemindersEnabled: false }),
+    );
+    await two;
+    expect(useSettingsStore.getState().snapshot?.notifications.eventRemindersEnabled).toBe(false);
+    expect(useSettingsStore.getState().appearanceDraft).toBeNull();
+  });
+
+  /** Focus reads predating a later write cannot replace its committed revision. */
+  it("retires a focus read when an Appearance write publishes a newer snapshot", async () => {
+    const read = deferred<AppSettingsDto>();
+    getSettingsMock.mockReturnValueOnce(read.promise);
+    const loading = useSettingsStore.getState().load();
+    const committed = {
+      ...createSettingsSnapshot({}, {}, { eventRemindersEnabled: false }),
+      revision: "10",
+    };
+    updateSettingsMock.mockResolvedValue(committed);
+    await useSettingsStore.getState().commitAppearance({ themeMode: "dark" });
+    read.resolve(createSettingsSnapshot());
+    await loading;
+    expect(useSettingsStore.getState().snapshot).toBe(committed);
+    getSettingsMock.mockResolvedValue({ ...createSettingsSnapshot(), revision: "9" });
+    await useSettingsStore.getState().load();
+    expect(useSettingsStore.getState().snapshot).toBe(committed);
+  });
+
+  /** Reconciliation waits for an active notification write before issuing its authoritative read. */
+  it("waits for policy persistence before a focus refresh", async () => {
+    const write = deferred<AppSettingsDto>();
+    updateSettingsMock.mockReturnValueOnce(write.promise);
+    const fresh = {
+      ...createSettingsSnapshot({}, {}, { eventRemindersEnabled: false }),
+      revision: "1",
+    };
+    getSettingsMock.mockResolvedValueOnce(fresh);
+    const committing = useSettingsStore
+      .getState()
+      .commitNotifications({ eventRemindersEnabled: false });
+    const loading = useSettingsStore.getState().load();
+    expect(getSettingsMock).not.toHaveBeenCalled();
+    write.resolve(fresh);
+    await Promise.all([committing, loading]);
+    expect(useSettingsStore.getState().snapshot).toBe(fresh);
+  });
+
+  /** A focus refresh must not clear a queued policy lock when an earlier Appearance write ends. */
+  it("waits for both mixed writes before reading settings on focus", async () => {
+    const appearance = deferred<AppSettingsDto>();
+    const policy = deferred<AppSettingsDto>();
+    updateSettingsMock.mockReturnValueOnce(appearance.promise).mockReturnValueOnce(policy.promise);
+    getSettingsMock.mockResolvedValueOnce(createSettingsSnapshot());
+    const one = useSettingsStore.getState().commitAppearance({ themeMode: "dark" });
+    const two = useSettingsStore.getState().commitNotifications({ eventRemindersEnabled: false });
+    const loading = useSettingsStore.getState().load();
+    appearance.resolve(createSettingsSnapshot());
+    await one;
+    expect(getSettingsMock).not.toHaveBeenCalled();
+    expect(useSettingsStore.getState().notificationSaveStatus).toBe("saving");
+    policy.resolve(createSettingsSnapshot());
+    await Promise.all([two, loading]);
+    expect(getSettingsMock).toHaveBeenCalledOnce();
+  });
+
+  /** Policy controls expose reconciliation when a lost Appearance response blocks their queued intent. */
+  it("reports a queued policy intent blocked by an uncertain Appearance write", async () => {
+    const appearance = deferred<AppSettingsDto>();
+    updateSettingsMock.mockReturnValueOnce(appearance.promise);
+    const one = useSettingsStore.getState().commitAppearance({ themeMode: "dark" });
+    const two = useSettingsStore.getState().commitNotifications({ eventRemindersEnabled: false });
+    appearance.reject(new Error("transport"));
+    await Promise.all([one, two]);
+    expect(updateSettingsMock).toHaveBeenCalledOnce();
+    expect(useSettingsStore.getState()).toMatchObject({
+      notificationSaveStatus: "error",
+      notificationErrorCode: "unknown",
+      notificationUncertain: true,
+    });
+  });
+
+  /** The same barrier waits for policy writes and rejects all new categories synchronously. */
+  it("settles notification persistence before maintenance and blocks new writes", async () => {
+    const write = deferred<AppSettingsDto>();
+    updateSettingsMock.mockReturnValueOnce(write.promise);
+    const committing = useSettingsStore
+      .getState()
+      .commitNotifications({ eventRemindersEnabled: false });
+    let settled = false;
+    const barrier = useSettingsStore
+      .getState()
+      .settleBeforeDataChange()
+      .then(
+        /** Record actual barrier settlement. */ () => {
+          settled = true;
+        },
+      );
+    await useSettingsStore.getState().commitAppearance({ themeMode: "dark" });
+    await useSettingsStore.getState().commitNotifications({ terminalActivityEnabled: false });
+    expect(settled).toBe(false);
+    expect(useSettingsStore.getState().dataChangeBlocked).toBe(true);
+    write.resolve(createSettingsSnapshot());
+    await Promise.all([committing, barrier]);
+    expect(updateSettingsMock).toHaveBeenCalledOnce();
+    useSettingsStore.getState().releaseDataChangeBarrier();
+    expect(useSettingsStore.getState().dataChangeBlocked).toBe(false);
+  });
+
+  /** Unknown outcomes retire queued work and admit no retry until a successful backend read. */
+  it("reconciles an uncertain policy write before any later write or maintenance", async () => {
+    const write = deferred<AppSettingsDto>();
+    updateSettingsMock.mockReturnValueOnce(write.promise);
+    const committing = useSettingsStore
+      .getState()
+      .commitNotifications({ eventRemindersEnabled: false });
+    const queued = useSettingsStore.getState().commitAppearance({ themeMode: "dark" });
+    write.reject(new Error("lost response"));
+    await Promise.all([committing, queued]);
+    expect(useSettingsStore.getState()).toMatchObject({
+      notificationSaveStatus: "error",
+      notificationUncertain: true,
+    });
+    await useSettingsStore.getState().commitNotifications({ eventRemindersEnabled: false });
+    await useSettingsStore.getState().commitAppearance({ themeMode: "light" });
+    expect(updateSettingsMock).toHaveBeenCalledOnce();
+    await expect(useSettingsStore.getState().settleBeforeDataChange()).rejects.toThrow(
+      "Uncertain settings write",
+    );
+    useSettingsStore.getState().releaseDataChangeBarrier();
+    getSettingsMock.mockRejectedValueOnce(new Error("read failed"));
+    await useSettingsStore.getState().load();
+    expect(useSettingsStore.getState().notificationUncertain).toBe(true);
+    getSettingsMock.mockResolvedValueOnce(
+      createSettingsSnapshot({}, {}, { eventRemindersEnabled: false }),
+    );
+    await useSettingsStore.getState().load();
+    expect(useSettingsStore.getState().notificationUncertain).toBe(false);
+    updateSettingsMock.mockResolvedValueOnce(createSettingsSnapshot());
+    await useSettingsStore.getState().commitNotifications({ eventRemindersEnabled: true });
+    expect(updateSettingsMock).toHaveBeenCalledTimes(2);
+  });
+});

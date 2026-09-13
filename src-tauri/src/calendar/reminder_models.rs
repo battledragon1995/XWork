@@ -93,7 +93,7 @@ pub enum VisibleCalendarEventInputDto {
     Show {
         view_token: String,
         event_id: String,
-        occurrence_id: String,
+        occurrence_id: Option<String>,
     },
     Hide {
         view_token: String,

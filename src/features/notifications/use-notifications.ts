@@ -7,6 +7,8 @@ import type {
 } from "@/bindings/notifications/notifications";
 import { IpcCallError } from "@/lib/ipc/ipc-error";
 import * as ipc from "@/lib/ipc/notifications";
+import { reminderErrorMessage } from "@/lib/ipc/reminder-error";
+import * as reminders from "@/lib/ipc/reminders";
 
 export interface NotificationCenterProps {
   /** Activates the validated target while respecting dismissal. */
@@ -14,7 +16,7 @@ export interface NotificationCenterProps {
   dismissKey: string;
   suspended: boolean;
 }
-type Action = "read" | "readAll" | "delete" | "clearRead" | "open";
+type Action = "read" | "readAll" | "delete" | "clearRead" | "open" | "snooze" | "dismiss";
 interface State {
   isOpen: boolean;
   status: "loading" | "ready" | "error";
@@ -89,7 +91,7 @@ export function useNotifications(props: NotificationCenterProps) {
     /** Requests one additional cursor page. */
     loadMore(): void;
     /** Performs one explicit backend mutation. */
-    mutate(action: Action, id?: string): Promise<void>;
+    mutate(action: Action, id?: string, minutes?: 5 | 10 | 30): Promise<void>;
   } | null>(null);
 
   // Each lifecycle owns its requests, subscription, coalescing timer and abort token.
@@ -101,6 +103,7 @@ export function useNotifications(props: NotificationCenterProps) {
     let queued = false;
     let epoch = 0;
     let unlisten: (() => void) | undefined;
+    let reminderUnlisten: (() => void) | undefined;
     let subscribing: Promise<void> | null = null;
     let timer: ReturnType<typeof setTimeout> | undefined;
     let controller: AbortController | null = null;
@@ -196,16 +199,32 @@ export function useNotifications(props: NotificationCenterProps) {
     }
     /** Retries only a failed listener and tears down registrations resolving after unmount. */
     async function subscribe() {
-      if (unlisten || subscribing) return subscribing;
+      if ((unlisten && reminderUnlisten) || subscribing) return subscribing;
       // Share an in-flight registration so Retry cannot create duplicate listeners.
       subscribing = (async () => {
         try {
-          const stop = await ipc.onNotificationsChanged(changed);
-          if (!live) {
-            stop();
-            return;
+          if (!unlisten) {
+            const stop = await ipc.onNotificationsChanged(changed);
+            if (!live) {
+              stop();
+              return;
+            }
+            unlisten = stop;
           }
-          unlisten = stop;
+          if (!reminderUnlisten) {
+            // Reminder sequences belong to another domain; invalidate without comparing revisions.
+            const stop = await reminders.onRemindersChanged(() => {
+              if (!live) return;
+              epoch += 1;
+              patch({ dirty: true });
+              if (current.isOpen) void query();
+            });
+            if (!live) {
+              stop();
+              return;
+            }
+            reminderUnlisten = stop;
+          }
           patch({ listening: true, listenerFailed: false });
         } catch {
           patch({ listening: false, listenerFailed: true });
@@ -243,7 +262,7 @@ export function useNotifications(props: NotificationCenterProps) {
         void query(true);
       },
       /** Reconciles every command, including no-ops and uncertain transport failures. */
-      async mutate(action, id) {
+      async mutate(action, id, minutes) {
         if (
           !live ||
           latest.current.suspended ||
@@ -256,6 +275,9 @@ export function useNotifications(props: NotificationCenterProps) {
         patch({ pending: action, errorMessage: null });
         const attempt = action === "open" ? new AbortController() : null;
         controller = attempt;
+        // Resolve the current row at admission so stale UI closures cannot submit old versions.
+        const row = current.items.find((item) => item.id === id);
+        const isReminder = row?.target.kind === "eventReminder";
         try {
           if (action === "open") {
             const result = await ipc.openNotification(id ?? "");
@@ -277,12 +299,25 @@ export function useNotifications(props: NotificationCenterProps) {
                       "paneNotFound",
                       "projectNotFound",
                     ].includes(errorCode(error) ?? "")
-                      ? "This session is no longer available."
-                      : "Couldn't open this session. Try again.",
+                      ? `This ${isReminder ? "reminder" : "session"} is no longer available.`
+                      : `Couldn't open this ${isReminder ? "event" : "session"}. Try again.`,
                   });
                 return;
               }
               if (!attempt.signal.aborted) patch({ isOpen: false });
+            }
+          } else if (action === "snooze" || action === "dismiss") {
+            if (row?.target.kind !== "eventReminder") return;
+            const target = row.target;
+            if (action === "snooze") {
+              if (row.kind !== "eventReminderDue" || minutes === undefined) return;
+              await reminders.snoozeReminder(
+                target.reminderDeliveryId,
+                target.deliveryVersion,
+                minutes,
+              );
+            } else {
+              await reminders.dismissReminder(target.reminderDeliveryId, target.deliveryVersion);
             }
           } else {
             const result = await (action === "read"
@@ -295,7 +330,15 @@ export function useNotifications(props: NotificationCenterProps) {
             if (live) accept(result);
           }
         } catch (error) {
-          if (!attempt?.signal.aborted) patch({ errorMessage: errorMessage(error) });
+          if (!attempt?.signal.aborted)
+            patch({
+              errorMessage:
+                action === "snooze" ||
+                action === "dismiss" ||
+                (isReminder && errorCode(error) === "target_unavailable")
+                  ? reminderErrorMessage(error)
+                  : errorMessage(error),
+            });
         } finally {
           if (live) {
             epoch += 1;
@@ -314,6 +357,7 @@ export function useNotifications(props: NotificationCenterProps) {
       live = false;
       controller?.abort();
       unlisten?.();
+      reminderUnlisten?.();
       clearTimeout(timer);
       window.removeEventListener("focus", regainAttention);
       document.removeEventListener("visibilitychange", regainAttention);
@@ -344,6 +388,7 @@ export function useNotifications(props: NotificationCenterProps) {
     /** Delegates cursor paging to its serialized query. */
     loadMore: () => controls.current?.loadMore(),
     /** Runs only explicit user mutations. */
-    mutate: (action: Action, id?: string) => controls.current?.mutate(action, id),
+    mutate: (action: Action, id?: string, minutes?: 5 | 10 | 30) =>
+      controls.current?.mutate(action, id, minutes),
   };
 }

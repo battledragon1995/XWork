@@ -348,7 +348,7 @@ pub enum VisibleCalendarEventInputDto {
     Show {
         view_token: String,
         event_id: String,
-        occurrence_id: String,
+        occurrence_id: Option<String>,
     },
     Hide { view_token: String },
 }
@@ -678,7 +678,7 @@ pub async fn set_visible_calendar_event(
 
 | Nội dung | Giá trị |
 |---|---|
-| Validation | Caller `main`; `view_token` UUID v4; Show có valid event/occurrence ID. Hide chỉ xóa khi token khớp projection hiện tại. |
+| Validation | Caller `main`; `view_token` UUID v4; Show có valid event ID; occurrence ID nullable cho base detail, kiểm tra như cũ khi hiện diện. Hide chỉ xóa khi token khớp projection hiện tại. |
 | Side effect | Runtime-only visibility projection; không DB/event. Show mới atomically thay token cũ; Hide stale là no-op. |
 | Lỗi trả về | `UnauthorizedWindow`, `InvalidViewToken`, `InvalidEventId`, `InvalidOccurrenceId`, `Unavailable`. |
 
@@ -862,3 +862,9 @@ Lỗi scheduler nền không chứa user data và không phát trực tiếp qua
 - Mock app builder chỉ chạy một chu kỳ bootstrap và không tạo timer worker nền; các kiểm thử scheduler/worker dùng `ReminderClock` điều khiển, SQLite tạm, Calendar projection giả hoặc projection public thực, Notifications intake thực và recording OS. Production khởi động worker duy nhất; không có thay đổi capability/plugin permission.
 - Extension tối thiểu tại app Notification entry nhận union event target và điều hướng vào route Calendar hiện hữu. Chi tiết Missed/Snooze/Dismiss/visibility UI được triển khai ở bước FE tiếp theo; backend không coi điều hướng này là bằng chứng native smoke.
 - Test red trước triển khai được thu cho migration Settings (`8` thay vì `10`). Các target Reminder/Notifications còn lại không thu red hành vi trước triển khai do module đang được tích hợp song song; chỉ báo các test regression thực sự chạy, không tính compilation failure là red evidence.
+
+### Contract tích hợp FE Giai đoạn 21 — 2026-09-13
+
+Theo ủy quyền tự quyết của user, FE022 được mở rộng trong lát cắt FE023: Search và create success mở base event detail không có occurrence cụ thể nhưng vẫn phải suppress OS cho exact event đang hiển thị. Nhánh `VisibleCalendarEventInputDto::Show.occurrence_id` đổi từ `String` thành `Option<String>` (TS `occurrenceId: string | null`); `event_id` và UUID v4 `view_token` vẫn bắt buộc. Null chỉ biểu thị base detail; không tạo occurrence/delivery hoặc nới `get_event_reminder_deliveries`. Với Some, giữ validation event/occurrence hiện hành. Runtime projection lưu optional occurrence hoặc chỉ phần thực sự cần, policy vẫn exact event ID cùng main visible. Hide token semantics giữ nguyên.
+
+Đây là điều chỉnh contract để triển khai ở bước FE kế tiếp, không phải bằng chứng source BE commit `09498e6` đã hỗ trợ null. Scope implementation: `src-tauri/src/calendar/reminder_models.rs`, `src-tauri/src/calendar/reminder_service.rs`, `src-tauri/tests/reminder_actions.rs`, `src-tauri/tests/reminder_notifications.rs`, generator `src-tauri/tests/export_bindings.rs` và generated `src/bindings/reminders.ts`. Không thêm command/schema/capability/dependency. Tests cần chứng minh null/supplied occurrence validation, exact-event policy cả base detail, main hidden và stale-token cleanup; không cập nhật plan BE019 đã hoàn tất.

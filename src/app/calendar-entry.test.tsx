@@ -98,7 +98,9 @@ it("composes live maintenance, epochs, and Quit boundaries", () => {
 /** Compose real selected-day/project input and the authoritative returned event ID. */
 it("opens creation and replaces only the event intent on success", () => {
   render(
-    <MemoryRouter initialEntries={["/calendar?date=2026-09-09&project=p&event=old"]}>
+    <MemoryRouter
+      initialEntries={["/calendar?date=2026-09-09&project=p&event=old&occurrence=old-context"]}
+    >
       <CalendarEntry />
     </MemoryRouter>,
   );
@@ -108,6 +110,7 @@ it("opens creation and replaces only the event intent on success", () => {
   );
   expect(screen.getByText("create 2026-09-10 p")).toBeVisible();
   expect(screen.getByTestId("location").textContent).not.toContain("event=");
+  expect(screen.getByTestId("location").textContent).not.toContain("occurrence=");
   act(
     /** Publish an acknowledged event outside the currently visible range. */ () =>
       capture.create?.onCreated({ id: "committed-outside" } as Parameters<
@@ -115,6 +118,7 @@ it("opens creation and replaces only the event intent on success", () => {
       >[0]),
   );
   expect(screen.getByTestId("location").textContent).toContain("event=committed-outside");
+  expect(screen.getByTestId("location").textContent).not.toContain("occurrence=");
   expect(screen.getByTestId("location").textContent).toContain("project=p");
   expect(screen.getByTestId("location").textContent).toContain("date=2026-09-10");
   expect(screen.queryByText("create 2026-09-10 p")).not.toBeInTheDocument();

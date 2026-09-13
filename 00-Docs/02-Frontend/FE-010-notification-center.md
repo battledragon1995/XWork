@@ -1,5 +1,7 @@
 # FE-010 — Notification center
 
+> Giai đoạn 21: extension cuối tài liệu bổ sung reminder thật và thay thế các giới hạn Phase 1 về kinds, target, footer và phần reminder ngoài phạm vi. Contract terminal hiện hữu tiếp tục áp dụng.
+
 ## Thông tin chung
 
 | Nội dung | Giá trị |
@@ -285,3 +287,58 @@ Test frontend mock IPC boundary, không chạy CLI/OS toast thật. Dùng deferr
 ## Câu hỏi mở
 
 Không có.
+
+## Mở rộng Giai đoạn 21 — Reminder — 2026-09-13
+
+Extension được user yêu cầu cùng FE023; agent tự chốt theo ủy quyền, không có câu hỏi mở. Áp dụng §13.3, §15, §18; wireframe `07-Calendar.html#reminder` và `02-AppShell.html#notifications`; backend BE019/BE011 thật tại `09498e6`. Giữ mọi contract terminal cũ trừ giới hạn chỉ có ba kinds/target session. Không thay đổi lịch sử plan FE010.
+
+### File liên quan bổ sung
+
+| Đường dẫn | Vai trò |
+|---|---|
+| `src/lib/ipc/reminders.ts`, `src/lib/ipc/reminders.test.ts` | Bảy wrapper và reminder listener dùng chung Calendar/Notifications |
+| `src/lib/ipc/reminder-error.ts`, `src/lib/ipc/reminder-error.test.ts` | Mapping ReminderError phục vụ hai feature, không phụ thuộc feature |
+| `src/bindings/reminders.ts` | DTO generated, chỉ đọc ở extension này |
+| `src/components/ui/dropdown-menu.tsx` | Dùng lại menu Snooze, không sửa |
+
+Các file `notification-center.tsx`, `use-notifications.ts` và tests, `src/app/notification-entry.tsx` và test đã có trong bảng chính là phạm vi tích hợp. Public props giữ nguyên; app điều hướng target event theo `/calendar?event=...&occurrence=...` và optional project, không gọi Sessions cho event.
+
+### UI, tương tác và state
+
+- Render thêm `eventReminderDue` và `eventReminderMissed` với icon bell/calendar, title/context từ DTO dưới dạng text, nhãn `Missed` cho item missed; thứ tự backend, không tự đẩy unread lên đầu.
+- Event reminder có `Open event`, `Dismiss`, `Mark read` nếu unread và `Delete notification`. Chỉ kind due có `Snooze` → menu `5 minutes`, `10 minutes`, `30 minutes`. Missed không có Snooze theo BE019 và wireframe Missed. Một item cũ có thể đã đổi state: backend version là quyết định cuối.
+- `Dismiss` là bỏ delivery, `Delete notification` chỉ xóa inbox; tooltip giải thích khác biệt. `Clear read` không dismiss delivery. Không thêm confirmation cho single Dismiss vì không xóa event. Sau acknowledge, refetch inbox kể cả chưa nhận notifications event; reminder outbox cleanup eventual nên chặn action stale cho tới authoritative refresh.
+- Footer `Event reminders and unseen terminal activity appear here.` và link `/settings/notifications`; empty copy cùng phạm vi. OS toast chỉ là thông báo thông tin do backend: các nút OS trong wireframe chưa được plugin hỗ trợ, không tạo giả nút/click routing.
+- Pending state mở rộng `snooze`/`dismiss`, dùng cùng synchronous mutation lock/AbortSignal/epoch như read/open. Menu accessible dùng component có sẵn, Escape về Snooze, Tab/Enter/Space đầy đủ; khi row biến mất focus row kế/heading.
+- Loading/empty/read/listener failure giữ nguyên; ReminderError mapping bên dưới dùng lỗi riêng đối tượng reminder, không hiện `session` cho event. Không render lỗi nội bộ/raw ID.
+
+### Contract IPC dùng chung của Giai đoạn 21
+
+DTO lấy từ `src/bindings/reminders.ts`; wrapper qua invokeCommand, payload camelCase:
+
+| Wrapper signature | Command / args | Promise output |
+|---|---|---|
+| `getMissedReminders(cursor: ReminderCursorDto \| null, limit: number = 30)` | `get_missed_reminders`, `{ cursor, limit }` | `MissedReminderPageDto` |
+| `getEventReminderDeliveries(eventId: string, occurrenceId: string)` | `get_event_reminder_deliveries`, `{ eventId, occurrenceId }` | `EventReminderDeliveriesDto` |
+| `openReminder(deliveryId: string)` | `open_reminder`, `{ deliveryId }` | `ReminderTargetDto` |
+| `snoozeReminder(deliveryId: string, expectedVersion: string, minutes: 5 \| 10 \| 30)` | `snooze_reminder`, `{ deliveryId, expectedVersion, minutes }` | `ReminderActionResultDto` |
+| `dismissReminder(deliveryId: string, expectedVersion: string)` | `dismiss_reminder`, `{ deliveryId, expectedVersion }` | `ReminderActionResultDto` |
+| `dismissAllMissedReminders()` | `dismiss_all_missed_reminders`, không args | `ReminderChangedDto` |
+| `setVisibleCalendarEvent(input: VisibleCalendarEventInputDto)` | `set_visible_calendar_event`, `{ input }` | `void` |
+| `onRemindersChanged(callback: (payload: ReminderChangedDto) => void)` | listen `reminders://changed` | `UnlistenFn` |
+
+Bell Open vẫn gọi `open_notification(notificationId)` để mark read và revalidate target; không thay bằng open_reminder. Open không dismiss/snooze delivery. Dismiss/Snooze lấy `reminderDeliveryId` và opaque `deliveryVersion` từ current target, không lấy notification revision làm delivery version. Reminder sequence và Notifications revision là hai miền riêng, không so chéo.
+
+`reminders://changed` invalidates reminder rows; keep one listener per mounted owner, close late subscriptions, reload sau setup race/focus. Sequence decimal so BigInt khi cần thứ tự, không Number. Mutation acknowledgement tự invalidate; không đợi event làm proof thành công.
+
+### Lỗi, edge cases và kiểm chứng
+
+Shared error helper phân biệt `IpcCallError.payload.code`: delivery_not_found/target_unavailable → `This reminder is no longer available.`, refetch, không navigate; delivery_changed/action_not_allowed → `This reminder changed. Refresh and try again.`, refetch, không retry action cũ; scheduler_catching_up → `Loading missed reminders…`, chờ invalidation và có Retry đọc, không loop timer vô hạn; dependency_unavailable/persistence_failed/unavailable → lỗi tạm thời và Retry read. clock_out_of_range báo kiểm tra system clock. Invalid input/cursor/version/token/limit, corrupt_stored_delivery, unauthorized hoặc unknown shape → lỗi an toàn; invalid_cursor bỏ cursor và thử page đầu một lần. Unknown mutation outcome → reconcile trước khi user có thể thao tác tiếp, không tự phát lại mutation.
+
+- [x] Unit IPC test xác nhận exact command args, generated DTO passthrough, typed error và cleanup của đủ bảy command + listener.
+- [x] Notification component/hook tests có due/missed/read rows, chỉ due Snooze, đủ ba phút, version chính xác, Open mark read không dismiss, Delete không dismiss, stale/unknown action và refetch khi event mất.
+- [x] NotificationEntry tests xác nhận URL giữ event/occurrence/project, không activate terminal cho reminder, và retirement khi route/Quit/Data đổi trước response.
+- [x] Test menu keyboard/focus restore khi row bị loại; terminal/read/paging regression còn pass.
+- [x] Không tạo OS toast từ React; native Windows smoke riêng theo plan FE023, chưa thể coi pass qua mocks.
+
+Kết quả tích hợp FE023: automated gates Windows đạt (2.715 frontend tests, 633 Rust tests; 1 benchmark có sẵn ignored, Clippy/Rustfmt/build đạt). Native smoke chưa thực hiện; bằng chứng và giới hạn nằm trong `../98-Plan/20260913-fe023-reminder-notification-settings.md`. Không tuyên bố toàn bộ native/Phase 4 acceptance đã hoàn tất.

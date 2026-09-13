@@ -9,6 +9,7 @@ import { SettingsAboutRoute } from "@/features/settings/settings-about-route";
 import { SettingsAppearanceRoute } from "@/features/settings/settings-appearance-route";
 import { SettingsGeneralRoute } from "@/features/settings/settings-general-route";
 import { SettingsKeyboardShortcutsRoute } from "@/features/settings/settings-keyboard-shortcuts-route";
+import { SettingsNotificationsRoute } from "@/features/settings/settings-notifications-route";
 import { SETTINGS_SECTIONS } from "@/features/settings/settings-nav";
 import { SettingsRoute } from "@/features/settings/settings-route";
 import { SettingsSectionPlaceholder } from "@/features/settings/settings-section-placeholder";
@@ -34,6 +35,7 @@ function crumbs(build: RouteCrumbHandle["crumbs"]): RouteCrumbHandle {
 // Select the real pages and keep every deferred owner explicit in its placeholder.
 function settingsSectionElement(section: (typeof SETTINGS_SECTIONS)[number]) {
   if (section.slug === "data") return <SettingsDataRoute />;
+  if (section.slug === "notifications") return <SettingsNotificationsRoute />;
   if (section.slug === "keyboard-shortcuts") return <SettingsKeyboardShortcutsRoute />;
   if (section.slug === "general") {
     return <SettingsGeneralRoute />;

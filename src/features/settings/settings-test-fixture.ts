@@ -42,10 +42,11 @@ export function createAppearanceSettings(
   };
 }
 
-/** Build a complete generated settings snapshot with optional General and Appearance overrides. */
+/** Build a complete generated snapshot with optional General, Appearance and policy overrides. */
 export function createSettingsSnapshot(
   general: Partial<AppSettingsDto["general"]> = {},
   appearance: Partial<AppearanceSettingsDto> = {},
+  notifications: Partial<AppSettingsDto["notifications"]> = {},
 ): AppSettingsDto {
   return {
     revision: "0",
@@ -53,6 +54,7 @@ export function createSettingsSnapshot(
       terminalActivityEnabled: true,
       terminalOsStates: { needsInput: true, processFinished: false, processExitedWithError: true },
       eventRemindersEnabled: true,
+      ...notifications,
     },
     general: {
       interfaceLanguage: "english",

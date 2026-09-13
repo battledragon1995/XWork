@@ -14,6 +14,15 @@ import {
 } from "@/lib/ipc/calendar";
 import { getProject, onProjectsChanged, listProjects } from "@/lib/ipc/projects";
 import { IpcCallError } from "@/lib/ipc/ipc-error";
+import * as reminders from "@/lib/ipc/reminders";
+vi.mock(
+  "@/lib/ipc/reminders",
+  /** Keep delivery status and visibility behind isolated IPC. */ () => ({
+    getEventReminderDeliveries: vi.fn(),
+    setVisibleCalendarEvent: vi.fn(),
+    onRemindersChanged: vi.fn(),
+  }),
+);
 vi.mock(
   "@/lib/ipc/calendar",
   /** Isolate event persistence. */ () => ({
@@ -57,12 +66,20 @@ function readBoundary() {
   return live;
 }
 /** Mount details in a real router and controlled read boundary. */
-function panel(id = "e", close = vi.fn(), restore = vi.fn()) {
+function panel(
+  id = "e",
+  close = vi.fn(),
+  restore = vi.fn(),
+  occurrenceId: string | null = null,
+  invalidated = vi.fn(),
+) {
   return (
     <MemoryRouter>
       <EventDetailPanel
         eventId={id}
         occurrence={null}
+        occurrenceId={occurrenceId}
+        onOccurrenceInvalidated={invalidated}
         zone="UTC"
         boundary={boundary}
         readBoundary={readBoundary}
@@ -76,6 +93,16 @@ function panel(id = "e", close = vi.fn(), restore = vi.fn()) {
 beforeEach(
   /** Reset each isolated native read lifetime. */ () => {
     vi.resetAllMocks();
+    vi.mocked(reminders.setVisibleCalendarEvent).mockResolvedValue(undefined);
+    vi.mocked(reminders.onRemindersChanged).mockResolvedValue(vi.fn());
+    vi.mocked(reminders.getEventReminderDeliveries).mockImplementation(
+      /** Return the requested delivery context. */ async (eventId, occurrenceId) => ({
+        eventId,
+        occurrenceId,
+        sequence: "1",
+        items: [],
+      }),
+    );
     live = { ...boundary };
     vi.mocked(listProjects).mockResolvedValue([]);
     vi.mocked(updateCalendarEvent).mockResolvedValue({
@@ -100,6 +127,90 @@ beforeEach(
   },
 );
 describe("Event detail", /** Check read recovery and selection lifetime. */ () => {
+  it("renders only authoritative occurrence delivery states", /** Active does not mean an OS toast was sent. */ async () => {
+    vi.mocked(reminders.getEventReminderDeliveries).mockResolvedValue({
+      eventId: "e",
+      occurrenceId: "opaque",
+      sequence: "1",
+      items: ["active", "missed", "snoozed", "dismissed", "suppressed"].map(
+        /** Preserve each stored status without scheduling inference. */ (status, index) => ({
+          id: String(index),
+          eventId: "e",
+          occurrenceId: "opaque",
+          projectId: null,
+          title: "Meeting",
+          startsAtMs: "0",
+          originalDueAtMs: "0",
+          timeZoneId: "UTC",
+          minutesBefore: index,
+          status: status as "active" | "missed" | "snoozed" | "dismissed" | "suppressed",
+          snoozedUntilMs: status === "snoozed" ? "1000" : null,
+          version: "1",
+        }),
+      ),
+    });
+    render(panel("e", vi.fn(), vi.fn(), "opaque"));
+    expect(await screen.findByText("At start: Active")).toBeVisible();
+    expect(screen.getByText("1 minutes before: Missed")).toBeVisible();
+    expect(screen.getByText(/2 minutes before: Snoozed until/)).toBeVisible();
+    expect(screen.getByText("3 minutes before: Dismissed")).toBeVisible();
+    expect(screen.getByText("4 minutes before: Suppressed")).toBeVisible();
+    expect(screen.queryByText(/Sent/)).not.toBeInTheDocument();
+  });
+  it("shows empty/error recovery without fabricating deliveries for base details", /** Delivery reads remain independent of event definitions. */ async () => {
+    const view = render(panel());
+    await screen.findByRole("heading", { name: "Meeting" });
+    expect(reminders.getEventReminderDeliveries).not.toHaveBeenCalled();
+    view.rerender(panel("e", vi.fn(), vi.fn(), "opaque"));
+    expect(await screen.findByText("No delivered reminders for this occurrence")).toBeVisible();
+    vi.mocked(reminders.getEventReminderDeliveries).mockRejectedValue(
+      new IpcCallError("get_event_reminder_deliveries", { code: "target_unavailable" }),
+    );
+    view.rerender(panel("e", vi.fn(), vi.fn(), "new"));
+    expect(await screen.findByText("This reminder is no longer available.")).toBeVisible();
+    vi.mocked(reminders.getEventReminderDeliveries).mockImplementation(
+      /** Restore the requested occurrence query. */ async (eventId, occurrenceId) => ({
+        eventId,
+        occurrenceId,
+        sequence: "2",
+        items: [],
+      }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Retry reminder status" }));
+    expect(await screen.findByText("No delivered reminders for this occurrence")).toBeVisible();
+  });
+  it("keeps dirty drafts intact during reminder invalidation and hides in the editor", /** Reminder refresh owns neither event input nor edit mode. */ async () => {
+    let invalidate!: Parameters<typeof reminders.onRemindersChanged>[0];
+    vi.mocked(reminders.onRemindersChanged).mockImplementation(
+      /** Capture reminder invalidation only. */ async (callback) => {
+        invalidate = callback;
+        return vi.fn<() => void>();
+      },
+    );
+    render(panel("e", vi.fn(), vi.fn(), "opaque"));
+    await screen.findByRole("heading", { name: "Meeting" });
+    await waitFor(
+      /** Wait for the current visible detail show. */ () =>
+        expect(reminders.setVisibleCalendarEvent).toHaveBeenCalledWith(
+          expect.objectContaining({ kind: "show" }),
+        ),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.change(screen.getByRole("textbox", { name: /Title/ }), {
+      target: { value: "Manual draft" },
+    });
+    await act(
+      /** Refresh delivery state while preserving manual input. */ async () =>
+        invalidate({ sequence: "2", missedCount: 0 }),
+    );
+    expect(screen.getByRole("textbox", { name: /Title/ })).toHaveValue("Manual draft");
+    await waitFor(
+      /** Editor mode cannot suppress event reminders as a visible detail. */ () =>
+        expect(reminders.setVisibleCalendarEvent).toHaveBeenLastCalledWith(
+          expect.objectContaining({ kind: "hide" }),
+        ),
+    );
+  });
   it("renders authoritative safe text and handles Escape", /** Keep the existing modal keyboard contract. */ async () => {
     const close = vi.fn();
     render(panel("e", close));

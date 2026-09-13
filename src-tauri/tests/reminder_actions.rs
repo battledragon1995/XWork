@@ -3,6 +3,64 @@ mod reminders;
 use reminders::*;
 use xwork_lib::calendar::*;
 
+/// Base event detail can report visibility without inventing an occurrence ID.
+#[test]
+fn visibility_show_accepts_null_occurrence() {
+    let payload =
+        serde_json::json!({"kind":"show", "viewToken":TOKEN, "eventId":EVENT, "occurrenceId":null});
+    assert!(serde_json::from_value::<VisibleCalendarEventInputDto>(payload).is_ok());
+}
+
+/// Validates optional context and ensures an old cleanup never hides a newer event detail.
+#[test]
+fn visibility_validates_context_and_preserves_newer_token() {
+    // Uses isolated storage and a controlled clock to observe native eligibility.
+    tauri::async_runtime::block_on(async {
+        let h = Harness::new(100).await;
+        h.add(200);
+        h.service.process_once().await.unwrap();
+        for (event, occurrence, expected) in [
+            ("invalid", None, ReminderError::InvalidEventId),
+            (EVENT, Some(""), ReminderError::InvalidOccurrenceId),
+            (
+                EVENT,
+                Some("bad\nvalue"),
+                ReminderError::InvalidOccurrenceId,
+            ),
+        ] {
+            assert_eq!(
+                h.service
+                    .set_visible_calendar_event(VisibleCalendarEventInputDto::Show {
+                        view_token: TOKEN.into(),
+                        event_id: event.into(),
+                        occurrence_id: occurrence.map(str::to_owned),
+                    })
+                    .await
+                    .unwrap_err(),
+                expected
+            );
+        }
+        h.service
+            .set_visible_calendar_event(VisibleCalendarEventInputDto::Show {
+                view_token: TOKEN.into(),
+                event_id: EVENT.into(),
+                occurrence_id: None,
+            })
+            .await
+            .unwrap();
+        h.service
+            .set_visible_calendar_event(VisibleCalendarEventInputDto::Hide {
+                view_token: "00000000-0000-4000-8000-000000000099".into(),
+            })
+            .await
+            .unwrap();
+        h.clock.set(200);
+        h.service.process_once().await.unwrap();
+        assert_eq!(h.inbox.count(), 1);
+        assert!(h.inbox.os.calls.lock().unwrap().is_empty());
+    });
+}
+
 /// Validates narrow main-window authorization and malformed action inputs without writes.
 #[test]
 fn command_authorization_and_validation() {

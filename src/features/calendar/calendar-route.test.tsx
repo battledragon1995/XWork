@@ -7,6 +7,20 @@ import { CalendarRoute } from "./calendar-route";
 import { getCalendarEvent, listCalendarOccurrences, onCalendarChanged } from "@/lib/ipc/calendar";
 import { getProject, listProjects, onProjectsChanged } from "@/lib/ipc/projects";
 import { IpcCallError } from "@/lib/ipc/ipc-error";
+import {
+  getMissedReminders,
+  getEventReminderDeliveries,
+  setVisibleCalendarEvent,
+} from "@/lib/ipc/reminders";
+vi.mock(
+  "@/lib/ipc/reminders",
+  /** Isolate Stage 21 reads from native state. */ () => ({
+    getMissedReminders: vi.fn(),
+    getEventReminderDeliveries: vi.fn(),
+    setVisibleCalendarEvent: vi.fn(),
+    onRemindersChanged: vi.fn(/** Return a removable reminder subscription. */ async () => vi.fn()),
+  }),
+);
 vi.mock(
   "@/lib/ipc/calendar",
   /** Isolate Calendar queries from native state. */ () => ({
@@ -26,6 +40,21 @@ vi.mock(
 beforeEach(
   /** Reset the real hook's IPC seams for every route lifetime. */ () => {
     vi.resetAllMocks();
+    vi.mocked(getMissedReminders).mockResolvedValue({
+      sequence: "1",
+      missedCount: 42,
+      items: [],
+      nextCursor: null,
+    });
+    vi.mocked(setVisibleCalendarEvent).mockResolvedValue(undefined);
+    vi.mocked(getEventReminderDeliveries).mockImplementation(
+      /** Return the selected opaque occurrence. */ async (eventId, occurrenceId) => ({
+        eventId,
+        occurrenceId,
+        sequence: "1",
+        items: [],
+      }),
+    );
     vi.mocked(listCalendarOccurrences).mockResolvedValue({ revision: "1", items: [] });
     vi.mocked(onCalendarChanged).mockResolvedValue(vi.fn());
     vi.mocked(onProjectsChanged).mockResolvedValue(vi.fn());
@@ -80,7 +109,10 @@ describe("Calendar route", /** Verify navigation against exact backend read cont
     expect(create).toHaveBeenCalledTimes(2);
     fireEvent.click(screen.getByRole("button", { name: "Upcoming" }));
     expect(await screen.findByText("No events in the next 14 days")).toBeVisible();
-    expect(screen.queryByRole("button", { name: "Missed" })).not.toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "Missed (42)" })).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Missed (42)" }));
+    expect(screen.getByRole("heading", { name: "Missed reminders" })).toBeVisible();
+    expect(getMissedReminders).toHaveBeenCalledWith(null, 30);
   });
   it("opens a direct event outside the visible range", /** Read the event identity independently from occurrence availability. */ async () => {
     vi.mocked(getCalendarEvent).mockResolvedValue({
@@ -101,12 +133,16 @@ describe("Calendar route", /** Verify navigation against exact backend read cont
       updatedAtMs: 0,
     });
     render(
-      <MemoryRouter initialEntries={["/calendar?event=old"]}>
+      <MemoryRouter initialEntries={["/calendar?event=old&occurrence=opaque-outside-range"]}>
         <CalendarRoute />
       </MemoryRouter>,
     );
     expect(await screen.findByRole("heading", { name: "Historical event" })).toBeVisible();
     expect(getCalendarEvent).toHaveBeenCalledWith("old");
+    await waitFor(
+      /** Keep deep-linked occurrence opaque and independent of visible month. */ () =>
+        expect(getEventReminderDeliveries).toHaveBeenCalledWith("old", "opaque-outside-range"),
+    );
     expect(screen.getByRole("button", { name: "Edit" })).toBeVisible();
     expect(screen.getByRole("button", { name: "Delete Event" })).toBeVisible();
     expect(screen.queryByRole("button", { name: "New Event" })).not.toBeInTheDocument();

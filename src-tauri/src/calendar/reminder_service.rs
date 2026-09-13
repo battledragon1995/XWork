@@ -67,7 +67,7 @@ pub trait ReminderEventSink: Send + Sync {
     /// Publishes a committed aggregate invalidation without user content.
     fn publish(&self, event: ReminderChangedDto);
 }
-type VisibleDetail = (String, String, String);
+type VisibleDetail = (String, String, Option<String>);
 pub(crate) struct Inner {
     pub storage: Storage,
     pub maintenance: DataMaintenanceGate,
@@ -415,7 +415,12 @@ impl ReminderService {
                 event_id,
                 occurrence_id,
             } => {
-                event_ids(&event_id, &occurrence_id)?;
+                if !reminder_uuid(&event_id) {
+                    return Err(ReminderError::InvalidEventId);
+                }
+                if let Some(occurrence) = &occurrence_id {
+                    event_ids(&event_id, occurrence)?;
+                }
                 visible.1 = Some((view_token, event_id, occurrence_id));
             }
             VisibleCalendarEventInputDto::Hide { view_token } => {

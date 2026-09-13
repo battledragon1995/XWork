@@ -66,6 +66,7 @@ export function CalendarEntry() {
               document.activeElement instanceof HTMLElement ? document.activeElement : null;
             const next = new URLSearchParams(params);
             next.delete("event");
+            next.delete("occurrence");
             next.set("date", input.date);
             setParams(next);
             const nextIntent = { ...input, epoch: boundary.epoch };
@@ -106,6 +107,7 @@ export function CalendarEntry() {
               activeIntent.current = null;
               const next = new URLSearchParams(params);
               next.set("event", event.id);
+              next.delete("occurrence");
               setIntent(null);
               setParams(next);
               setRefresh(

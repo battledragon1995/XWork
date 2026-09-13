@@ -1,12 +1,21 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { MemoryRouter } from "react-router";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { NotificationDto, NotificationPageDto } from "@/bindings/notifications/notifications";
 import { Highlight } from "@/components/animate-ui/primitives/effects/highlight";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { IpcCallError } from "@/lib/ipc/ipc-error";
 import * as ipc from "@/lib/ipc/notifications";
+import * as reminders from "@/lib/ipc/reminders";
 import { NotificationCenter, notificationTime } from "./notification-center";
+
+// Isolate reminder actions and subscription alongside the existing inbox boundary.
+vi.mock("@/lib/ipc/reminders", () => ({
+  onRemindersChanged: vi.fn(),
+  snoozeReminder: vi.fn(),
+  dismissReminder: vi.fn(),
+}));
 
 // Render real hook/UI behavior while isolating all native operations.
 vi.mock("@/lib/ipc/notifications", () => ({
@@ -45,6 +54,7 @@ function firstButton(name: string): HTMLElement {
 // Reset snapshots and native spies for each component scenario.
 beforeEach(() => {
   vi.resetAllMocks();
+  vi.mocked(reminders.onRemindersChanged).mockResolvedValue(vi.fn());
   snapshot = {
     revision: "1",
     unreadCount: 105,
@@ -66,6 +76,100 @@ beforeEach(() => {
   vi.mocked(ipc.getNotifications).mockImplementation(async () => snapshot);
   vi.mocked(ipc.onNotificationsChanged).mockResolvedValue(vi.fn());
 });
+
+// Show only active Snooze choices and retain exact delivery version for the action.
+it("offers reminder actions with keyboard Snooze and no Snooze on Missed", async () => {
+  const reminderTarget = {
+    kind: "eventReminder" as const,
+    eventId: "e",
+    occurrenceId: "o",
+    projectId: null,
+    reminderDeliveryId: "delivery",
+    deliveryVersion: "9007199254740994",
+  };
+  snapshot.items.push({
+    ...row,
+    id: "due",
+    kind: "eventReminderDue",
+    title: "Meeting due",
+    target: reminderTarget,
+  });
+  snapshot.items.push({
+    ...row,
+    id: "missed",
+    kind: "eventReminderMissed",
+    title: "Missed meeting",
+    target: { ...reminderTarget, reminderDeliveryId: "missed-delivery" },
+  });
+  const view = mount();
+  await open(view);
+  expect(screen.getAllByRole("button", { name: "Open event" })).toHaveLength(2);
+  expect(screen.getAllByRole("button", { name: "Dismiss" })).toHaveLength(2);
+  const snooze = screen.getByRole("button", { name: "Snooze" });
+  snooze.focus();
+  await view.user.keyboard("{Enter}");
+  for (const minutes of [5, 10, 30])
+    expect(screen.getByRole("menuitem", { name: `${minutes} minutes` })).toBeInTheDocument();
+  await view.user.keyboard("{Escape}");
+  expect(snooze).toHaveFocus();
+  await view.user.click(snooze);
+  await view.user.click(screen.getByRole("menuitem", { name: "10 minutes" }));
+  await waitFor(() =>
+    expect(reminders.snoozeReminder).toHaveBeenCalledWith("delivery", "9007199254740994", 10),
+  );
+});
+
+// Dismiss removes a delivery row and returns focus to the next surviving row.
+it("restores row focus after reminder dismissal and exposes settings navigation", async () => {
+  const target = {
+    kind: "eventReminder" as const,
+    eventId: "e",
+    occurrenceId: "o",
+    projectId: null,
+    reminderDeliveryId: "delivery",
+    deliveryVersion: "17",
+  };
+  snapshot.items.unshift({
+    ...row,
+    id: "due",
+    kind: "eventReminderDue",
+    title: "Meeting due",
+    target,
+  });
+  // Replace the backend page when its delivery action acknowledges.
+  vi.mocked(reminders.dismissReminder).mockImplementation(async () => {
+    snapshot = { ...snapshot, items: snapshot.items.filter((item) => item.id !== "due") };
+    return {
+      sequence: "2",
+      missedCount: 0,
+      delivery: {
+        id: "delivery",
+        eventId: "e",
+        occurrenceId: "o",
+        projectId: null,
+        title: "Meeting",
+        startsAtMs: "1",
+        originalDueAtMs: "1",
+        timeZoneId: "UTC",
+        minutesBefore: 0,
+        status: "dismissed",
+        snoozedUntilMs: null,
+        version: "18",
+      },
+    };
+  });
+  const view = mount();
+  await open(view);
+  expect(screen.getByRole("link", { name: "Notification settings" })).toHaveAttribute(
+    "href",
+    "/settings/notifications",
+  );
+  await view.user.click(screen.getByRole("button", { name: "Dismiss" }));
+  await waitFor(() => expect(screen.queryByText("Meeting due")).not.toBeInTheDocument());
+  await waitFor(() => expect(firstButton("Open session")).toHaveFocus());
+  expect(reminders.dismissReminder).toHaveBeenCalledWith("delivery", "17");
+  expect(ipc.deleteNotification).not.toHaveBeenCalled();
+});
 // Dispose the portal and timers after each scenario.
 afterEach(() => {
   cleanup();
@@ -75,12 +179,14 @@ afterEach(() => {
 function mount() {
   const onOpenTarget = vi.fn().mockResolvedValue(undefined);
   const view = render(
-    <TooltipProvider>
-      <Highlight mode="parent" controlledItems enabled={false}>
-        <NotificationCenter onOpenTarget={onOpenTarget} dismissKey="one" suspended={false} />
-      </Highlight>
-      <button type="button">Outside</button>
-    </TooltipProvider>,
+    <MemoryRouter>
+      <TooltipProvider>
+        <Highlight mode="parent" controlledItems enabled={false}>
+          <NotificationCenter onOpenTarget={onOpenTarget} dismissKey="one" suspended={false} />
+        </Highlight>
+        <button type="button">Outside</button>
+      </TooltipProvider>
+    </MemoryRouter>,
   );
   return { ...view, onOpenTarget, user: userEvent.setup() };
 }

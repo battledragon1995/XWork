@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
 import type { CalendarOccurrenceDto } from "@/bindings/calendar";
+import type { ReminderTargetDto } from "@/bindings/reminders";
+import { CalendarMissed } from "./calendar-missed";
+import { useMissedReminders } from "./use-missed-reminders";
 import { getProject, listProjects, onProjectsChanged } from "@/lib/ipc/projects";
 import { CalendarMonth } from "./calendar-month";
 import { CalendarAgenda } from "./calendar-agenda";
@@ -36,12 +39,14 @@ export function CalendarRoute({
   const dateIntent = params.get("date");
   const projectIntent = params.get("project");
   const eventId = params.get("event");
+  const occurrenceId = params.get("occurrence");
   const invalidDate = dateIntent !== null && !isValidDate(dateIntent);
   const [selected, setSelected] = useState(
     dateIntent && isValidDate(dateIntent) ? dateIntent : today,
   );
   const [month, setMonth] = useState(selected);
-  const [panel, setPanel] = useState<"day" | "upcoming">("day");
+  const [panel, setPanel] = useState<"day" | "upcoming" | "missed">("day");
+  const missed = useMissedReminders(boundary, readBoundary);
   const [occurrence, setOccurrence] = useState<CalendarOccurrenceDto | null>(null);
   const [project, setProject] = useState<{ id: string | null; ready: boolean; error: boolean }>({
     id: null,
@@ -63,6 +68,7 @@ export function CalendarRoute({
             /** Remove retired event selection without changing scope. */ (previous) => {
               const next = new URLSearchParams(previous);
               next.delete("event");
+              next.delete("occurrence");
               return next;
             },
             { replace: true },
@@ -217,6 +223,7 @@ export function CalendarRoute({
       /** Preserve valid scope when opening the detail. */ (previous) => {
         const next = new URLSearchParams(previous);
         next.set("event", item.eventId);
+        next.set("occurrence", item.occurrenceId);
         return next;
       },
     );
@@ -228,10 +235,40 @@ export function CalendarRoute({
       /** Remove the consumed detail intent. */ (previous) => {
         const next = new URLSearchParams(previous);
         next.delete("event");
+        next.delete("occurrence");
         return next;
       },
     );
   }
+  /** Open only the backend-validated reminder target, retaining its opaque occurrence. */
+  function openReminderTarget(target: ReminderTargetDto) {
+    if (!admitted()) return;
+    opener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    setOccurrence(null);
+    setParams(
+      /** Preserve date while applying the validated event and optional project. */ (previous) => {
+        const next = new URLSearchParams(previous);
+        next.set("event", target.eventId);
+        next.set("occurrence", target.occurrenceId);
+        if (target.projectId) next.set("project", target.projectId);
+        else next.delete("project");
+        return next;
+      },
+    );
+  }
+  /** Retire occurrence context after an acknowledged event definition change. */
+  const clearOccurrence = useCallback(() => {
+    setOccurrence(null);
+    setParams(
+      /** Keep base detail open without stale recurrence identity. */ (previous) => {
+        if (!previous.has("occurrence")) return previous;
+        const next = new URLSearchParams(previous);
+        next.delete("occurrence");
+        return next;
+      },
+      { replace: true },
+    );
+  }, [setParams]);
   /** Restore keyboard focus after the modal has released its focus trap. */
   function restoreFocus() {
     if (admitted()) (opener.current?.isConnected ? opener.current : heading.current)?.focus();
@@ -374,19 +411,45 @@ export function CalendarRoute({
             >
               Upcoming
             </button>
-          </div>
-          <h2 className="font-semibold">
-            {panel === "day" ? formatCalendarDate(selected) : "Next 14 days"}
-          </h2>
-          {agendaQuery.snapshot && (
-            <CalendarAgenda
-              items={agendaQuery.snapshot.items}
-              zone={zone}
-              upcoming={panel === "upcoming"}
+            <button
+              type="button"
+              aria-pressed={panel === "missed"}
               disabled={boundary.suspended}
-              projectNames={projectNames}
-              onOpen={open}
+              aria-label={missed.page ? `Missed (${missed.page.missedCount})` : "Missed"}
+              onClick={/** Show the global backend Missed projection. */ () => setPanel("missed")}
+            >
+              Missed
+              {missed.page
+                ? ` (${missed.page.missedCount > 99 ? "99+" : missed.page.missedCount})`
+                : ""}
+            </button>
+          </div>
+          {panel === "missed" ? (
+            <CalendarMissed
+              reminders={missed}
+              projectScoped={projectIntent !== null}
+              onOpen={openReminderTarget}
+              onUpcoming={
+                /** Return from the empty Missed state to future occurrences. */ () =>
+                  setPanel("upcoming")
+              }
             />
+          ) : (
+            <>
+              <h2 className="font-semibold">
+                {panel === "day" ? formatCalendarDate(selected) : "Next 14 days"}
+              </h2>
+              {agendaQuery.snapshot && (
+                <CalendarAgenda
+                  items={agendaQuery.snapshot.items}
+                  zone={zone}
+                  upcoming={panel === "upcoming"}
+                  disabled={boundary.suspended}
+                  projectNames={projectNames}
+                  onOpen={open}
+                />
+              )}
+            </>
           )}{" "}
           {panel === "day" && onCreateEvent && (
             <button
@@ -409,11 +472,13 @@ export function CalendarRoute({
           key={`${eventId}:${boundary.epoch}`}
           eventId={eventId}
           occurrence={occurrence?.eventId === eventId ? occurrence : null}
+          occurrenceId={occurrenceId}
           zone={zone}
           boundary={boundary}
           readBoundary={readBoundary}
           onClose={close}
           onChanged={refresh}
+          onOccurrenceInvalidated={clearOccurrence}
           restoreFocus={restoreFocus}
         />
       )}

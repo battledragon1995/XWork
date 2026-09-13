@@ -50,6 +50,25 @@ describe("updateSettings", () => {
     invokeMock.mockReset();
   });
 
+  /** Notification policy uses exact camelCase fields and never sends another Settings section. */
+  it("forwards a complete notification state patch and backend response unchanged", async () => {
+    const notifications = {
+      terminalActivityEnabled: false,
+      eventRemindersEnabled: true,
+      terminalOsStates: {
+        needsInput: false,
+        processFinished: false,
+        processExitedWithError: false,
+      },
+    };
+    const snapshot = { revision: "19", notifications };
+    invokeMock.mockResolvedValue(snapshot);
+    await expect(updateSettings({ notifications })).resolves.toBe(snapshot);
+    expect(invokeMock).toHaveBeenCalledExactlyOnceWith("update_settings", {
+      input: { notifications },
+    });
+  });
+
   // Verify the write command wraps its patch in the exact `input` field the backend declares.
   it("calls update_settings with an input payload", async () => {
     const snapshot = { revision: "8" };

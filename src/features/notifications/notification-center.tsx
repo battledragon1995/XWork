@@ -1,7 +1,14 @@
-import { Bell, CheckCircle2, CircleAlert, MessageSquare, X } from "lucide-react";
+import { Bell, CalendarClock, CheckCircle2, CircleAlert, MessageSquare, X } from "lucide-react";
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { HighlightItem } from "@/components/animate-ui/primitives/effects/highlight";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Link } from "react-router";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { type NotificationCenterProps, useNotifications } from "./use-notifications";
@@ -81,6 +88,8 @@ export function NotificationCenter(props: NotificationCenterProps) {
   /** Retains action identity before asynchronous replacement or removal. */
   function rememberFocus(event: React.FocusEvent<HTMLDivElement>) {
     const target = event.target as HTMLElement;
+    // A portaled Snooze menu retains its trigger row as the recovery target.
+    if (target.closest('[role="menu"]')) return;
     const row = target.closest<HTMLElement>("[data-notification-id]");
     const rows = [...(panel.current?.querySelectorAll("[data-notification-id]") ?? [])];
     focusedRow.current = row
@@ -224,14 +233,18 @@ export function NotificationCenter(props: NotificationCenterProps) {
           {inbox.status === "ready" && inbox.items.length === 0 && (
             <div className="py-6 text-center">
               <p>No notifications yet</p>
-              <p className="text-sm text-muted">Unseen terminal activity will appear here.</p>
+              <p className="text-sm text-muted">
+                Terminal activity and event reminders will appear here.
+              </p>
             </div>
           )}
           <ul className="space-y-2">
             {/* Render sanitized snapshots as plain text, without inventing unavailable context. */}
             {inbox.items.map((item) => {
-              const Icon =
-                item.kind === "terminalNeedsInput"
+              const isReminder = item.target.kind === "eventReminder";
+              const Icon = isReminder
+                ? CalendarClock
+                : item.kind === "terminalNeedsInput"
                   ? MessageSquare
                   : item.kind === "terminalProcessFailed"
                     ? CircleAlert
@@ -269,8 +282,47 @@ export function NotificationCenter(props: NotificationCenterProps) {
                       disabled={inbox.disabled}
                       onClick={() => void inbox.mutate("open", item.id)}
                     >
-                      Open session
+                      {isReminder ? "Open event" : "Open session"}
                     </Button>
+                    {isReminder && item.kind === "eventReminderDue" && (
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            data-action="snooze"
+                            size="sm"
+                            variant="outline"
+                            disabled={inbox.disabled}
+                          >
+                            Snooze
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent>
+                          {/* Keep the supported delay contract explicit and keyboard accessible. */}
+                          {([5, 10, 30] as const).map((minutes) => (
+                            <DropdownMenuItem
+                              key={minutes}
+                              disabled={inbox.disabled}
+                              // Submit one version-checked action from the currently rendered notification.
+                              onSelect={() => void inbox.mutate("snooze", item.id, minutes)}
+                            >
+                              {minutes} minutes
+                            </DropdownMenuItem>
+                          ))}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    )}
+                    {isReminder && (
+                      <Button
+                        data-action="dismiss"
+                        size="sm"
+                        variant="ghost"
+                        disabled={inbox.disabled}
+                        // Delivery dismissal is separate from notification read/delete operations.
+                        onClick={() => void inbox.mutate("dismiss", item.id)}
+                      >
+                        Dismiss
+                      </Button>
+                    )}
                     {item.readAtMs === null && (
                       <Button
                         data-action="read"
@@ -309,7 +361,10 @@ export function NotificationCenter(props: NotificationCenterProps) {
               {inbox.loadingMore ? "Loading more…" : "Load more"}
             </Button>
           )}
-          <p>Only unseen terminal activity appears here.</p>
+          <p>Terminal activity and event reminders appear here.</p>
+          <Link className="underline" to="/settings/notifications">
+            Notification settings
+          </Link>
         </div>
       </PopoverContent>
     </Popover>

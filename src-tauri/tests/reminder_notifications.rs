@@ -62,9 +62,15 @@ fn restart_catchup_creates_missed_bell_without_os() {
 fn exact_visible_detail_suppresses_os_but_keeps_bell() {
     // Enumerates native visibility and exact-event combinations with isolated state per case.
     tauri::async_runtime::block_on(async {
-        for (main_visible, exact, expected_os) in
-            [(true, true, 0), (false, true, 1), (true, false, 1)]
-        {
+        for (main_visible, exact, occurrence, expected_os) in [
+            (true, true, Some(OCCURRENCE), 0),
+            (false, true, Some(OCCURRENCE), 1),
+            (true, false, Some(OCCURRENCE), 1),
+            (true, true, None, 0),
+            (false, true, None, 1),
+            (true, false, None, 1),
+            (true, true, Some("another-valid-occurrence"), 0),
+        ] {
             let h = Harness::new(100).await;
             h.add(200);
             h.service.process_once().await.unwrap();
@@ -77,7 +83,8 @@ fn exact_visible_detail_suppresses_os_but_keeps_bell() {
                         "00000000-0000-4000-8000-000000000099"
                     }
                     .into(),
-                    occurrence_id: OCCURRENCE.into(),
+                    // Base detail does not invent a current occurrence.
+                    occurrence_id: occurrence.map(str::to_owned),
                 })
                 .await
                 .unwrap();

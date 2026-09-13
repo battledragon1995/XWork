@@ -298,8 +298,8 @@ impl ReminderService {
             )?;
             let exact = visible.0
                 && visible.1.as_ref().is_some_and(
-                    // Only the exact rendered detail suppresses OS, never a month or day route.
-                    |v| v.1 == row.dto.event_id && v.2 == row.dto.occurrence_id,
+                    // Event detail suppresses its event, including base detail without an occurrence.
+                    |v| v.1 == row.dto.event_id,
                 );
             let attempt = row.os == "pending" && enabled && !deleting && !exact;
             let os = if row.os == "pending" {
