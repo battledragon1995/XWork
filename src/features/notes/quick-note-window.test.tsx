@@ -154,6 +154,10 @@ it("retains removed project identity and forwards the chosen project", async () 
   await mount();
   body();
   fireEvent.change(screen.getByLabelText("Project"), { target: { value: "p" } });
+  vi.mocked(notes.createNote).mockRejectedValueOnce(
+    new IpcCallError("create_note", { code: "project_not_found" }),
+  );
+  await act(async () => fireEvent.click(screen.getByRole("button", { name: "Save" })));
   await act(async () => fireEvent.click(screen.getByRole("button", { name: "Refresh projects" })));
   expect(screen.getByLabelText("Project")).toHaveValue("p");
   expect(screen.getByRole("option", { name: "Project unavailable" })).toBeInTheDocument();
@@ -174,9 +178,15 @@ it("delegates primary titlebar drag while preserving input on failure", async ()
     isPrimary: true,
   });
   expect(native.startQuickNoteWindowDrag).not.toHaveBeenCalled();
-  fireEvent.pointerDown(screen.getByText("XWork / Quick Note"), { button: 1, isPrimary: true });
+  fireEvent.pointerDown(screen.getByRole("heading", { name: "Quick Note" }), {
+    button: 1,
+    isPrimary: true,
+  });
   expect(native.startQuickNoteWindowDrag).not.toHaveBeenCalled();
-  fireEvent.pointerDown(screen.getByText("XWork / Quick Note"), { button: 0, isPrimary: true });
+  fireEvent.pointerDown(screen.getByRole("heading", { name: "Quick Note" }), {
+    button: 0,
+    isPrimary: true,
+  });
   expect(await screen.findByRole("alert")).toHaveTextContent("Could not move the window");
   expect(screen.getByLabelText("Markdown")).toHaveValue("\n# body\n");
 });

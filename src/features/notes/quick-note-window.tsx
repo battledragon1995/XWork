@@ -1,3 +1,4 @@
+import { Folder, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { NoteDto } from "@/bindings/notes";
 import type { ProjectDto } from "@/bindings/projects/projects";
@@ -129,10 +130,10 @@ export function QuickNoteWindow(): React.JSX.Element {
   const busy = phase === "saving" || phase === "closing";
   const readonly = phase === "uncertain" || committed.current !== null;
   const inputClass =
-    "w-full min-w-0 rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
+    "w-full min-w-0 border-0 bg-transparent px-4 py-2 text-sm outline-none placeholder:text-muted-soft focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring";
   return (
     <main
-      className="flex h-dvh min-w-0 flex-col bg-background text-foreground"
+      className="flex h-[calc(100dvh/var(--ui-scale))] min-w-0 flex-col overflow-hidden bg-background text-foreground"
       onCompositionStart={
         /** Guard all explicit actions during IME composition. */ () => {
           composing.current = true;
@@ -152,7 +153,7 @@ export function QuickNoteWindow(): React.JSX.Element {
         }
       }
     >
-      <header className="flex shrink-0 items-center gap-3 border-b px-4 py-2">
+      <header className="flex shrink-0 items-center gap-3 border-b border-hairline px-4 py-1.5">
         <div
           className="flex flex-1 items-center gap-3 select-none"
           onPointerDown={
@@ -166,19 +167,31 @@ export function QuickNoteWindow(): React.JSX.Element {
             }
           }
         >
-          <h1 className="font-semibold">XWork / Quick Note</h1>
-          <span className="text-xs text-muted-foreground">Esc cancel</span>
+          <span className="font-display text-xl text-ink" aria-hidden="true">
+            <span className="text-brand">X</span>Work
+          </span>
+          <h1 className="text-xs text-muted">Quick Note</h1>
         </div>
-        <Button variant="ghost" disabled={busy} aria-label="Close Quick Note" onClick={close}>
-          ×
+        <span className="flex items-center gap-1 text-[11px] text-muted">
+          <kbd className="rounded border border-hairline px-1 font-mono">Esc</kbd> cancel
+        </span>
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          disabled={busy}
+          aria-label="Close Quick Note"
+          onClick={close}
+        >
+          <X aria-hidden="true" />
         </Button>
       </header>
-      <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-4" aria-busy={busy}>
-        <label className="space-y-1">
-          Title (optional)
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto pt-2" aria-busy={busy}>
+        <label className="shrink-0">
+          <span className="sr-only">Title (optional)</span>
           <input
             ref={titleInput}
-            className={inputClass}
+            className={`${inputClass} font-display text-[24px] text-ink`}
+            placeholder="Title (optional)"
             value={title}
             disabled={busy}
             readOnly={readonly}
@@ -192,11 +205,11 @@ export function QuickNoteWindow(): React.JSX.Element {
           />
         </label>
         {invalid.title && <p role="alert">{invalid.title}</p>}
-        <label className="flex min-h-32 flex-1 flex-col gap-1">
-          Markdown
+        <label className="flex min-h-20 flex-1 flex-col">
+          <span className="sr-only">Markdown</span>
           <textarea
             ref={bodyInput}
-            className={`${inputClass} min-h-28 flex-1 resize-none`}
+            className={`${inputClass} min-h-20 flex-1 resize-none leading-relaxed`}
             placeholder="Write a note… Markdown works here."
             value={body}
             disabled={busy}
@@ -211,10 +224,39 @@ export function QuickNoteWindow(): React.JSX.Element {
           />
         </label>
         {invalid.body && <p role="alert">{invalid.body}</p>}
-        <label>
-          Project
+        {projectPhase === "loading" && (
+          <p role="status" className="sr-only">
+            Loading projects…
+          </p>
+        )}
+        {(projectPhase === "error" || phase === "error") && (
+          <div className="px-4 py-2 text-xs">
+            {projectPhase === "error" && <p role="alert">Could not load projects.</p>}
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={busy}
+              onClick={
+                /** Retry project loading without replacing the local capture. */ () =>
+                  setRefresh(refresh + 1)
+              }
+            >
+              Refresh projects
+            </Button>
+          </div>
+        )}
+        {message && (
+          <p role="alert" className="px-4 py-2 text-sm">
+            {message}
+          </p>
+        )}
+      </div>
+      <footer className="flex shrink-0 flex-wrap items-center gap-2 border-t border-hairline px-4 py-3">
+        <label className="mr-auto flex min-w-0 max-w-48 items-center gap-1.5 rounded-md bg-surface-soft px-2 text-xs">
+          <Folder aria-hidden="true" className="size-3 shrink-0" />
+          <span className="sr-only">Project</span>
           <select
-            className={inputClass}
+            className="h-7 min-w-0 max-w-full bg-transparent outline-none focus-visible:ring-2 focus-visible:ring-ring"
             value={projectId ?? ""}
             disabled={busy || readonly}
             onChange={
@@ -237,37 +279,19 @@ export function QuickNoteWindow(): React.JSX.Element {
             )}
           </select>
         </label>
-        {projectPhase === "loading" && <p role="status">Loading projects…</p>}
-        {projectPhase === "error" && <p role="alert">Could not load projects.</p>}
-        <Button
-          variant="ghost"
-          disabled={busy}
-          onClick={
-            /** Refresh without replacing the chosen project or draft. */ () =>
-              setRefresh(refresh + 1)
-          }
-        >
-          Refresh projects
-        </Button>
-        <p className="text-xs text-muted-foreground">
-          Markdown supported. Saved notes appear in Notes and on the linked project.
-        </p>
-        {message && <p role="alert">{message}</p>}
-        <footer className="flex flex-wrap justify-end gap-2">
-          {phase === "close-error" ? (
-            <Button onClick={close}>Retry Close</Button>
-          ) : (
-            <>
-              <Button variant="outline" disabled={busy} onClick={close}>
-                Cancel
-              </Button>
-              <Button disabled={busy || readonly} onClick={save}>
-                {phase === "saving" ? "Saving…" : "Save"}
-              </Button>
-            </>
-          )}
-        </footer>
-      </div>
+        {phase === "close-error" ? (
+          <Button onClick={close}>Retry Close</Button>
+        ) : (
+          <>
+            <Button variant="outline" disabled={busy} onClick={close}>
+              Cancel
+            </Button>
+            <Button disabled={busy || readonly} onClick={save}>
+              {phase === "saving" ? "Saving…" : "Save"}
+            </Button>
+          </>
+        )}
+      </footer>
     </main>
   );
 }
