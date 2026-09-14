@@ -1,4 +1,5 @@
 import type { CalendarRouteProps } from "@/features/calendar";
+
 /** Observe the injected projection while the existing host and owner stores remain real. */
 vi.mock("@/features/calendar", () => ({
   HomeCalendarSection: /** Render the live Calendar boundary. */ ({
@@ -9,6 +10,7 @@ vi.mock("@/features/calendar", () => ({
     </output>
   ),
 }));
+
 import * as notesIpc from "@/lib/ipc/notes";
 import { openQuickNoteWindow } from "@/lib/ipc/quick-note-window";
 
@@ -399,7 +401,7 @@ it("shows Notes-only Home for archived records", async () => {
     counts: { active: 0, archived: 1, trash: 0 },
   });
   await mount();
-  expect(await screen.findByRole("link", { name: "Open Notes" })).toBeVisible();
+  expect(await screen.findByRole("link", { name: "All notes" })).toBeVisible();
   expect(screen.queryByRole("button", { name: "Add Project" })).toBeNull();
 });
 /** Home mounts the real manual composer before persisted Notes projections. */
@@ -407,7 +409,7 @@ it("composes Quick Note before Notes and opens only its acknowledged id", async 
   const { router } = await mount();
   const title = await screen.findByLabelText("Title (optional)");
   const quick = screen.getByRole("heading", { name: "Quick Note" });
-  const pinned = screen.getByRole("heading", { name: "Pinned notes" });
+  const pinned = screen.getByRole("heading", { name: "Notes" });
   expect(quick.compareDocumentPosition(pinned) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   fireEvent.change(title, { target: { value: "Captured" } });
   fireEvent.change(screen.getByLabelText("Markdown"), { target: { value: "body" } });

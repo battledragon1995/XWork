@@ -4,6 +4,7 @@ import type {
   ProjectDto,
   ProjectFolderSelectionDto,
   ProjectGitStatusDto,
+  ProjectGitSummaryDto,
   ProjectsError,
   RemoveProjectImpactDto,
   RemoveProjectResultDto,
@@ -50,6 +51,11 @@ export function getProject(projectId: string): Promise<ProjectDto> {
 // Read the current repository summary and visible worktree changes for one project.
 export function getProjectGitStatus(projectId: string): Promise<ProjectGitStatusDto> {
   return invokeProjects<ProjectGitStatusDto>("get_project_git_status", { projectId });
+}
+
+/** Read compact Git metadata through the existing BE-004 command, without file entries. */
+export function getProjectGitSummary(projectId: string): Promise<ProjectGitSummaryDto> {
+  return invokeProjects<ProjectGitSummaryDto>("get_project_git_summary", { projectId });
 }
 
 // Open the native folder picker and register the chosen folder. Cancellation is a result,

@@ -7,6 +7,7 @@ import { calendarErrorCopy } from "./calendar-error-copy";
 import { calendarRange, todayDate, viewerTimeZone } from "./calendar-presentation";
 import { type CalendarRouteProps, IDLE_CALENDAR_BOUNDARY } from "./calendar-route";
 import { useCalendarQuery } from "./use-calendar-query";
+
 /** Share a bounded projection without inferring whether the whole calendar is empty. */
 function CalendarSection({
   projectId = null,
@@ -122,11 +123,10 @@ function CalendarSection({
       );
   }
   return (
-    <section
-      aria-label="Upcoming calendar events"
-      className="space-y-3 rounded-lg border border-hairline p-4"
-    >
-      <h2 className="font-semibold">Upcoming events</h2>
+    <section aria-label="Upcoming calendar events" className="min-w-0 space-y-3 self-start">
+      <h2 className="text-[11px] font-medium uppercase tracking-wider text-muted">
+        Upcoming events
+      </h2>
       {query.loading && <p role="status">Loading calendar…</p>}
       {query.refreshing && <p role="status">Refreshing calendar…</p>}
       {query.listenerError && <p role="alert">Calendar updates are unavailable</p>}
@@ -136,7 +136,13 @@ function CalendarSection({
           Retry
         </button>
       )}
-      {query.snapshot && (
+      {query.snapshot?.items.length === 0 && (
+        <div className="rounded-lg border border-dashed border-hairline px-4 py-6 text-center">
+          <p className="font-display text-xl text-ink">Nothing coming up</p>
+          <p className="mt-1 text-xs text-muted">No events in the next 14 days</p>
+        </div>
+      )}
+      {query.snapshot && query.snapshot.items.length > 0 && (
         <CalendarAgenda
           items={query.snapshot.items.slice(0, 5)}
           zone={zone}
@@ -147,6 +153,7 @@ function CalendarSection({
         />
       )}
       <Link
+        className="inline-block text-xs text-muted hover:text-ink"
         to={`/calendar${projectId ? `?project=${encodeURIComponent(projectId)}` : ""}`}
         aria-disabled={boundary.suspended}
         onClick={

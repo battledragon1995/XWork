@@ -2,17 +2,20 @@ import { Link } from "react-router";
 import type { NotePinnedFilterDto } from "@/bindings/notes";
 import { Button } from "@/components/ui/button";
 import { useNotesQuery } from "./notes-provider";
+
 /** Render one independently recoverable bounded server projection. */
 function NoteSection({
   title,
   limit,
   pinnedFilter,
   projectId,
+  home = false,
 }: {
   title: string;
   limit: number;
   pinnedFilter: NotePinnedFilterDto;
   projectId?: string;
+  home?: boolean;
 }) {
   const query = useNotesQuery({
     status: "active",
@@ -23,13 +26,31 @@ function NoteSection({
     limit,
   });
   const suffix = projectId ? `&projectId=${encodeURIComponent(projectId)}` : "";
+  const empty = !query.loading && !query.error && !query.page?.items.length;
+  if (home && pinnedFilter === "only" && empty) return null;
   return (
     <section aria-label={title} className="min-w-0 space-y-3" aria-busy={query.loading}>
-      <h2 className="text-lg font-semibold">{title}</h2>
+      <div className="flex items-center justify-between gap-3">
+        <h2 className="text-[11px] font-medium uppercase tracking-wider text-muted">
+          {home && empty ? "Notes" : title}
+        </h2>
+        <Link className="text-xs text-muted hover:text-ink" to={`/notes?view=active${suffix}`}>
+          All notes
+        </Link>
+      </div>
       {query.loading && <p role="status">Loading notes…</p>}
       {query.error && <p role="alert">{query.error}</p>}
-      {!query.loading && !query.error && !query.page?.items.length && <p>No notes yet</p>}
-      <ul className="space-y-3">
+      {empty && (
+        <div className="rounded-lg border border-dashed border-hairline px-4 py-6 text-center">
+          <p className="font-display text-xl text-ink">No notes yet</p>
+          {home && (
+            <p className="mt-1 text-xs text-muted">
+              Capture a thought above. Your notes will appear here.
+            </p>
+          )}
+        </div>
+      )}
+      <ul className={home ? "grid grid-cols-1 gap-3 @min-[480px]:grid-cols-2" : "space-y-2"}>
         {query.page?.items.map(
           /** Preserve server ordering and stable row identity. */ (note) => (
             <li key={note.id}>
@@ -47,11 +68,12 @@ function NoteSection({
         )}
       </ul>
       <div className="flex flex-wrap gap-3">
-        <Link to={`/notes?view=active${suffix}`}>All notes</Link>
         {projectId && <Link to={`/notes?new=1${suffix}`}>New note</Link>}
-        <Button variant="outline" onClick={query.refresh}>
-          Refresh
-        </Button>
+        {query.error && (
+          <Button variant="outline" onClick={query.refresh}>
+            Refresh
+          </Button>
+        )}
       </div>
     </section>
   );
@@ -60,9 +82,8 @@ function NoteSection({
 export function HomeNoteSections() {
   return (
     <div className="space-y-6">
-      <Link to="/notes">Open Notes</Link>
-      <NoteSection title="Pinned notes" limit={2} pinnedFilter="only" />
-      <NoteSection title="Recent notes" limit={3} pinnedFilter="exclude" />
+      <NoteSection title="Pinned notes" limit={2} pinnedFilter="only" home />
+      <NoteSection title="Recent notes" limit={3} pinnedFilter="exclude" home />
     </div>
   );
 }

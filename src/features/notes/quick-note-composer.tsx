@@ -32,7 +32,7 @@ export function QuickNoteComposer({
   const disabled = suspended || blocked || saving;
   const uncertain = draft.phase === "uncertain";
   const inputClass =
-    "w-full min-w-0 rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
+    "w-full min-w-0 border-0 bg-transparent px-4 py-2 text-sm outline-none placeholder:text-muted-soft focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring";
   /** Validate only on explicit Save and leave normalization to Rust. */
   async function save() {
     if (disabled || readSuspended() || uncertain || composing.current) return;
@@ -70,14 +70,18 @@ export function QuickNoteComposer({
     if (focused) body.current?.focus();
   }
   return (
-    <div ref={root} className="min-w-0 space-y-3 rounded-lg border bg-card p-4" aria-busy={saving}>
-      <h2 className="font-semibold">Quick Note</h2>
-      <label className="block space-y-1" htmlFor={`${prefix}-title`}>
-        <span className="text-sm">Title (optional)</span>
+    <div
+      ref={root}
+      className="min-w-0 overflow-hidden rounded-lg border border-hairline bg-canvas"
+      aria-busy={saving}
+    >
+      <h2 className="sr-only">Quick Note</h2>
+      <label className="block pt-2" htmlFor={`${prefix}-title`}>
+        <span className="sr-only">Title (optional)</span>
         <input
           id={`${prefix}-title`}
           ref={title}
-          className={inputClass}
+          className={`${inputClass} font-display text-[22px] font-medium text-ink`}
           placeholder="Title (optional)"
           value={draft.title}
           disabled={disabled}
@@ -107,12 +111,12 @@ export function QuickNoteComposer({
           {invalid.title}
         </p>
       )}
-      <label className="block space-y-1" htmlFor={`${prefix}-body`}>
-        <span className="text-sm">Markdown</span>
+      <label className="block" htmlFor={`${prefix}-body`}>
+        <span className="sr-only">Markdown</span>
         <textarea
           id={`${prefix}-body`}
           ref={body}
-          className={`${inputClass} min-h-28 resize-y`}
+          className={`${inputClass} block min-h-28 resize-y leading-relaxed`}
           placeholder="Write a note… Markdown works here."
           value={draft.contentMarkdown}
           disabled={disabled}
@@ -142,12 +146,12 @@ export function QuickNoteComposer({
           {invalid.body}
         </p>
       )}
-      <div className="flex flex-wrap items-end gap-3">
-        <label className="min-w-0 flex-1 space-y-1" htmlFor={`${prefix}-project`}>
-          <span className="text-sm">Project</span>
+      <div className="flex flex-wrap items-center gap-2 border-t border-hairline-soft px-3 py-2">
+        <label className="mr-auto min-w-0 max-w-44" htmlFor={`${prefix}-project`}>
+          <span className="sr-only">Project</span>
           <select
             id={`${prefix}-project`}
-            className={inputClass}
+            className="h-7 w-full rounded-sm border border-hairline bg-surface-soft px-2 text-xs text-muted outline-none focus-visible:ring-2 focus-visible:ring-ring"
             value={draft.projectId ?? ""}
             disabled={disabled || uncertain}
             onChange={
@@ -169,14 +173,16 @@ export function QuickNoteComposer({
             )}
           </select>
         </label>
-        <Button
-          type="button"
-          variant="outline"
-          disabled={disabled || (draft.phase === "empty" && !invalid.title && !invalid.body)}
-          onClick={cancel}
-        >
-          Cancel
-        </Button>
+        {(draft.phase !== "empty" || invalid.title || invalid.body) && (
+          <Button
+            type="button"
+            variant="outline"
+            disabled={disabled || (draft.phase === "empty" && !invalid.title && !invalid.body)}
+            onClick={cancel}
+          >
+            Cancel
+          </Button>
+        )}
         <Button type="button" disabled={disabled || uncertain} onClick={save}>
           {saving ? "Saving…" : "Save"}
         </Button>
@@ -194,9 +200,6 @@ export function QuickNoteComposer({
           </Button>
         </div>
       )}
-      <p className="text-sm text-muted-foreground">
-        Saved notes appear in Notes and on the linked project.
-      </p>
       {draft.message && (
         <p role="alert" className="text-sm text-destructive">
           {draft.message}

@@ -3,7 +3,8 @@ import { MemoryRouter } from "react-router";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import * as ipc from "@/lib/ipc/notes";
 import { HomeNoteSections, ProjectNotesSection } from "./note-sections";
-import { noteMocks, NotesTestHost } from "./notes-test-fixture";
+import { NotesTestHost, noteMocks } from "./notes-test-fixture";
+
 /** Isolate Notes reads. */
 vi.mock("@/lib/ipc/notes");
 /** Isolate event registration. */
@@ -42,7 +43,11 @@ it("requests exact Home projections", async () => {
     offset: 0,
     limit: 3,
   });
-  expect(screen.getByRole("link", { name: "Open Notes" })).toHaveAttribute("href", "/notes");
+  expect(screen.getByRole("link", { name: "All notes" })).toHaveAttribute(
+    "href",
+    "/notes?view=active",
+  );
+  expect(screen.getAllByText("No notes yet")).toHaveLength(1);
 });
 /** Project entry preserves the exact verified identity in both query and draft link. */
 it("requests five linked notes and preselects New note project", async () => {

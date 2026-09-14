@@ -94,7 +94,8 @@ Paths abbreviated after a feature prefix in a row remain within that feature dir
 
 - Planning: original audit and source constraints reviewed. Working tree clean at baseline `0ead337`. User confirmed existing capabilities only and waived builds.
 - Task 1 complete: self-hosted the three wireframe font families (Latin/extended Latin/Vietnamese, original OFL licenses); restored Cream selection surfaces and white coral labels while retaining custom-theme contrast choice; clipped the sidebar hover layer to its animated rail. Three theme assertions failed before the correction. All 77 focused tests passed after updating the sync expectation; TypeScript and changed-file Biome checks passed. Windows smoke at existing 15px UI scale confirmed Cream active state and collapsed/expanded rail without footer spill. Existing binary plus Vite dev used; no build.
-- Tasks 2–17: pending.
+- Task 2 complete: date-led header; composer/Notes left and live summaries right; continuous labelled composer with conditional Cancel; one Notes empty state; compact session/project rows, relative timestamps with absolute tooltips, and a bounded Git summary for each visible recent project. The shared `src/components/project-git-summary.tsx` and test use the already registered `get_project_git_summary` command through a new wrapper; no backend/DTO change. Query responses are retired across maintenance/unmount and refresh on foreground. Existing aggregate Notes/Calendar sections were restyled at their owning files. All 200 focused tests, changed-file Biome and TypeScript passed. Windows Home at 1280×800/current 15px scale shows Save, Notes, Sessions, Git branch and Upcoming without scrolling. Session empty action remains Open Projects because Home does not own session creation.
+- Tasks 3–17: pending.
 
 ## Deviations and Decisions
 

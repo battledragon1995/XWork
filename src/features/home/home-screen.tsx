@@ -1,11 +1,14 @@
+import { ArrowUpRight, Folder, Maximize2 } from "lucide-react";
 import { type MouseEvent, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Link } from "react-router";
+import { ProjectGitSummary } from "@/components/project-git-summary";
 import { Button } from "@/components/ui/button";
 import {
   homeDate,
   orderedSessions,
   projectTimestamp,
   recentProjects,
+  relativeProjectTime,
   STATUS_LABELS,
   sessionCounts,
 } from "./home-presentation";
@@ -14,7 +17,7 @@ import { useHomeSessions } from "./use-home-sessions";
 import type { HomeQueryState, ProjectPresenceResult } from "./use-project-presence";
 
 const ROW =
-  "block rounded-lg border border-hairline p-4 text-body outline-none hover:bg-surface-soft focus-visible:ring-2 focus-visible:ring-ring";
+  "flex min-w-0 items-start gap-2.5 border-b border-hairline-soft py-3 text-[13px] text-body outline-none hover:bg-surface-soft focus-visible:ring-2 focus-visible:ring-ring";
 const LINK =
   "rounded text-sm text-muted underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
 const REASONS = {
@@ -133,15 +136,25 @@ export function HomeScreen({
         }
       }
     >
-      <header className="mb-8 space-y-2">
-        <h1 className="font-display text-[36px] leading-tight tracking-tight text-ink">Home</h1>
-        <p className="text-sm text-muted">{homeDate(date)}</p>
+      <header className="mb-6 flex flex-wrap items-center gap-x-4 gap-y-2">
+        <h1 className="mr-auto font-display text-[30px] font-medium leading-tight tracking-tight text-ink">
+          {homeDate(date)}
+        </h1>
+        {counts && !sessions.failure && (
+          <p className="text-xs text-muted">
+            {counts.running ? `${counts.running} sessions running` : "No sessions running"} ·{" "}
+            {counts.attention} need attention
+          </p>
+        )}
         <Button
-          variant="outline"
+          variant="ghost"
+          size="icon-sm"
+          aria-label="Open Quick Note window"
+          title="Open Quick Note window"
           disabled={suspended || props.quickNoteOpening}
           onClick={props.onOpenQuickNote}
         >
-          Open Quick Note window
+          <Maximize2 aria-hidden="true" />
         </Button>
         {props.quickNoteOpenError && (
           <p role="alert">
@@ -151,125 +164,156 @@ export function HomeScreen({
             </Button>
           </p>
         )}
-        {counts && !sessions.failure && (
-          <p className="text-sm text-body">
-            {counts.running ? `${counts.running} sessions running` : "No sessions running"} ·{" "}
-            {counts.attention} need attention
-          </p>
-        )}
       </header>
-      <div className="grid min-w-0 grid-cols-1 gap-7 @[720px]:grid-cols-2">
-        <section
-          aria-labelledby="home-sessions"
-          aria-busy={sessions.loading || sessions.refreshing}
-          className="min-w-0"
-        >
-          <div className="mb-4 flex items-center justify-between gap-3">
-            <h2 id="home-sessions" tabIndex={-1} className="text-lg font-semibold text-ink">
-              Sessions
-            </h2>
-            <Link className={LINK} to="/projects" onClick={navigate} aria-disabled={suspended}>
-              Projects
-            </Link>
-          </div>
-          <QueryNotice query={sessions} owner="Sessions" suspended={suspended} />
-          {sessions.loading && (
-            <p role="status" className="text-sm text-muted">
-              Loading sessions…
-            </p>
-          )}
-          {sessions.snapshot?.length === 0 && (
-            <div className="space-y-3 rounded-lg border border-hairline p-5 text-sm text-body">
-              <p>No sessions running</p>
-              <p>Open a project and choose a tool to start a session.</p>
-              <Link className={LINK} to="/projects" onClick={navigate} aria-disabled={suspended}>
-                Open Projects
-              </Link>
-            </div>
-          )}
-          <ul className="space-y-3">
-            {orderedSessions(sessions.snapshot ?? []).map(
-              /** Use session identity as the key so reorder preserves keyboard focus. */
-              (session) => (
-                <li key={session.id}>
-                  <Link
-                    className={ROW}
-                    to={`/sessions/${encodeURIComponent(session.id)}`}
-                    aria-label={`Open session ${session.name}`}
-                    aria-disabled={suspended}
-                    onClick={navigate}
-                  >
-                    <span className="block break-words font-medium text-ink">{session.name}</span>
-                    <span className="block break-words text-sm text-muted">
-                      {projects.projects?.find(
-                        /** Join the full project snapshot by identity. */ (project) =>
-                          project.id === session.projectId,
-                      )?.displayName || "Project unavailable"}
-                    </span>
-                    <span className="mt-2 block text-sm">{STATUS_LABELS[session.status]}</span>
-                    <span className="block text-xs text-muted">
-                      {session.tabCount} tabs · {session.runningProcessCount} processes
-                    </span>
-                  </Link>
-                </li>
-              ),
-            )}
-          </ul>
-        </section>
-        <section
-          aria-labelledby="home-projects"
-          aria-busy={projects.refreshing}
-          className="min-w-0"
-        >
-          <div className="mb-4 flex items-center justify-between gap-3">
-            <h2 id="home-projects" tabIndex={-1} className="text-lg font-semibold text-ink">
-              Recent projects
-            </h2>
-            <Link className={LINK} to="/projects" onClick={navigate} aria-disabled={suspended}>
-              All projects
-            </Link>
-          </div>
-          <QueryNotice query={projects} owner="Projects" suspended={suspended} />
-          <ul className="space-y-3">
-            {recentProjects(projects.projects ?? []).map(
-              /** Keep unavailable projects navigable so the overview can repair their location. */
-              (project) => (
-                <li key={project.id}>
-                  <Link
-                    className={ROW}
-                    to={`/projects/${encodeURIComponent(project.id)}`}
-                    aria-label={`Open project ${project.displayName}`}
-                    aria-disabled={suspended}
-                    onClick={navigate}
-                  >
-                    <span className="block break-words font-medium text-ink">
-                      {project.displayName}
-                    </span>
-                    <span className="block break-all text-sm text-muted">{project.rootPath}</span>
-                    <span
-                      className="mt-2 block text-xs text-muted"
-                      title={projectTimestamp(project)}
-                    >
-                      {projectTimestamp(project)}
-                    </span>
-                    {project.availability.status === "unavailable" && (
-                      <span className="mt-2 block text-sm">
-                        Unavailable · {REASONS[project.availability.reason]}
-                      </span>
-                    )}
-                  </Link>
-                </li>
-              ),
-            )}
-          </ul>
-        </section>
-        {props.calendarSection}
+      <div className="grid min-w-0 grid-cols-1 items-start gap-7 @[720px]:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
         {(props.notesSection || props.quickNoteSlot) && (
           <div className="min-w-0 space-y-6">
             {props.quickNoteSlot}
             {props.notesSection}
           </div>
         )}
+        <div className="min-w-0 space-y-6">
+          <section
+            aria-labelledby="home-sessions"
+            aria-busy={sessions.loading || sessions.refreshing}
+            className="min-w-0"
+          >
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <h2
+                id="home-sessions"
+                tabIndex={-1}
+                className="text-[11px] font-medium uppercase tracking-wider text-muted"
+              >
+                Sessions
+              </h2>
+              <Link className={LINK} to="/projects" onClick={navigate} aria-disabled={suspended}>
+                Projects
+              </Link>
+            </div>
+            <QueryNotice query={sessions} owner="Sessions" suspended={suspended} />
+            {sessions.loading && (
+              <p role="status" className="text-sm text-muted">
+                Loading sessions…
+              </p>
+            )}
+            {sessions.snapshot?.length === 0 && (
+              <div className="space-y-2 rounded-lg border border-dashed border-hairline px-4 py-6 text-center text-xs text-muted">
+                <p className="font-display text-xl text-ink">No sessions running</p>
+                <p>Open a project and choose a tool to start a session.</p>
+                <Link className={LINK} to="/projects" onClick={navigate} aria-disabled={suspended}>
+                  Open Projects
+                </Link>
+              </div>
+            )}
+            <ul>
+              {orderedSessions(sessions.snapshot ?? []).map(
+                /** Use session identity as the key so reorder preserves keyboard focus. */
+                (session) => (
+                  <li key={session.id}>
+                    <Link
+                      className={ROW}
+                      to={`/sessions/${encodeURIComponent(session.id)}`}
+                      aria-label={`Open session ${session.name}`}
+                      aria-disabled={suspended}
+                      onClick={navigate}
+                    >
+                      <span
+                        aria-hidden="true"
+                        className={`mt-1.5 size-1.5 shrink-0 rounded-full ${session.status === "needsAttention" ? "bg-amber" : session.status === "exitedWithError" ? "bg-error" : session.status === "running" ? "bg-teal" : "bg-muted-soft"}`}
+                      />
+                      <span className="min-w-0 flex-1">
+                        <span className="font-medium text-ink">{session.name}</span>
+                        {" · "}
+                        <span className="text-muted">
+                          {projects.projects?.find(
+                            /** Join the full project snapshot by identity. */ (project) =>
+                              project.id === session.projectId,
+                          )?.displayName || "Project unavailable"}
+                        </span>
+                        <span className="mt-0.5 block text-xs text-muted">
+                          {STATUS_LABELS[session.status]}
+                        </span>
+                        <span className="block text-xs text-muted">
+                          {session.tabCount} tabs · {session.runningProcessCount} processes
+                        </span>
+                      </span>
+                      <ArrowUpRight
+                        aria-hidden="true"
+                        className="mt-0.5 size-3.5 shrink-0 text-muted"
+                      />
+                    </Link>
+                  </li>
+                ),
+              )}
+            </ul>
+          </section>
+          <section
+            aria-labelledby="home-projects"
+            aria-busy={projects.refreshing}
+            className="min-w-0"
+          >
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <h2
+                id="home-projects"
+                tabIndex={-1}
+                className="text-[11px] font-medium uppercase tracking-wider text-muted"
+              >
+                Recent projects
+              </h2>
+              <Link className={LINK} to="/projects" onClick={navigate} aria-disabled={suspended}>
+                All projects
+              </Link>
+            </div>
+            <QueryNotice query={projects} owner="Projects" suspended={suspended} />
+            <ul>
+              {recentProjects(projects.projects ?? []).map(
+                /** Keep unavailable projects navigable so the overview can repair their location. */
+                (project) => (
+                  <li key={project.id}>
+                    <Link
+                      className={ROW}
+                      to={`/projects/${encodeURIComponent(project.id)}`}
+                      aria-label={`Open project ${project.displayName}`}
+                      aria-disabled={suspended}
+                      onClick={navigate}
+                    >
+                      <Folder aria-hidden="true" className="mt-0.5 size-3.5 shrink-0 text-muted" />
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate font-medium text-ink">
+                          {project.displayName}
+                        </span>
+                        <span
+                          className="block truncate font-mono text-[11px] text-muted"
+                          title={project.rootPath}
+                        >
+                          {project.rootPath}
+                        </span>
+                        <ProjectGitSummary
+                          projectId={project.id}
+                          suspended={suspended || project.availability.status === "unavailable"}
+                          epoch={epoch}
+                          readBoundary={props.readBoundary}
+                        />
+                        <span
+                          className="mt-1 block text-[11px] text-muted"
+                          title={projectTimestamp(project)}
+                        >
+                          {relativeProjectTime(project.lastOpenedAtMs, date.getTime())}
+                        </span>
+                        {project.availability.status === "unavailable" && (
+                          <span className="mt-2 block text-sm">
+                            Unavailable · {REASONS[project.availability.reason]}
+                          </span>
+                        )}
+                      </span>
+                    </Link>
+                  </li>
+                ),
+              )}
+            </ul>
+          </section>
+          {props.calendarSection}
+        </div>
       </div>
     </div>
   );

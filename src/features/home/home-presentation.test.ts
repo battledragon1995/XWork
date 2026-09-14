@@ -6,6 +6,7 @@ import {
   orderedSessions,
   projectTimestamp,
   recentProjects,
+  relativeProjectTime,
   STATUS_LABELS,
   sessionCounts,
 } from "./home-presentation";
@@ -28,6 +29,17 @@ function session(id: string, status: SessionStatusDto, processes = 0): SessionSu
 }
 // Cover immutable ordering and honest timestamp/status projections.
 describe("Home presentation", () => {
+  /** Relative times remain readable at minute/day boundaries and tolerate clock skew. */
+  it.each([
+    [0, "now"],
+    [59, "59m ago"],
+    [60, "1h ago"],
+    [1440, "yesterday"],
+    [2880, "2d ago"],
+    [-5, "now"],
+  ])("formats %i elapsed minutes as %s", (minutes, expected) => {
+    expect(relativeProjectTime(0, Number(minutes) * 60_000)).toBe(expected);
+  });
   // Recent does not manufacture rows for small lists.
   it.each([0, 1])("retains %i recent rows", (count) => {
     const rows = Array.from({ length: count }, (_, index) => project(`${index}`));

@@ -53,6 +53,16 @@ export function sessionCounts(sessions: SessionSummaryDto[]) {
 export function projectTimestamp(project: ProjectDto) {
   return `${project.addedAtMs === project.lastOpenedAtMs ? "Added" : "Opened"} ${new Date(project.lastOpenedAtMs).toLocaleString("en-GB")}`;
 }
+/** Format recency against the dashboard clock, retaining the absolute timestamp as a tooltip. */
+export function relativeProjectTime(timestamp: number, now: number): string {
+  const minutes = Math.max(0, Math.floor((now - timestamp) / 60_000));
+  if (minutes < 1) return "now";
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return days === 1 ? "yesterday" : `${days}d ago`;
+}
 /** Format the local calendar day in the initial English UI language. */
 export function homeDate(date: Date) {
   return `${date.toLocaleDateString("en-GB", { weekday: "long" })}, ${date.toLocaleDateString("en-GB", { day: "numeric", month: "long" })}`;

@@ -8,6 +8,7 @@ import type { ProjectChangedEventDto, ProjectDto } from "@/bindings/projects/pro
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { IpcCallError } from "@/lib/ipc/ipc-error";
 import { addProject, listProjects, onProjectsChanged } from "@/lib/ipc/projects";
+import { homeDate } from "./home-presentation";
 import { HomeRoute } from "./home-route";
 
 // Replace the shared Projects adapter so the route is exercised without a database or picker.
@@ -120,7 +121,9 @@ describe("HomeRoute branches", () => {
 
     renderRoute();
 
-    expect(await screen.findByRole("heading", { level: 1, name: "Home" })).toBeInTheDocument();
+    expect(
+      await screen.findByRole("heading", { level: 1, name: homeDate(new Date()) }),
+    ).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Recent projects" })).toBeInTheDocument();
   });
 
@@ -175,7 +178,9 @@ describe("HomeRoute retry", () => {
       pending.resolve([PROJECT]);
     });
 
-    expect(screen.getByRole("heading", { level: 1, name: "Home" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { level: 1, name: homeDate(new Date()) }),
+    ).toBeInTheDocument();
   });
 
   // Verify the lock is released when a retry fails again, so the user can try once more.
@@ -202,7 +207,9 @@ describe("HomeRoute refresh", () => {
     listProjectsMock.mockResolvedValue([PROJECT]);
     await emitProjectsChanged();
 
-    expect(screen.getByRole("heading", { level: 1, name: "Home" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { level: 1, name: homeDate(new Date()) }),
+    ).toBeInTheDocument();
   });
 
   // Verify removing the last project brings the first-run screen back, with no onboarding
@@ -210,7 +217,7 @@ describe("HomeRoute refresh", () => {
   it("switches from Home back to Welcome when the last project disappears", async () => {
     listProjectsMock.mockResolvedValue([PROJECT]);
     renderRoute();
-    await screen.findByRole("heading", { level: 1, name: "Home" });
+    await screen.findByRole("heading", { level: 1, name: homeDate(new Date()) });
 
     listProjectsMock.mockResolvedValue([]);
     await emitProjectsChanged();

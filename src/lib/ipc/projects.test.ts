@@ -14,6 +14,7 @@ import {
   addProject,
   getProject,
   getProjectGitStatus,
+  getProjectGitSummary,
   getRemoveProjectImpact,
   listProjects,
   locateProjectFolder,
@@ -78,6 +79,14 @@ describe("listProjects", () => {
 });
 
 describe("project overview reads", () => {
+  /** Reuse the registered compact summary command with the generated DTO. */
+  it("reads a compact Git summary without detailed file entries", async () => {
+    invokeMock.mockResolvedValue(GIT_STATUS.summary);
+    await expect(getProjectGitSummary("3f2a")).resolves.toEqual(GIT_STATUS.summary);
+    expect(invokeMock).toHaveBeenCalledExactlyOnceWith("get_project_git_summary", {
+      projectId: "3f2a",
+    });
+  });
   // Verify the explicit open uses the mutating read command and preserves its typed DTO.
   it("calls open_project with the project id", async () => {
     invokeMock.mockResolvedValue(PROJECT);

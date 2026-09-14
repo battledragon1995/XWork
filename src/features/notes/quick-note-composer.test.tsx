@@ -1,14 +1,15 @@
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { MemoryRouter } from "react-router";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { NoteDto } from "@/bindings/notes";
 import type { ProjectDto } from "@/bindings/projects/projects";
+import { IpcCallError } from "@/lib/ipc/ipc-error";
 import * as ipc from "@/lib/ipc/notes";
 import * as projects from "@/lib/ipc/projects";
-import { IpcCallError } from "@/lib/ipc/ipc-error";
 import type { NotesOwner } from "./notes-provider";
-import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { MemoryRouter } from "react-router";
+import { NotesTestHost, note, noteMocks } from "./notes-test-fixture";
 import { QuickNoteComposer } from "./quick-note-composer";
-import { note, noteMocks, NotesTestHost } from "./notes-test-fixture";
+
 /** Isolate persistence. */
 vi.mock("@/lib/ipc/notes");
 /** Isolate project reads. */
@@ -33,14 +34,14 @@ function mount() {
     </MemoryRouter>,
   );
 }
-/** Expose the documented accessible capture controls. */
-it("renders title, Markdown, project, Save and Cancel", () => {
+/** Keep capture controls labelled without offering an empty draft discard action. */
+it("renders accessible fields and Save without an empty Cancel action", () => {
   mount();
   expect(screen.getByLabelText("Title (optional)")).toBeInTheDocument();
   expect(screen.getByLabelText("Markdown")).toBeInTheDocument();
   expect(screen.getByLabelText("Project")).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Save" })).toBeEnabled();
-  expect(screen.getByRole("button", { name: "Cancel" })).toBeDisabled();
+  expect(screen.queryByRole("button", { name: "Cancel" })).toBeNull();
 });
 /** Verbatim input becomes exactly one acknowledged create and an explicit navigation link. */
 it("saves raw Markdown once, clears fields and opens the acknowledged id", async () => {
