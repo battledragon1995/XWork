@@ -1,19 +1,19 @@
 import { useNotesDataBoundary } from "@/features/notes";
-import * as dataIpc from "@/lib/ipc/data-management";
-import { onQuitRequested, requestQuit, cancelQuit } from "@/lib/ipc/app-lifecycle";
-import { getSettings } from "@/lib/ipc/settings";
-import { createSettingsSnapshot } from "@/features/settings/settings-test-fixture";
 import { resetSettingsStore } from "@/features/settings/settings-store";
+import { createSettingsSnapshot } from "@/features/settings/settings-test-fixture";
+import { cancelQuit, onQuitRequested, requestQuit } from "@/lib/ipc/app-lifecycle";
+import * as dataIpc from "@/lib/ipc/data-management";
+import { getSettings } from "@/lib/ipc/settings";
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { RouterProvider } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { useFileHandleRegistry } from "@/features/files";
 import { getKeyboardShortcuts } from "@/lib/ipc/keyboard-shortcuts";
 import * as notifications from "@/lib/ipc/notifications";
 import { searchUnified } from "@/lib/ipc/search";
-import { useFileHandleRegistry } from "@/features/files";
 import { AppProviders } from "./app-providers";
 import { createAppRouter } from "./app-router";
 import { resetQuitStore, useQuitStore } from "./quit-store";
@@ -190,14 +190,20 @@ describe("AppShell", () => {
 
     const banner = screen.getByRole("banner");
     const navigation = screen.getByRole("navigation");
-    expect(await screen.findByRole("heading", { level: 1, name: "Home" })).toBeInTheDocument();
+    const homeHeading = await screen.findByRole("heading", {
+      level: 1,
+      name: /^(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday),/,
+    });
+    expect(homeHeading).toBeInTheDocument();
 
     await user.click(screen.getByRole("link", { name: "Calendar" }));
 
     expect(screen.getByRole("banner")).toBe(banner);
     expect(screen.getByRole("navigation")).toBe(navigation);
-    expect(screen.getByRole("heading", { level: 1, name: "Calendar" })).toBeInTheDocument();
-    expect(screen.queryByRole("heading", { level: 1, name: "Home" })).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { level: 1, name: /^[A-Z][a-z]+ \d{4}$/ }),
+    ).toBeInTheDocument();
+    expect(homeHeading).not.toBeInTheDocument();
   });
 
   // Verify Tab walks the shell in the documented order and ends on the resize separator,

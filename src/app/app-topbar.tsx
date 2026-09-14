@@ -40,7 +40,10 @@ function Breadcrumb() {
   // owns the session snapshot's lifetime, so the breadcrumb only follows it.
   useProjectsStore((state) => state.projects);
   useSessionsStore((state) => state.sessionsByProject);
-  const crumbs = useRouteCrumbs();
+  const routeCrumbs = useRouteCrumbs();
+  const location = useLocation();
+  const month = useShellStore((state) => state.calendarMonthLabel);
+  const crumbs = location.pathname === "/calendar" && month ? [...routeCrumbs, month] : routeCrumbs;
 
   return (
     <ol

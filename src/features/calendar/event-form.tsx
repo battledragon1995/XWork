@@ -1,13 +1,15 @@
+import { Bell, Plus, X } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 import type { EventRecurrenceDto, EventRecurrenceEndDto } from "@/bindings/calendar";
 import type { ProjectDto } from "@/bindings/projects/projects";
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
 import { listProjects, onProjectsChanged } from "@/lib/ipc/projects";
 import {
-  startWeekday,
-  WEEKDAYS,
   type EventFieldErrors,
   type EventFormDraft,
+  startWeekday,
+  WEEKDAYS,
 } from "./event-form-state";
 
 interface Props {
@@ -40,6 +42,7 @@ export function EventForm({
   const [projects, setProjects] = useState<ProjectDto[]>([]);
   const [projectStatus, setProjectStatus] = useState<"loading" | "ready" | "error">("loading");
   const [retry, setRetry] = useState(0);
+  const [customReminders, setCustomReminders] = useState<Set<number>>(new Set());
   useEffect(
     /** Load optional project metadata without replacing the selected value. */ () => {
       void retry;
@@ -115,12 +118,13 @@ export function EventForm({
     key: "title" | "startDate" | "endDate" | "startTime" | "endTime" | "timeZoneId",
     label: string,
     type = "text",
+    hideLabel = false,
   ) {
     return (
-      <label className="grid gap-1 text-sm" htmlFor={`${id}-${key}`}>
-        {label}
+      <label className="grid min-w-0 gap-1.5 text-xs" htmlFor={`${id}-${key}`}>
+        <span className={hideLabel ? "sr-only" : undefined}>{label}</span>
         <input
-          className="rounded border p-2"
+          className={`h-8 min-w-0 w-full rounded-md border border-hairline bg-transparent outline-none focus-visible:ring-2 focus-visible:ring-ring ${type === "date" ? "px-1 text-[11px]" : type === "time" ? "px-2 text-[11px]" : "px-2"}`}
           id={`${id}-${key}`}
           name={key}
           aria-label={label}
@@ -147,7 +151,7 @@ export function EventForm({
       ref={form}
       noValidate
       aria-busy={saving}
-      className="space-y-4"
+      className="flex min-h-0 flex-1 flex-col"
       onCompositionStart={
         /** Prevent IME confirmation from submitting. */ () => {
           composing.current = true;
@@ -174,13 +178,54 @@ export function EventForm({
         }
       }
     >
-      <fieldset disabled={disabled} className="space-y-4">
+      <fieldset
+        disabled={disabled}
+        className="min-h-0 min-w-0 flex-1 space-y-4 overflow-y-auto px-6 py-5 text-xs [&_select]:min-w-0 [&_select]:rounded-md [&_select]:border [&_select]:border-hairline [&_select]:bg-transparent [&_select]:px-2 [&_select]:py-1.5 [&_input[type=checkbox]]:accent-ink [&_input[type=number]]:rounded-md [&_input[type=number]]:border [&_input[type=number]]:border-hairline [&_input[type=number]]:bg-transparent [&_input[type=number]]:p-1.5"
+      >
         <legend className="sr-only">Event definition</legend>
         {input("title", "Title")}
+        <label htmlFor={`${id}-all-day`} className="flex items-center justify-between">
+          All day
+          <Switch
+            id={`${id}-all-day`}
+            aria-label="All day"
+            checked={draft.allDay}
+            disabled={disabled}
+            className="data-[state=checked]:bg-ink"
+            onCheckedChange={
+              /** Retain cached timed values across all-day changes. */ (checked) =>
+                change("allDay", checked)
+            }
+          />
+        </label>
+        <div className="grid grid-cols-2 gap-3">
+          <div
+            className={draft.allDay ? "" : "grid grid-cols-[minmax(0,1fr)_102px] items-end gap-1.5"}
+          >
+            {input("startDate", "Starts", "date")}
+            {!draft.allDay && input("startTime", "Start time", "time", true)}
+          </div>
+          <div
+            className={draft.allDay ? "" : "grid grid-cols-[minmax(0,1fr)_102px] items-end gap-1.5"}
+          >
+            {input("endDate", draft.allDay ? "Last day" : "Ends", "date")}
+            {!draft.allDay && input("endTime", "End time", "time", true)}
+          </div>
+        </div>
+        <details open={errors.timeZoneId ? true : undefined} className="text-xs text-muted">
+          <summary className="cursor-pointer">Time zone: {draft.timeZoneId}</summary>
+          <div className="mt-2 space-y-1">
+            {input("timeZoneId", "Time zone")}
+            <p>
+              Changing the time zone keeps these wall times. Daylight saving time is checked when
+              saving.
+            </p>
+          </div>
+        </details>
         <label className="grid gap-1" htmlFor={`${id}-description`}>
           Description
           <textarea
-            className="rounded border p-2"
+            className="min-h-16 rounded-md border border-hairline bg-transparent p-2 outline-none focus-visible:ring-2 focus-visible:ring-ring"
             id={`${id}-description`}
             aria-label="Description"
             value={draft.description}
@@ -240,67 +285,49 @@ export function EventForm({
             </Button>
           </div>
         )}
-        <label className="flex gap-2">
-          <input
-            type="checkbox"
-            checked={draft.allDay}
-            onChange={
-              /** Retain date and cached timed values when toggling branches. */ (event) =>
-                change("allDay", event.target.checked)
-            }
-          />
-          All day
-        </label>
-        <div className="grid grid-cols-2 gap-3">
-          {input("startDate", "Starts", "date")}
-          {input("endDate", draft.allDay ? "Last day" : "Ends", "date")}
-          {!draft.allDay && (
-            <>
-              {input("startTime", "Start time", "time")}
-              {input("endTime", "End time", "time")}
-            </>
-          )}
-        </div>
-        {input("timeZoneId", "Time zone")}
-        <p className="text-xs text-muted">
-          Changing the time zone keeps these wall times. Daylight saving time is checked when
-          saving.
-        </p>
-        <fieldset className="space-y-2">
-          <legend>Repeat</legend>
-          <select
-            aria-label="Repeat"
-            aria-invalid={!!errors.recurrence}
-            aria-describedby={errors.recurrence ? `${id}-recurrence-error` : undefined}
-            value={recurrence.kind}
-            onChange={
-              /** Initialize only the fields required by the selected recurrence branch. */ (
-                event,
-              ) => {
-                const kind = event.target.value as EventRecurrenceDto["kind"];
-                change(
-                  "recurrence",
-                  kind === "none"
-                    ? { kind }
-                    : kind === "weekly"
-                      ? { kind, weekdays: [startWeekday(draft.startDate)], end: { kind: "never" } }
-                      : { kind, end: { kind: "never" } },
-                );
+        <fieldset className="grid grid-cols-2 items-start gap-3">
+          <legend className="sr-only">Recurrence</legend>
+          <label className="grid gap-1.5">
+            Repeat
+            <select
+              aria-label="Repeat"
+              className="w-full"
+              aria-invalid={!!errors.recurrence}
+              aria-describedby={errors.recurrence ? `${id}-recurrence-error` : undefined}
+              value={recurrence.kind}
+              onChange={
+                /** Initialize only the fields required by the selected recurrence branch. */ (
+                  event,
+                ) => {
+                  const kind = event.target.value as EventRecurrenceDto["kind"];
+                  change(
+                    "recurrence",
+                    kind === "none"
+                      ? { kind }
+                      : kind === "weekly"
+                        ? {
+                            kind,
+                            weekdays: [startWeekday(draft.startDate)],
+                            end: { kind: "never" },
+                          }
+                        : { kind, end: { kind: "never" } },
+                  );
+                }
               }
-            }
-          >
-            <option value="none">None</option>
-            <option value="daily">Daily</option>
-            <option value="weekly">Weekly</option>
-            <option value="monthly">Monthly</option>
-            <option value="yearly">Yearly</option>
-          </select>
+            >
+              <option value="none">None</option>
+              <option value="daily">Daily</option>
+              <option value="weekly">Weekly</option>
+              <option value="monthly">Monthly</option>
+              <option value="yearly">Yearly</option>
+            </select>
+          </label>
           {recurrence.kind === "weekly" && (
-            <fieldset className="flex flex-wrap gap-2">
+            <fieldset className="order-3 col-span-2 flex flex-wrap gap-2">
               <legend>Weekdays</legend>
               {WEEKDAYS.map(
                 /** Render each selectable Gregorian weekday. */ (weekday) => (
-                  <label key={weekday}>
+                  <label key={weekday} className="inline-flex items-center gap-1">
                     <input
                       type="checkbox"
                       checked={recurrence.weekdays.includes(weekday)}
@@ -323,9 +350,9 @@ export function EventForm({
             </fieldset>
           )}
           {recurrence.kind !== "none" && (
-            <>
-              <label>
-                Repeat ends{" "}
+            <div className="space-y-2">
+              <label className="grid gap-1.5">
+                Repeat ends
                 <select
                   value={recurrence.end.kind}
                   onChange={
@@ -345,7 +372,7 @@ export function EventForm({
                 </select>
               </label>
               {recurrence.end.kind === "on_date" && (
-                <label>
+                <label className="grid gap-1.5">
                   Repeat end date
                   <input
                     type="date"
@@ -358,12 +385,13 @@ export function EventForm({
                 </label>
               )}
               {recurrence.end.kind === "after_count" && (
-                <label>
+                <label className="grid gap-1.5">
                   Occurrence count
                   <input
                     type="number"
                     min={1}
                     max={10000}
+                    className="w-28"
                     value={Number.isNaN(recurrence.end.count) ? "" : recurrence.end.count}
                     onChange={
                       /** Preserve empty numeric input as invalid until corrected. */ (event) =>
@@ -375,11 +403,15 @@ export function EventForm({
                   />
                 </label>
               )}
-            </>
+            </div>
           )}
-          {errors.recurrence && <p id={`${id}-recurrence-error`}>{errors.recurrence}</p>}
+          {errors.recurrence && (
+            <p className="col-span-2" id={`${id}-recurrence-error`}>
+              {errors.recurrence}
+            </p>
+          )}
           {(recurrence.kind === "monthly" || recurrence.kind === "yearly") && (
-            <p className="text-xs">
+            <p className="col-span-2 text-xs">
               Dates that do not exist are skipped. Count includes only valid occurrences.
             </p>
           )}
@@ -393,15 +425,31 @@ export function EventForm({
               index,
             ) => (
               // biome-ignore lint/suspicious/noArrayIndexKey: Controlled positional rows have no local state or persisted identity.
-              <div key={index} className="flex flex-wrap gap-2">
-                <label>
-                  Reminder {index + 1} preset
+              <div key={index} className="flex items-center gap-2">
+                <label className="flex min-w-0 flex-1 items-center gap-2 rounded-md border border-hairline px-2">
+                  <Bell aria-hidden="true" className="size-3.5 shrink-0 text-muted" />
+                  <span className="sr-only">Reminder {index + 1} preset</span>
                   <select
+                    className="w-full !border-0 !px-0"
                     value={
-                      ["0", "5", "10", "30", "60", "1440"].includes(minutes) ? minutes : "custom"
+                      !customReminders.has(index) &&
+                      ["0", "5", "10", "30", "60", "1440"].includes(minutes)
+                        ? minutes
+                        : "custom"
                     }
                     onChange={
                       /** Apply a preset or leave the custom value editable. */ (event) => {
+                        const custom = event.target.value === "custom";
+                        setCustomReminders(
+                          /** Keep custom editing stable even when a typed value matches a preset. */ (
+                            previous,
+                          ) => {
+                            const next = new Set(previous);
+                            if (custom) next.add(index);
+                            else next.delete(index);
+                            return next;
+                          },
+                        );
                         if (event.target.value !== "custom")
                           change(
                             "reminderMinutes",
@@ -414,51 +462,68 @@ export function EventForm({
                     }
                   >
                     <option value="0">At start</option>
-                    <option value="5">5 minutes</option>
-                    <option value="10">10 minutes</option>
-                    <option value="30">30 minutes</option>
-                    <option value="60">1 hour</option>
-                    <option value="1440">1 day</option>
+                    <option value="5">5 minutes before</option>
+                    <option value="10">10 minutes before</option>
+                    <option value="30">30 minutes before</option>
+                    <option value="60">1 hour before</option>
+                    <option value="1440">1 day before</option>
                     <option value="custom">Custom</option>
                   </select>
                 </label>
-                <label>
-                  Reminder {index + 1} minutes
-                  <input
-                    className="w-28 rounded border p-1"
-                    type="number"
-                    min={0}
-                    max={525600}
-                    value={minutes}
-                    aria-invalid={!!errors.reminderMinutes}
-                    aria-describedby={errors.reminderMinutes ? `${id}-reminders-error` : undefined}
-                    onChange={
-                      /** Preserve raw custom minute input. */ (event) =>
-                        change(
-                          "reminderMinutes",
-                          draft.reminderMinutes.map(
-                            /** Replace this offset only. */ (value, row) =>
-                              row === index ? event.target.value : value,
-                          ),
-                        )
-                    }
-                  />
-                </label>
+                {(customReminders.has(index) ||
+                  !["0", "5", "10", "30", "60", "1440"].includes(minutes)) && (
+                  <label className="flex shrink-0 items-center gap-1 text-xs">
+                    <span className="sr-only">Reminder {index + 1} minutes</span>
+                    <input
+                      className="w-16 rounded border p-1"
+                      type="number"
+                      aria-label={`Reminder ${index + 1} minutes`}
+                      min={0}
+                      max={525600}
+                      value={minutes}
+                      aria-invalid={!!errors.reminderMinutes}
+                      aria-describedby={
+                        errors.reminderMinutes ? `${id}-reminders-error` : undefined
+                      }
+                      onChange={
+                        /** Preserve raw custom minute input. */ (event) =>
+                          change(
+                            "reminderMinutes",
+                            draft.reminderMinutes.map(
+                              /** Replace this offset only. */ (value, row) =>
+                                row === index ? event.target.value : value,
+                            ),
+                          )
+                      }
+                    />
+                    min
+                  </label>
+                )}
                 <Button
                   type="button"
-                  variant="outline"
+                  variant="ghost"
+                  size="icon-sm"
                   aria-label={`Remove reminder ${index + 1}`}
                   onClick={
-                    /** Remove one definition without delivery side effects. */ () =>
+                    /** Remove one definition and keep custom row modes aligned. */ () => {
+                      setCustomReminders(
+                        /** Shift positional UI state after removal. */ (previous) =>
+                          new Set(
+                            [...previous]
+                              .filter((row) => row !== index)
+                              .map((row) => (row > index ? row - 1 : row)),
+                          ),
+                      );
                       change(
                         "reminderMinutes",
                         draft.reminderMinutes.filter(
                           /** Keep other temporary rows. */ (_, row) => row !== index,
                         ),
-                      )
+                      );
+                    }
                   }
                 >
-                  Remove
+                  <X aria-hidden="true" />
                 </Button>
               </div>
             ),
@@ -466,22 +531,25 @@ export function EventForm({
           {errors.reminderMinutes && <p id={`${id}-reminders-error`}>{errors.reminderMinutes}</p>}
           <Button
             type="button"
-            variant="outline"
+            variant="ghost"
+            size="sm"
+            className="px-0 text-brand"
             disabled={draft.reminderMinutes.length >= 16}
             onClick={
               /** Add an editable offset for explicit validation. */ () =>
                 change("reminderMinutes", [...draft.reminderMinutes, "10"])
             }
           >
+            <Plus aria-hidden="true" />
             Add reminder
           </Button>
         </fieldset>
+        <p className="text-[11px] text-muted">
+          Unsaved event changes are discarded when quitting or replacing app data.
+        </p>
+        {saving && <p role="status">Saving event…</p>}
       </fieldset>
-      <p className="text-xs text-muted">
-        Unsaved event changes are discarded when quitting or replacing app data.
-      </p>
-      {saving && <p role="status">Saving event…</p>}
-      <div className="flex justify-end gap-2">
+      <div className="flex shrink-0 justify-end gap-2 border-t border-hairline px-6 py-4">
         {onDelete && (
           <Button
             type="button"

@@ -9,6 +9,7 @@ vi.mock("@/lib/ipc/notes", () => ({
     counts: { active: 0, archived: 0, trash: 0 },
   })),
 }));
+
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
@@ -691,7 +692,7 @@ describe("AppTopbar session breadcrumb", () => {
     ["/", ["Home"]],
     ["/projects", ["Projects"]],
     ["/notes", ["Notes"]],
-    ["/calendar", ["Calendar"]],
+    ["/calendar?date=2026-09-09", ["Calendar", "September 2026"]],
     ["/settings/general", ["Settings", "General"]],
   ])("keeps the crumbs of %s unchanged", async (path, expected) => {
     renderShellAt(path);

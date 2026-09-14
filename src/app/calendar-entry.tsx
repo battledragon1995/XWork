@@ -1,8 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
-import { CalendarRoute, EventCreateDialog, type CalendarBoundary } from "@/features/calendar";
+import { type CalendarBoundary, CalendarRoute, EventCreateDialog } from "@/features/calendar";
 import { useDataManagement } from "@/features/settings/data-management-provider";
 import { useQuitStore } from "./quit-store";
+import { useShellStore } from "./shell-store";
+
+/** Forward Calendar's visible month into temporary shell chrome. */
+function publishMonthLabel(calendarMonthLabel: string | null) {
+  useShellStore.setState({ calendarMonthLabel });
+}
 
 /** Compose rendered and synchronous admission for Calendar reads and navigation. */
 export function useCalendarBoundary() {
@@ -56,6 +62,7 @@ export function CalendarEntry() {
   return (
     <>
       <CalendarRoute
+        onMonthLabelChange={publishMonthLabel}
         key={refresh}
         boundary={boundary}
         readBoundary={readBoundary}

@@ -4,12 +4,14 @@ import { act, cleanup, render, screen, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { createMemoryRouter, RouterProvider } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
 /** Keep all Calendar reads isolated while exercising the real feature route. */
 vi.mock("@/lib/ipc/calendar", () => ({
   listCalendarOccurrences: vi.fn(async () => ({ revision: "0", items: [] })),
   getCalendarEvent: vi.fn(),
   onCalendarChanged: vi.fn(async () => () => {}),
 }));
+
 import type { ProjectDto } from "@/bindings/projects/projects";
 import { resetProjectsStore } from "@/features/projects/projects-store";
 import { resetSessionsStore } from "@/features/sessions/sessions-store";
@@ -180,7 +182,9 @@ describe("createAppRouter", () => {
   /** Calendar now renders its real read owner within the shell. */
   it("renders the real Calendar route", async () => {
     renderAt("/calendar");
-    expect(await screen.findByRole("heading", { level: 1, name: "Calendar" })).toBeVisible();
+    const heading = await screen.findByRole("heading", { level: 1 });
+    expect(heading).toHaveTextContent(/\w+ \d{4}/);
+    expect(readBreadcrumb()).toEqual(["Calendar", heading.textContent]);
     expect(screen.queryByText("This area arrives with FE-021.")).toBeNull();
     expect(screen.getByRole("button", { name: "Today" })).toBeVisible();
   });
@@ -300,7 +304,7 @@ describe("createAppRouter", () => {
   it("renders the index route as HomeRoute", async () => {
     renderAt("/");
 
-    expect(await screen.findByRole("heading", { level: 1, name: "Home" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { level: 1 })).toHaveTextContent(/\d/);
     expect(screen.getByRole("heading", { name: "Recent projects" })).toBeInTheDocument();
   });
 
@@ -400,7 +404,7 @@ describe("createAppRouter", () => {
 
     await user.click(screen.getByRole("button", { name: "Go to Home" }));
 
-    expect(await screen.findByRole("heading", { level: 1, name: "Home" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { level: 1 })).toHaveTextContent(/\d/);
   });
 
   // Verify the shell keeps its landmarks exactly once around whichever child route matched.

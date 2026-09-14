@@ -1,16 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { CalendarEventDto } from "@/bindings/calendar";
-import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { createCalendarEvent } from "@/lib/ipc/calendar";
 import { eventFieldErrors, eventMutationCopy, eventNeedsReload } from "./calendar-error-copy";
 import { viewerTimeZone } from "./calendar-presentation";
 import { EventForm } from "./event-form";
 import {
+  type EventFieldErrors,
   eventInput,
   newEventDraft,
   validateEventDraft,
-  type EventFieldErrors,
 } from "./event-form-state";
 import type { CalendarBoundary } from "./use-calendar-query";
 
@@ -111,7 +111,7 @@ export function EventCreateDialog({
       <DialogContent
         ref={content}
         showCloseButton={!saving}
-        className="top-0 right-0 left-auto h-dvh max-h-dvh w-full max-w-full translate-x-0 translate-y-0 overflow-y-auto rounded-none sm:max-w-[560px]"
+        className="top-0 right-0 left-auto flex h-[calc(100dvh/var(--ui-scale))] w-full max-w-full translate-x-0 translate-y-0 flex-col gap-0 overflow-hidden rounded-none p-0 sm:max-w-[480px]"
         onOpenAutoFocus={
           /** Focus the title after the accessible dialog mounts. */ (event) => {
             event.preventDefault();
@@ -128,8 +128,10 @@ export function EventCreateDialog({
           }
         }
       >
-        <DialogTitle>New Event</DialogTitle>
-        <DialogDescription>Create a calendar event</DialogDescription>
+        <DialogTitle className="shrink-0 border-b border-hairline px-6 py-4 font-display text-[24px]">
+          New Event
+        </DialogTitle>
+        <DialogDescription className="sr-only">Create a calendar event</DialogDescription>
         {error != null && <p role="alert">{eventMutationCopy(error)}</p>}
         {discard ? (
           <div role="alertdialog" aria-label="Discard changes?" className="space-y-3">

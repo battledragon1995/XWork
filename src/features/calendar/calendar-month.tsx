@@ -1,5 +1,5 @@
 import type { CalendarOccurrenceDto } from "@/bindings/calendar";
-import { addDays, shiftMonth, monthGrid, occurrencesForDate } from "./calendar-presentation";
+import { addDays, monthGrid, occurrencesForDate, shiftMonth } from "./calendar-presentation";
 
 interface Props {
   month: string;
@@ -64,21 +64,21 @@ export function CalendarMonth({
   }
   return (
     <div className="min-w-0">
-      <div className="grid grid-cols-7 text-center text-xs text-muted">
+      <div className="grid grid-cols-7 border-x border-t border-hairline py-2 text-center text-[11px] text-muted uppercase">
         {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map(
           /** Label weekdays without extra focus stops. */ (day) => (
             <span key={day}>{day}</span>
           ),
         )}
       </div>
-      <div className="grid grid-cols-7 rounded-lg border border-hairline">
+      <div className="grid grid-cols-7 border-t border-l border-hairline">
         {days.map(
           /** Keep all occurrences reachable from their day agenda. */ (date) => {
             const events = occurrencesForDate(items, date, zone);
             return (
               <div
                 key={date}
-                className={`min-h-28 min-w-0 border border-hairline p-1 ${date.slice(0, 7) !== month.slice(0, 7) ? "bg-surface-soft text-muted" : ""}`}
+                className={`min-h-22 min-w-0 border-r border-b border-hairline p-1 ${date === selectedDate ? "bg-cream-strong" : date.slice(0, 7) !== month.slice(0, 7) ? "bg-surface-soft text-muted" : ""}`}
               >
                 <button
                   type="button"
@@ -90,7 +90,7 @@ export function CalendarMonth({
                   aria-current={date === today ? "date" : undefined}
                   onClick={/** Select the agenda date. */ () => onSelect(date)}
                   onKeyDown={/** Route date navigation keys. */ (event) => move(event, date)}
-                  className="rounded px-2 py-1 outline-none aria-pressed:bg-primary aria-pressed:text-primary-foreground focus-visible:ring-2 focus-visible:ring-ring"
+                  className="flex size-6 items-center justify-center rounded-full text-xs outline-none aria-[current=date]:bg-ink aria-[current=date]:text-canvas focus-visible:ring-2 focus-visible:ring-ring"
                 >
                   {Number(date.slice(8))}
                 </button>
@@ -127,6 +127,27 @@ export function CalendarMonth({
           },
         )}
       </div>
+      <section
+        className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-[11px] text-muted"
+        aria-label="Calendar legend"
+      >
+        <span className="flex items-center gap-1.5">
+          <span className="size-3 rounded-full bg-ink" />
+          Today
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="size-3 rounded-sm bg-cream-strong" />
+          Selected day / all-day event
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="size-1.5 rounded-full bg-ink" />
+          Linked to a project
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="size-3 rounded-sm bg-error/10" />
+          Missed reminder
+        </span>
+      </section>
     </div>
   );
 }

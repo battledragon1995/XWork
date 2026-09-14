@@ -142,7 +142,7 @@ describe("AppSidebar navigation", () => {
   it.each([
     ["Projects", "Projects"],
     ["Notes", "Notes"],
-    ["Calendar", "Calendar"],
+    ["Calendar", /^[A-Z][a-z]+ \d{4}$/],
     ["Settings", "General"],
   ])("navigates to the %s area", async (linkName, heading) => {
     const user = userEvent.setup();

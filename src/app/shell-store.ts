@@ -30,6 +30,7 @@ export interface ShellState {
   isSidebarResizing: boolean;
   isMaximized: boolean;
   windowControlFailure: WindowControlFailure | null;
+  calendarMonthLabel: string | null;
   setSidebarWidthPx(next: number): void;
   toggleSidebarCollapsed(): void;
   setSidebarResizing(next: boolean): void;
@@ -53,6 +54,7 @@ export const useShellStore = create<ShellState>((set) => ({
   isSidebarResizing: false,
   isMaximized: false,
   windowControlFailure: null,
+  calendarMonthLabel: null,
 
   // Publish a clamped sidebar width.
   setSidebarWidthPx(next) {
@@ -90,5 +92,6 @@ export function resetShellStore(): void {
     isSidebarResizing: false,
     isMaximized: false,
     windowControlFailure: null,
+    calendarMonthLabel: null,
   });
 }

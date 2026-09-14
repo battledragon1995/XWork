@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
 import type { CalendarEventDto, CalendarOccurrenceDto } from "@/bindings/calendar";
-import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { getCalendarEvent, onCalendarChanged, updateCalendarEvent } from "@/lib/ipc/calendar";
 import { getProject, onProjectsChanged } from "@/lib/ipc/projects";
+import { reminderErrorMessage } from "@/lib/ipc/reminder-error";
 import {
   calendarErrorCopy,
   calendarErrorKind,
@@ -17,20 +18,19 @@ import {
   occurrenceLabel,
   recurrenceSummary,
   reminderSummary,
+  reminderTime,
 } from "./calendar-presentation";
-import { EventForm } from "./event-form";
 import { EventDeleteDialog } from "./event-delete-dialog";
+import { EventForm } from "./event-form";
 import {
+  type EventFieldErrors,
+  type EventFormDraft,
   eventDraft,
   eventInput,
   validateEventDraft,
-  type EventFieldErrors,
-  type EventFormDraft,
 } from "./event-form-state";
 import type { CalendarBoundary } from "./use-calendar-query";
 import { useEventReminders } from "./use-event-reminders";
-import { reminderErrorMessage } from "@/lib/ipc/reminder-error";
-import { reminderTime } from "./calendar-presentation";
 
 interface Props {
   eventId: string;
@@ -348,7 +348,7 @@ export function EventDetailPanel({
         showCloseButton={!saving}
         className={
           mode === "edit"
-            ? "top-0 right-0 left-auto h-dvh max-h-dvh w-full max-w-full translate-x-0 translate-y-0 overflow-y-auto rounded-none sm:max-w-[560px]"
+            ? "top-0 right-0 left-auto flex h-[calc(100dvh/var(--ui-scale))] w-full max-w-full translate-x-0 translate-y-0 flex-col gap-0 overflow-hidden rounded-none p-0 sm:max-w-[480px]"
             : "max-h-[85vh] overflow-y-auto"
         }
         onCloseAutoFocus={
@@ -365,14 +365,20 @@ export function EventDetailPanel({
           }
         }
       >
-        <DialogTitle>
+        <DialogTitle
+          className={
+            mode === "edit"
+              ? "shrink-0 border-b border-hairline px-6 py-4 font-display text-[24px]"
+              : undefined
+          }
+        >
           {mode === "edit"
             ? "Edit Event"
             : mode === "delete"
               ? "Delete Event"
               : (event?.title ?? "Event details")}
         </DialogTitle>
-        <DialogDescription>
+        <DialogDescription className={mode === "edit" ? "sr-only" : undefined}>
           {mode === "view" ? "Calendar event details" : "Changes apply to the entire series"}
         </DialogDescription>
         {discard ? (

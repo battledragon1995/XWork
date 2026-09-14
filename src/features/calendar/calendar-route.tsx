@@ -1,7 +1,9 @@
+import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
 import type { CalendarOccurrenceDto } from "@/bindings/calendar";
 import type { ReminderTargetDto } from "@/bindings/reminders";
+import { Button } from "@/components/ui/button";
 import { getProject, listProjects, onProjectsChanged } from "@/lib/ipc/projects";
 import { CalendarAgenda } from "./calendar-agenda";
 import { calendarErrorCopy, calendarErrorKind } from "./calendar-error-copy";
@@ -25,6 +27,7 @@ export interface CalendarRouteProps {
   boundary?: CalendarBoundary;
   readBoundary?(): CalendarBoundary;
   onCreateEvent?(input: { date: string; projectId: string | null }): void;
+  onMonthLabelChange?(label: string | null): void;
 }
 export const IDLE_CALENDAR_BOUNDARY: CalendarBoundary = { suspended: false, epoch: 0 };
 /** Compose month, selected-day and Upcoming reads with one event detail owner. */
@@ -32,6 +35,7 @@ export function CalendarRoute({
   boundary = IDLE_CALENDAR_BOUNDARY,
   readBoundary,
   onCreateEvent,
+  onMonthLabelChange,
 }: CalendarRouteProps) {
   const [params, setParams] = useSearchParams();
   const [zone, setZone] = useState(viewerTimeZone);
@@ -45,6 +49,14 @@ export function CalendarRoute({
     dateIntent && isValidDate(dateIntent) ? dateIntent : today,
   );
   const [month, setMonth] = useState(selected);
+  useEffect(
+    /** Publish only the visible month to optional application chrome. */ () => {
+      onMonthLabelChange?.(formatCalendarMonth(month));
+      return /** Retire the label when this Calendar view leaves. */ () =>
+        onMonthLabelChange?.(null);
+    },
+    [month, onMonthLabelChange],
+  );
   const [panel, setPanel] = useState<"day" | "upcoming" | "missed">("day");
   const missed = useMissedReminders(boundary, readBoundary);
   const [occurrence, setOccurrence] = useState<CalendarOccurrenceDto | null>(null);
@@ -298,18 +310,62 @@ export function CalendarRoute({
   const issue = monthQuery.error ?? agendaQuery.error;
   return (
     <section
-      className="min-w-0 space-y-4 p-6"
+      className="@container/calendar min-w-0 space-y-4 p-6"
       aria-busy={monthQuery.loading || agendaQuery.loading}
     >
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 ref={heading} tabIndex={-1} className="text-2xl font-semibold outline-none">
-            Calendar
+        <div className="flex flex-wrap items-center gap-2">
+          <h1
+            ref={heading}
+            tabIndex={-1}
+            className="mr-2 font-display text-[28px] text-ink outline-none"
+          >
+            {formatCalendarMonth(month)}
           </h1>
-          <p className="text-xs text-muted">Time zone: {zone}</p>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            aria-label="Previous month"
+            title="Previous month"
+            disabled={boundary.suspended || month.slice(0, 7) === "1900-01"}
+            onClick={
+              /** Move within the supported year range. */ () => select(shiftMonth(month, -1))
+            }
+          >
+            <ChevronLeft aria-hidden="true" />
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            aria-label="Next month"
+            title="Next month"
+            disabled={boundary.suspended || month.slice(0, 7) === "9999-12"}
+            onClick={
+              /** Move within the supported year range. */ () => select(shiftMonth(month, 1))
+            }
+          >
+            <ChevronRight aria-hidden="true" />
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={boundary.suspended}
+            onClick={
+              /** Recover invalid scope and restore today's selected day. */ () => {
+                if (!admitted()) return;
+                if (invalidDate || project.error) setParams({});
+                select(today);
+              }
+            }
+          >
+            Today
+          </Button>
         </div>
         {onCreateEvent && (
-          <button
+          <Button
             type="button"
             disabled={boundary.suspended || !enabled}
             onClick={
@@ -318,56 +374,17 @@ export function CalendarRoute({
               }
             }
           >
+            <Plus aria-hidden="true" />
             New Event
-          </button>
+          </Button>
         )}
       </div>
       {(invalidDate || project.error) && (
         <div role="alert">
           {invalidDate ? "Invalid calendar date." : "This project is no longer available."}
-          <button
-            type="button"
-            onClick={
-              /** Clear an invalid URL scope and return to Today. */ () => {
-                if (admitted()) {
-                  setParams({});
-                  select(today);
-                }
-              }
-            }
-          >
-            Today
-          </button>
         </div>
       )}
-      <div className="flex flex-wrap items-center gap-3">
-        <button
-          type="button"
-          disabled={boundary.suspended || month.slice(0, 7) === "1900-01"}
-          onClick={
-            /** Move the selected month with date clamping. */ () => select(shiftMonth(month, -1))
-          }
-        >
-          Previous month
-        </button>
-        <h2 className="font-semibold">{formatCalendarMonth(month)}</h2>
-        <button
-          type="button"
-          disabled={boundary.suspended || month.slice(0, 7) === "9999-12"}
-          onClick={
-            /** Move forward within backend year bounds. */ () => select(shiftMonth(month, 1))
-          }
-        >
-          Next month
-        </button>
-        <button
-          type="button"
-          disabled={boundary.suspended}
-          onClick={/** Reset the visible date to today. */ () => select(today)}
-        >
-          Today
-        </button>
-      </div>
+      <p className="text-[11px] text-muted">Time zone: {zone}</p>
       {(monthQuery.loading || agendaQuery.loading) && <p role="status">Loading calendar…</p>}
       {(monthQuery.refreshing || agendaQuery.refreshing) && (
         <p role="status">Refreshing calendar…</p>
@@ -399,7 +416,7 @@ export function CalendarRoute({
           )}
         </div>
       )}
-      <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
+      <div className="grid items-start gap-5 @min-[720px]/calendar:grid-cols-[minmax(0,1fr)_260px]">
         <div>
           <CalendarMonth
             month={month}
@@ -415,8 +432,8 @@ export function CalendarRoute({
             <p className="text-sm text-muted">No events this month</p>
           )}
         </div>
-        <aside className="min-w-0 space-y-3">
-          <div className="flex gap-2">
+        <aside className="min-w-0 space-y-4 @min-[720px]/calendar:border-l @min-[720px]/calendar:border-hairline @min-[720px]/calendar:pl-5">
+          <div className="flex w-fit rounded-md bg-surface-card p-0.5 [&>button]:rounded-sm [&>button]:px-2 [&>button]:py-1.5 [&>button]:text-xs [&>button]:outline-none [&>button]:focus-visible:ring-2 [&>button]:focus-visible:ring-ring [&>button[aria-pressed=true]]:bg-canvas [&>button[aria-pressed=true]]:text-ink [&>button[aria-pressed=true]]:shadow-sm">
             <button
               type="button"
               aria-pressed={panel === "day"}
@@ -458,7 +475,7 @@ export function CalendarRoute({
             />
           ) : (
             <>
-              <h2 className="font-semibold">
+              <h2 className="font-display text-[22px] text-ink">
                 {panel === "day" ? formatCalendarDate(selected) : "Next 14 days"}
               </h2>
               {agendaQuery.snapshot && (
@@ -474,8 +491,10 @@ export function CalendarRoute({
             </>
           )}{" "}
           {panel === "day" && onCreateEvent && (
-            <button
+            <Button
               type="button"
+              variant="outline"
+              size="sm"
               disabled={boundary.suspended || !enabled}
               onClick={
                 /** Preserve the selected date and validated project prefill. */ () => {
@@ -485,7 +504,7 @@ export function CalendarRoute({
               }
             >
               New event this day
-            </button>
+            </Button>
           )}
         </aside>
       </div>

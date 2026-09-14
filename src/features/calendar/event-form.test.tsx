@@ -1,9 +1,10 @@
-import { useState } from "react";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { useState } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { listProjects, onProjectsChanged } from "@/lib/ipc/projects";
 import { EventForm } from "./event-form";
 import { newEventDraft } from "./event-form-state";
+
 vi.mock(
   "@/lib/ipc/projects",
   /** Isolate picker metadata. */ () => ({ listProjects: vi.fn(), onProjectsChanged: vi.fn() }),
@@ -49,8 +50,14 @@ it("offers all fields, recurrence modes and multiple removable reminders", /** E
   expect(screen.getByLabelText("Occurrence count")).toHaveValue(1);
   fireEvent.click(screen.getByRole("button", { name: "Add reminder" }));
   fireEvent.change(screen.getByLabelText("Reminder 2 preset"), { target: { value: "60" } });
+  expect(screen.queryByLabelText("Reminder 2 minutes")).not.toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText("Reminder 2 preset"), { target: { value: "custom" } });
   expect(screen.getByLabelText("Reminder 2 minutes")).toHaveValue(60);
-  fireEvent.click(screen.getByRole("button", { name: "Remove reminder 2" }));
+  fireEvent.change(screen.getByLabelText("Reminder 2 minutes"), { target: { value: "5" } });
+  expect(screen.getByLabelText("Reminder 2 minutes")).toHaveValue(5);
+  expect(screen.getByLabelText("Reminder 2 preset")).toHaveValue("custom");
+  fireEvent.click(screen.getByRole("button", { name: "Remove reminder 1" }));
+  expect(screen.getByLabelText("Reminder 1 minutes")).toHaveValue(5);
   fireEvent.click(screen.getByRole("button", { name: "Remove reminder 1" }));
   expect(screen.getByText("No reminders")).toBeVisible();
 });
