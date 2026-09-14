@@ -1,8 +1,10 @@
+import { Folder, MoreHorizontal } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { EmptyNotesTrashImpactDto, NotesError } from "@/bindings/notes";
 import type { ProjectDto } from "@/bindings/projects/projects";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { IpcCallError } from "@/lib/ipc/ipc-error";
 import * as ipc from "@/lib/ipc/notes";
 import { listProjects } from "@/lib/ipc/projects";
@@ -58,10 +60,12 @@ export function NoteActions() {
   return (
     <div className="flex flex-wrap items-center gap-2 text-sm">
       {active && (
-        <label>
-          Project{" "}
+        <label className="flex h-7 max-w-40 items-center gap-1.5 rounded-md bg-surface-card px-2 text-xs">
+          <Folder aria-hidden="true" className="size-3 shrink-0" />
+          <span className="sr-only">Project</span>
           <select
             aria-label="Note project"
+            className="min-w-0 bg-transparent outline-none focus-visible:ring-2 focus-visible:ring-ring"
             disabled={disabled}
             value={draft.projectId ?? ""}
             onChange={
@@ -102,109 +106,123 @@ export function NoteActions() {
           Could not load projects. <Button onClick={owner.invalidate}>Refresh</Button>
         </span>
       )}
-      {base && active && (
-        <>
+      <Popover>
+        <PopoverTrigger asChild>
+          <Button size="icon-sm" variant="ghost" aria-label="Note actions" title="Note actions">
+            <MoreHorizontal aria-hidden="true" />
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent
+          align="end"
+          className="grid w-60 gap-1 p-1 [&>button]:justify-start [&>button]:border-0 [&>button]:shadow-none"
+        >
+          {base && active && (
+            <>
+              <Button
+                variant="outline"
+                disabled={disabled}
+                onClick={
+                  /** Toggle the pin against the latest revision. */ () => {
+                    void owner.mutate((current) =>
+                      ipc.setNotePinned({
+                        noteId: current.id,
+                        expectedRevision: current.revision,
+                        pinned: !current.isPinned,
+                      }),
+                    );
+                  }
+                }
+              >
+                {base.isPinned ? "Unpin" : "Pin"}
+              </Button>
+              <Button
+                variant="outline"
+                disabled={disabled}
+                onClick={
+                  /** Archive after saving admitted text. */ () => {
+                    void owner.mutate((current) =>
+                      ipc.archiveNote({ noteId: current.id, expectedRevision: current.revision }),
+                    );
+                  }
+                }
+              >
+                Archive
+              </Button>
+            </>
+          )}
+          {base && base.status !== "trash" && (
+            <Button
+              variant="outline"
+              disabled={disabled}
+              onClick={
+                /** Move the selected record into Trash. */ () => {
+                  void owner.mutate((current) =>
+                    ipc.moveNoteToTrash({ noteId: current.id, expectedRevision: current.revision }),
+                  );
+                }
+              }
+            >
+              Move to Trash
+            </Button>
+          )}
+          {base && base.status !== "active" && (
+            <Button
+              variant="outline"
+              disabled={disabled}
+              onClick={
+                /** Restore using the server-owned previous lifecycle. */ () => {
+                  void owner.mutate((current) =>
+                    (current.status === "trash"
+                      ? ipc.restoreNoteFromTrash
+                      : ipc.restoreArchivedNote)({
+                      noteId: current.id,
+                      expectedRevision: current.revision,
+                    }),
+                  );
+                }
+              }
+            >
+              Restore
+            </Button>
+          )}
+          {base?.status === "trash" && (
+            <Button
+              variant="destructive"
+              disabled={disabled}
+              onClick={
+                /** Delete precisely one explicitly chosen Trash record. */ () => {
+                  void owner.mutate(async (current) => {
+                    await ipc.deleteNotePermanently({
+                      noteId: current.id,
+                      expectedRevision: current.revision,
+                    });
+                    return null;
+                  });
+                }
+              }
+            >
+              Delete permanently
+            </Button>
+          )}
           <Button
             variant="outline"
-            disabled={disabled}
-            onClick={
-              /** Toggle the pin against the latest revision. */ () => {
-                void owner.mutate((current) =>
-                  ipc.setNotePinned({
-                    noteId: current.id,
-                    expectedRevision: current.revision,
-                    pinned: !current.isPinned,
-                  }),
-                );
-              }
-            }
+            onClick={/** Expose raw Markdown for native text selection. */ () => setCopy(!copy)}
           >
-            {base.isPinned ? "Unpin" : "Pin"}
+            Copy Markdown
           </Button>
-          <Button
-            variant="outline"
-            disabled={disabled}
-            onClick={
-              /** Archive after saving admitted text. */ () => {
-                void owner.mutate((current) =>
-                  ipc.archiveNote({ noteId: current.id, expectedRevision: current.revision }),
-                );
-              }
-            }
-          >
-            Archive
-          </Button>
-        </>
-      )}
-      {base && base.status !== "trash" && (
-        <Button
-          variant="outline"
-          disabled={disabled}
-          onClick={
-            /** Move the selected record into Trash. */ () => {
-              void owner.mutate((current) =>
-                ipc.moveNoteToTrash({ noteId: current.id, expectedRevision: current.revision }),
-              );
-            }
-          }
-        >
-          Move to Trash
-        </Button>
-      )}
-      {base && base.status !== "active" && (
-        <Button
-          variant="outline"
-          disabled={disabled}
-          onClick={
-            /** Restore using the server-owned previous lifecycle. */ () => {
-              void owner.mutate((current) =>
-                (current.status === "trash" ? ipc.restoreNoteFromTrash : ipc.restoreArchivedNote)({
-                  noteId: current.id,
-                  expectedRevision: current.revision,
-                }),
-              );
-            }
-          }
-        >
-          Restore
-        </Button>
-      )}
-      {base?.status === "trash" && (
-        <Button
-          variant="destructive"
-          disabled={disabled}
-          onClick={
-            /** Delete precisely one explicitly chosen Trash record. */ () => {
-              void owner.mutate(async (current) => {
-                await ipc.deleteNotePermanently({
-                  noteId: current.id,
-                  expectedRevision: current.revision,
-                });
-                return null;
-              });
-            }
-          }
-        >
-          Delete permanently
-        </Button>
-      )}
-      <Button
-        variant="outline"
-        onClick={/** Expose raw Markdown for native text selection. */ () => setCopy(!copy)}
-      >
-        Copy Markdown
-      </Button>
-      {copy && (
-        <label className="w-full">
-          Select and copy Markdown
-          <textarea
-            aria-label="Copy Markdown"
-            readOnly
-            value={draft.contentMarkdown}
-            className="block min-h-32 w-full border border-hairline p-3"
-          />
-        </label>
-      )}
+          {copy && (
+            <label className="w-full">
+              Select and copy Markdown
+              <textarea
+                aria-label="Copy Markdown"
+                readOnly
+                value={draft.contentMarkdown}
+                className="block min-h-32 w-full border border-hairline p-3 text-xs"
+              />
+            </label>
+          )}
+        </PopoverContent>
+      </Popover>
     </div>
   );
 }

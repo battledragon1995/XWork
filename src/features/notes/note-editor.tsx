@@ -54,28 +54,36 @@ export function NoteEditor() {
   return (
     <section
       aria-label="Note editor"
-      className="flex min-h-96 min-w-0 flex-1 flex-col bg-canvas p-5 text-body"
+      className="flex min-h-96 min-w-0 flex-1 flex-col overflow-auto bg-canvas text-body lg:min-h-0"
     >
-      <div className="mb-4 flex flex-wrap items-center gap-2">
-        <Button
-          variant="outline"
-          onClick={
-            /** Change presentation without destroying the view. */ () =>
-              owner.draft({ mode: "edit" })
-          }
-        >
-          Edit
-        </Button>
-        <Button
-          variant="outline"
-          onClick={
-            /** Keep the editor mounted while showing preview. */ () =>
-              owner.draft({ mode: "preview" })
-          }
-        >
-          Preview
-        </Button>
-        <span role="status" className="text-sm text-muted">
+      <div className="mb-5 flex shrink-0 flex-wrap items-center gap-2 border-b border-hairline px-5 py-3">
+        <div className="flex rounded-md bg-surface-card p-0.5">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-6 px-2 aria-pressed:bg-canvas aria-pressed:shadow-sm"
+            aria-pressed={draft.mode === "edit"}
+            onClick={
+              /** Change presentation without destroying the view. */ () =>
+                owner.draft({ mode: "edit" })
+            }
+          >
+            Edit
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-6 px-2 aria-pressed:bg-canvas aria-pressed:shadow-sm"
+            aria-pressed={draft.mode === "preview"}
+            onClick={
+              /** Keep the editor mounted while showing preview. */ () =>
+                owner.draft({ mode: "preview" })
+            }
+          >
+            Preview
+          </Button>
+        </div>
+        <span role="status" className="text-xs text-muted">
           {draft.phase === "saved"
             ? "Saved just now"
             : draft.phase === "saving"
@@ -86,9 +94,12 @@ export function NoteEditor() {
                   ? "Not saved"
                   : "Draft"}
         </span>
+        <div className="ml-auto">
+          <NoteActions />
+        </div>
       </div>
       {readOnly && (
-        <p className="mb-3 rounded border border-hairline p-3">
+        <p className="mx-6 mb-3 rounded border border-hairline p-3">
           {draft.base?.status === "trash" ? "This note is in Trash." : "This note is archived."}{" "}
           Read-only.
         </p>
@@ -107,9 +118,8 @@ export function NoteEditor() {
           /** Admit the title into the retained draft. */ (event) =>
             owner.edit({ title: event.target.value })
         }
-        className="mb-4 w-full bg-transparent font-display text-3xl outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className="mx-6 mb-4 w-auto shrink-0 bg-transparent font-display text-3xl outline-none focus-visible:ring-2 focus-visible:ring-ring"
       />
-      <NoteActions />
       {draft.message && (
         <div role="alert" className="my-3 space-y-2">
           <p>{draft.message}</p>
@@ -166,13 +176,13 @@ export function NoteEditor() {
         </div>
       )}
       {!draft.base && !draft.contentMarkdown.trim() && (
-        <p className="text-sm text-muted">Add some content to save this note</p>
+        <p className="px-6 text-sm text-muted">Add some content to save this note</p>
       )}
       <div
         inert={disabled}
         hidden={draft.mode !== "edit"}
         ref={host}
-        className="min-h-64 flex-1 overflow-hidden"
+        className="min-h-64 flex-1 overflow-hidden px-6"
       />
       {draft.mode === "preview" && (
         <article
@@ -182,7 +192,7 @@ export function NoteEditor() {
               owner.previewScroll = event.currentTarget.scrollTop;
             }
           }
-          className="min-h-64 flex-1 overflow-auto p-4 [&_h1]:text-2xl [&_h2]:text-xl [&_pre]:overflow-auto [&_table]:border-collapse [&_td]:border [&_td]:p-2 [&_th]:border [&_th]:p-2"
+          className="min-h-64 flex-1 overflow-auto px-6 leading-relaxed [&_h1]:font-display [&_h1]:text-2xl [&_h2]:font-display [&_h2]:text-xl [&_p]:mb-3 [&_pre]:overflow-auto [&_table]:border-collapse [&_td]:border [&_td]:p-2 [&_th]:border [&_th]:p-2"
         >
           <MarkdownContent text={draft.contentMarkdown} />
         </article>
@@ -190,6 +200,8 @@ export function NoteEditor() {
       {!draft.base && (
         <Button
           variant="outline"
+          size="sm"
+          className="mx-6 my-3 self-start"
           disabled={disabled || draft.phase === "saving"}
           onClick={owner.discard}
         >

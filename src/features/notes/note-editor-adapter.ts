@@ -46,8 +46,8 @@ export function createNoteEditorState(
       }),
       EditorView.theme({
         "&": { height: "100%", backgroundColor: "transparent", color: "inherit" },
-        ".cm-scroller": { overflow: "auto", fontFamily: "inherit" },
-        ".cm-content": { padding: "16px" },
+        ".cm-scroller": { overflow: "auto", fontFamily: "inherit", lineHeight: "1.7" },
+        ".cm-content": { padding: "0" },
         "&.cm-focused": { outline: "none" },
       }),
     ],

@@ -1,9 +1,10 @@
-import * as ipc from "@/lib/ipc/notes";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import * as ipc from "@/lib/ipc/notes";
 import { NoteEditor } from "./note-editor";
-import { note, noteMocks, NotesTestHost } from "./notes-test-fixture";
 import type { NotesOwner } from "./notes-provider";
+import { NotesTestHost, note, noteMocks } from "./notes-test-fixture";
+
 /** Isolate all persistence and project reads. */
 vi.mock("@/lib/ipc/notes");
 /** Isolate project lookup and invalidation. */
@@ -56,6 +57,7 @@ it("renders archived raw text read-only with selectable copy recovery", async ()
   );
   await screen.findByText("This note is archived. Read-only.");
   expect(screen.getByLabelText("Note title")).toHaveAttribute("readonly");
+  fireEvent.click(screen.getByRole("button", { name: "Note actions" }));
   fireEvent.click(screen.getByRole("button", { name: "Copy Markdown" }));
   expect(screen.getByLabelText("Copy Markdown")).toHaveValue(note.contentMarkdown);
   expect(screen.queryByRole("button", { name: "Pin" })).toBeNull();

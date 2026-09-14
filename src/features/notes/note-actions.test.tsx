@@ -1,9 +1,10 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import * as ipc from "@/lib/ipc/notes";
 import { IpcCallError } from "@/lib/ipc/ipc-error";
+import * as ipc from "@/lib/ipc/notes";
 import { EmptyTrash, NoteActions } from "./note-actions";
-import { note, noteMocks, NotesTestHost } from "./notes-test-fixture";
+import { NotesTestHost, note, noteMocks } from "./notes-test-fixture";
+
 /** Isolate Notes commands. */
 vi.mock("@/lib/ipc/notes");
 /** Isolate project choices. */
@@ -24,6 +25,7 @@ it("restores Trash through its previous-lifecycle command", async () => {
       <NoteActions />
     </NotesTestHost>,
   );
+  fireEvent.click(await screen.findByRole("button", { name: "Note actions" }));
   fireEvent.click(await screen.findByRole("button", { name: "Restore" }));
   await waitFor(() =>
     expect(ipc.restoreNoteFromTrash).toHaveBeenCalledWith({ noteId: "n", expectedRevision: "17" }),
@@ -68,6 +70,7 @@ it("deletes one selected Trash record once", async () => {
       <NoteActions />
     </NotesTestHost>,
   );
+  fireEvent.click(await screen.findByRole("button", { name: "Note actions" }));
   const button = await screen.findByRole("button", { name: "Delete permanently" });
   fireEvent.click(button);
   fireEvent.click(button);

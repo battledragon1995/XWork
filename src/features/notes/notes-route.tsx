@@ -1,3 +1,4 @@
+import { Archive, Folder, Plus, RefreshCw, Search, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
 import type { NoteStatusDto, NoteSummaryDto, NoteTextRangeDto } from "@/bindings/notes";
@@ -7,6 +8,7 @@ import { EmptyTrash, useNoteProjects } from "./note-actions";
 import { NoteEditor } from "./note-editor";
 import { noteErrorCopy } from "./note-error-copy";
 import { useNotes, useNotesQuery } from "./notes-provider";
+
 interface Filters {
   query: string;
   project: string;
@@ -160,6 +162,14 @@ export function NotesRoute() {
   function change(patch: Partial<Filters>) {
     setFilters((previous) => ({ ...previous, [view]: { ...previous[view], ...patch } }));
   }
+  /** Change list context while retaining the provider-owned draft. */
+  function changeView(status: NoteStatusDto) {
+    const next = new URLSearchParams(params);
+    next.set("view", status);
+    next.delete("new");
+    next.delete("noteId");
+    setParams(next);
+  }
   /** Start a new local draft only after the retained edit can settle. */
   async function newNote() {
     try {
@@ -177,96 +187,110 @@ export function NotesRoute() {
     <div className="flex h-full min-w-0 flex-col overflow-auto lg:flex-row">
       <aside
         aria-label="Notes list"
-        className="flex max-h-[45vh] shrink-0 flex-col gap-3 border-b border-hairline p-5 lg:max-h-none lg:w-[300px] lg:border-r lg:border-b-0"
+        className="flex max-h-[45vh] shrink-0 flex-col gap-3 border-b border-hairline p-3 lg:max-h-none lg:w-[280px] lg:border-r lg:border-b-0"
       >
-        <div className="flex items-center justify-between">
-          <h1 tabIndex={-1} className="font-display text-2xl text-ink">
+        <div className="flex items-center gap-2">
+          <h1 tabIndex={-1} className="sr-only">
             Notes
           </h1>
-          <Button onClick={newNote} disabled={blocked || actionBusy}>
-            New note
+          <Button
+            className="order-2 shrink-0"
+            size="icon-sm"
+            variant="ghost"
+            aria-label="New note"
+            title="New note"
+            onClick={newNote}
+            disabled={blocked || actionBusy}
+          >
+            <Plus aria-hidden="true" />
           </Button>
-        </div>
-        <nav className="flex gap-2" aria-label="Note lifecycle">
-          {(["active", "archived", "trash"] as const).map((status) => (
-            <Button
-              key={status}
-              variant={view === status ? "default" : "outline"}
-              onClick={
-                /** Change list lifecycle without discarding the selection. */ () => {
-                  const next = new URLSearchParams(params);
-                  next.set("view", status);
-                  next.delete("new");
-                  next.delete("noteId");
-                  setParams(next);
+          <label className="relative min-w-0 flex-1">
+            <span className="sr-only">Search notes</span>
+            <Search aria-hidden="true" className="absolute top-2 left-2 size-3.5 text-muted" />
+            <input
+              aria-label="Search notes"
+              placeholder="Search notes"
+              value={search}
+              onCompositionStart={
+                /** Keep incomplete IME text out of search. */ () => {
+                  composing.current = true;
                 }
               }
-            >
-              {status === "active" ? "All notes" : status === "archived" ? "Archive" : "Trash"}{" "}
-              {query.page?.counts[status] ?? ""}
-            </Button>
-          ))}
-        </nav>
-        <label>
-          Search notes
-          <input
-            aria-label="Search notes"
-            value={search}
-            onCompositionStart={
-              /** Keep incomplete IME text out of search. */ () => {
-                composing.current = true;
+              onCompositionEnd={
+                /** Admit the committed search text. */ (event) => {
+                  composing.current = false;
+                  change({ query: event.currentTarget.value });
+                }
               }
-            }
-            onCompositionEnd={
-              /** Admit the committed search text. */ (event) => {
-                composing.current = false;
-                change({ query: event.currentTarget.value });
+              onChange={
+                /** Debounce committed queries at the query owner. */ (event) => {
+                  setSearch(event.target.value);
+                  if (!composing.current) change({ query: event.target.value });
+                }
               }
-            }
-            onChange={
-              /** Debounce committed queries at the query owner. */ (event) => {
-                setSearch(event.target.value);
-                if (!composing.current) change({ query: event.target.value });
+              className="h-8 w-full rounded-md border border-hairline bg-transparent pr-2 pl-7 text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            />
+          </label>
+        </div>
+        <div className="flex flex-wrap items-center gap-1.5">
+          <Button
+            size="sm"
+            variant="ghost"
+            aria-label="All notes"
+            aria-pressed={view === "active" && !filter.pinned && !filter.project}
+            className="h-7 px-2 aria-pressed:bg-surface-card"
+            onClick={
+              /** Return to active notes with unrestricted pin/project scope. */ () => {
+                setFilters((previous) => ({
+                  ...previous,
+                  active: { ...previous.active, pinned: false, project: "" },
+                }));
+                changeView("active");
               }
-            }
-            className="w-full rounded border border-hairline bg-transparent p-2"
-          />
-        </label>
-        <label>
-          Project filter
-          <select
-            aria-label="Project filter"
-            value={filter.project}
-            onChange={
-              /** Send the chosen public filter. */ (event) =>
-                change({ project: event.target.value })
             }
           >
-            <option value="">All projects</option>
-            <option value="unlinked">No project</option>
-            {filter.project &&
-              filter.project !== "unlinked" &&
-              !projects.some((project) => project.id === filter.project) && (
-                <option value={filter.project}>Project unavailable</option>
-              )}
-            {projects.map((project) => (
-              <option key={project.id} value={project.id}>
-                {project.displayName}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          <input
-            type="checkbox"
-            checked={filter.pinned}
-            onChange={
-              /** Combine pin and project filters. */ (event) =>
-                change({ pinned: event.target.checked })
+            All
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            aria-label="Pinned only"
+            aria-pressed={filter.pinned}
+            className="h-7 px-2 aria-pressed:bg-surface-card"
+            onClick={
+              /** Toggle the existing combined pin filter. */ () =>
+                change({ pinned: !filter.pinned })
             }
-          />{" "}
-          Pinned only
-        </label>
+          >
+            Pinned
+          </Button>
+          <label className="flex h-7 min-w-0 max-w-full items-center gap-1 rounded-md border border-hairline px-2 text-xs">
+            <Folder aria-hidden="true" className="size-3 shrink-0" />
+            <span className="sr-only">Project filter</span>
+            <select
+              aria-label="Project filter"
+              className="min-w-0 max-w-32 bg-transparent outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              value={filter.project}
+              onChange={
+                /** Send the chosen public filter. */ (event) =>
+                  change({ project: event.target.value })
+              }
+            >
+              <option value="">Project</option>
+              <option value="unlinked">No project</option>
+              {filter.project &&
+                filter.project !== "unlinked" &&
+                !projects.some((project) => project.id === filter.project) && (
+                  <option value={filter.project}>Project unavailable</option>
+                )}
+              {projects.map((project) => (
+                <option key={project.id} value={project.id}>
+                  {project.displayName}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
         {(filter.query || filter.project || filter.pinned) && (
           <Button
             variant="outline"
@@ -278,9 +302,6 @@ export function NotesRoute() {
         {projectsError && <p role="alert">Could not load projects.</p>}
         {listenerFailed && <p role="alert">Live updates unavailable</p>}
         {query.error && <p role="alert">{query.error}</p>}
-        <Button variant="outline" onClick={owner.invalidate}>
-          Refresh
-        </Button>
         {view === "trash" && <EmptyTrash disabled={!query.page?.counts.trash} />}
         {selectionError && (
           <p role="alert">
@@ -321,7 +342,7 @@ export function NotesRoute() {
                     )}
                   <button
                     type="button"
-                    className="w-full rounded border border-hairline p-3 text-left outline-none hover:bg-surface-soft focus-visible:ring-2 focus-visible:ring-ring"
+                    className="w-full rounded-md px-2 py-2.5 text-left outline-none hover:bg-surface-soft focus-visible:ring-2 focus-visible:ring-ring aria-pressed:bg-surface-card"
                     aria-pressed={draft?.base?.id === note.id}
                     disabled={blocked || actionBusy}
                     onClick={
@@ -354,8 +375,58 @@ export function NotesRoute() {
             </Button>
           )}
         </div>
+        <nav className="shrink-0 border-t border-hairline pt-2" aria-label="Note lifecycle">
+          {(["archived", "trash"] as const).map(
+            /** Keep secondary lifecycle navigation at the list footer. */ (status) => (
+              <Button
+                key={status}
+                size="sm"
+                variant="ghost"
+                className="w-full justify-start aria-pressed:bg-surface-card"
+                aria-pressed={view === status}
+                onClick={
+                  /** Keep the retained draft out of an unrelated list context. */ () =>
+                    changeView(status)
+                }
+              >
+                {status === "archived" ? (
+                  <Archive aria-hidden="true" />
+                ) : (
+                  <Trash2 aria-hidden="true" />
+                )}
+                {status === "archived" ? "Archive" : "Trash"}
+                <span className="ml-auto text-xs text-muted">
+                  {query.page?.counts[status] ?? ""}
+                </span>
+              </Button>
+            ),
+          )}
+          <Button
+            size="icon-sm"
+            variant="ghost"
+            aria-label="Refresh"
+            title="Refresh notes"
+            onClick={owner.invalidate}
+          >
+            <RefreshCw aria-hidden="true" />
+          </Button>
+        </nav>
       </aside>
-      <NoteEditor />
+      {(
+        view === "active"
+          ? !draft?.base || draft.base.status === "active"
+          : draft?.base?.status === view && params.get("noteId") === draft.base.id
+      ) ? (
+        <NoteEditor />
+      ) : (
+        <div className="flex flex-1 items-center justify-center p-8 text-sm text-muted">
+          {view === "archived"
+            ? "Select an archived note to view it"
+            : view === "trash"
+              ? "Select a note in Trash to view it"
+              : "Select a note or create a new one"}
+        </div>
+      )}
     </div>
   );
 }
