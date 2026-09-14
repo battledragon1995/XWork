@@ -32,6 +32,7 @@ export interface PaneLayoutProps {
   renderFilePane?: SessionFilePaneRenderer;
   onRefreshSession?(): void;
   onCheckProfile?(profileId: string): void;
+  onBrowseFiles?(): void;
 }
 
 /** Render one split node and keep its temporary visual ratio local to that node. */
@@ -117,6 +118,7 @@ function LayoutNode(props: PaneLayoutProps & { node: PaneLayoutNodeDto }) {
   const profiles = props.catalog.snapshot?.profiles ?? [];
   return (
     <SessionPane
+      onBrowseFiles={props.onBrowseFiles}
       shortcutSnapshot={props.shortcutSnapshot}
       shortcutPlatform={props.shortcutPlatform}
       pane={node.pane}

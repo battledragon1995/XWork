@@ -53,7 +53,7 @@ function CatalogSkeleton() {
     <div
       role="status"
       aria-label="Loading your CLI profiles"
-      className="grid gap-3 @min-[900px]:grid-cols-3 @min-[640px]:grid-cols-2"
+      className="grid gap-3 @min-[760px]:grid-cols-3 @min-[500px]:grid-cols-2"
     >
       {/* Six placeholders: the three built-ins plus room for the custom profiles most
           installations have, so the grid does not jump when the real cards arrive. */}
@@ -316,7 +316,7 @@ export function SessionToolPicker(props: SessionToolPickerProps) {
         {catalog.status === "loading" && catalog.snapshot === null ? (
           <CatalogSkeleton />
         ) : (
-          <div className="grid gap-3 @min-[900px]:grid-cols-3 @min-[640px]:grid-cols-2">
+          <div className="grid gap-3 @min-[760px]:grid-cols-3 @min-[500px]:grid-cols-2">
             {/* The backend order is preserved exactly: Codex, Claude, Terminal, then the
                 custom profiles. Only the separate recent block is promoted. */}
             {profiles.map((profile) =>

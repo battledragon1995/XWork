@@ -409,6 +409,12 @@ export function SessionRoute(props: {
         shortcutPlatform={props.shortcutPlatform}
         isLifecycleBusy={isBusy}
         explorerControl={explorerControl}
+        onBrowseFiles={
+          props.renderFileExplorer
+            ? /** Open Explorer without toggling it closed on a second request. */ () =>
+                setExplorerSession(sessionId)
+            : undefined
+        }
         explorerVisible={explorerVisible}
         explorerRegionId={explorerRegionId}
         renameRef={renameButtonRef}
@@ -449,6 +455,7 @@ function SessionRouteReady(props: {
   shortcutPlatform?: ShortcutPlatform | null;
   isLifecycleBusy: boolean;
   explorerControl: React.ReactNode;
+  onBrowseFiles?(): void;
   explorerVisible: boolean;
   explorerRegionId: string;
   renameRef: React.Ref<HTMLButtonElement>;
@@ -509,21 +516,26 @@ function SessionRouteReady(props: {
             renderTerminal={props.renderTerminal}
             renderFilePane={props.renderFilePane}
             fileExplorerToggle={props.explorerControl}
+            onBrowseFiles={props.onBrowseFiles}
           />
         ) : (
           <div className="@container h-full overflow-y-auto overflow-x-hidden px-8 py-7">
             <div className="grid min-w-0 gap-6">
-              {props.explorerControl}
-              <SessionHeader
-                name={summary.name}
-                rootPath={props.rootPath}
-                isBusy={props.isLifecycleBusy}
-                renameRef={props.renameRef}
-                menuRef={props.menuRef}
-                onRenameFromButton={props.onRenameFromButton}
-                onRenameFromMenu={props.onRenameFromMenu}
-                onDelete={props.onDelete}
-              />
+              <div className="flex items-start gap-3">
+                <div className="min-w-0 flex-1">
+                  <SessionHeader
+                    name={summary.name}
+                    rootPath={props.rootPath}
+                    isBusy={props.isLifecycleBusy}
+                    renameRef={props.renameRef}
+                    menuRef={props.menuRef}
+                    onRenameFromButton={props.onRenameFromButton}
+                    onRenameFromMenu={props.onRenameFromMenu}
+                    onDelete={props.onDelete}
+                  />
+                </div>
+                {props.explorerControl}
+              </div>
 
               {/* The empty branch keeps reporting preparation failures, which is the only
                   place a first-tab opening can fail before the workspace exists. */}

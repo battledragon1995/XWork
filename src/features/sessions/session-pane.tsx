@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils/cn";
 import type { ShortcutPlatform } from "@/lib/utils/keyboard-shortcuts";
+import { profileMarkColor } from "@/lib/utils/profile-mark";
 import { PaneContentPicker } from "./pane-content-picker";
 import { PaneContentPlaceholder } from "./pane-content-placeholder";
 import { PANE_LIMIT } from "./session-layout";
@@ -58,6 +59,7 @@ export function SessionPane(props: {
   renderFilePane?: SessionFilePaneRenderer;
   onRefreshSession?(): void;
   onCheckProfile?(profileId: string): void;
+  onBrowseFiles?(): void;
 }) {
   /** Resolve every pane accelerator from the dispatch snapshot. */
   const label = (text: string, id: WorkspaceShortcutId) =>
@@ -111,6 +113,9 @@ export function SessionPane(props: {
           type="button"
           variant="ghost"
           size="icon-sm"
+          className={
+            props.pane.content.kind === "empty" ? "text-body" : "text-on-dark hover:bg-on-dark/10"
+          }
           aria-label={label}
           aria-pressed={pressed}
           disabled={disabled}
@@ -152,7 +157,9 @@ export function SessionPane(props: {
           aria-hidden="true"
           className="flex size-6 shrink-0 items-center justify-center rounded-sm bg-cream-strong text-[10px] text-ink"
           style={
-            profile === undefined ? undefined : { backgroundColor: profile.color, color: "white" }
+            profile === undefined
+              ? undefined
+              : { backgroundColor: profileMarkColor(profile), color: "white" }
           }
         >
           {profile?.icon ??
@@ -216,6 +223,13 @@ export function SessionPane(props: {
             selectingProfileId={props.selectingProfileId}
             isLocked={props.isBusy}
             onSelect={props.onSelectProfile}
+            onBrowseFiles={
+              props.onBrowseFiles &&
+              /** Target this pane before exposing the file tree. */ (() => {
+                props.onActivate();
+                props.onBrowseFiles?.();
+              })
+            }
           />
         ) : fileContent !== null && props.renderFilePane !== undefined ? (
           renderFileRegion("body")

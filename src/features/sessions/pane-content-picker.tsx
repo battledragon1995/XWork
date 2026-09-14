@@ -1,3 +1,4 @@
+import { FolderOpen } from "lucide-react";
 import { useNavigate } from "react-router";
 import type { CliProfileDto } from "@/bindings/terminal/cli-profiles";
 import { Button } from "@/components/ui/button";
@@ -25,6 +26,7 @@ export function PaneContentPicker(props: {
   selectingProfileId: string | null;
   isLocked: boolean;
   onSelect(profile: CliProfileDto): void;
+  onBrowseFiles?(): void;
 }) {
   const { catalog, selectingProfileId, isLocked, onSelect } = props;
   const navigate = useNavigate();
@@ -63,7 +65,7 @@ export function PaneContentPicker(props: {
   };
 
   return (
-    <div className="h-full overflow-y-auto bg-canvas px-8 py-7">
+    <div className="@container/picker h-full overflow-y-auto bg-canvas px-4 py-5">
       <div className="mx-auto grid max-w-[980px] gap-6">
         <header>
           <h2 className="font-display text-[22px] text-ink">What goes here?</h2>
@@ -83,7 +85,7 @@ export function PaneContentPicker(props: {
           </section>
         )}
 
-        <div className="grid gap-6 md:grid-cols-2">
+        <div className="grid gap-6 @min-[560px]/picker:grid-cols-2">
           <section className="grid content-start gap-2">
             <h3 className="text-[11px] font-medium tracking-[1.2px] text-muted uppercase">
               Terminal / CLI
@@ -109,7 +111,19 @@ export function PaneContentPicker(props: {
           <section className="grid content-start gap-2">
             <h3 className="text-[11px] font-medium tracking-[1.2px] text-muted uppercase">File</h3>
             <div className="rounded-lg border border-dashed border-hairline px-4 py-5 text-[13px] text-muted-soft">
-              Open a file from the File Explorer.
+              {props.onBrowseFiles ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={isLocked}
+                  onClick={props.onBrowseFiles}
+                >
+                  <FolderOpen aria-hidden="true" />
+                  Browse files…
+                </Button>
+              ) : (
+                "Open a file from the File Explorer."
+              )}
             </div>
           </section>
         </div>

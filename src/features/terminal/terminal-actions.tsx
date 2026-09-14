@@ -36,9 +36,17 @@ export function TerminalActions(props: {
     disabled = false,
     title?: string,
   ) => (
-    <Button type="button" variant="ghost" size="sm" disabled={disabled} title={title} onClick={run}>
+    <Button
+      type="button"
+      variant="ghost"
+      size="icon-sm"
+      className="text-on-dark hover:bg-on-dark/10 disabled:opacity-40"
+      aria-label={label}
+      disabled={disabled}
+      title={title ?? label}
+      onClick={run}
+    >
       {icon}
-      {label}
     </Button>
   );
 

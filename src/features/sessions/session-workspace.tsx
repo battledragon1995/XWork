@@ -31,6 +31,7 @@ export function SessionWorkspace(props: {
   renderTerminal?: SessionTerminalRenderer;
   renderFilePane?: SessionFilePaneRenderer;
   fileExplorerToggle?: React.ReactNode;
+  onBrowseFiles?(): void;
 }) {
   const { catalog, mutations } = props;
   const [renameTarget, setRenameTarget] = useState<TabDto | null>(null);
@@ -177,6 +178,7 @@ export function SessionWorkspace(props: {
 
       <div className="min-h-0 min-w-0 flex-1 overflow-hidden">
         <PaneLayout
+          onBrowseFiles={props.onBrowseFiles}
           shortcutSnapshot={props.shortcutSnapshot}
           shortcutPlatform={props.shortcutPlatform}
           tab={activeTab}

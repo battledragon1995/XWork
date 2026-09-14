@@ -3,6 +3,7 @@ import type { Ref } from "react";
 import type { CliProfileDto } from "@/bindings/terminal/cli-profiles";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils/cn";
+import { profileMarkColor } from "@/lib/utils/profile-mark";
 
 /** The exact BE-006 identifier whose shell may be the application default. */
 const BUILT_IN_TERMINAL_ID = "builtin:terminal";
@@ -90,7 +91,7 @@ function ProfileMark(props: { profile: CliProfileDto; isOff: boolean }) {
         "flex size-8 shrink-0 items-center justify-center rounded-md text-[11px] font-semibold text-on-primary",
         isOff && "bg-cream-strong text-muted-soft",
       )}
-      style={isOff ? undefined : { backgroundColor: profile.color }}
+      style={isOff ? undefined : { backgroundColor: profileMarkColor(profile) }}
     >
       {profile.icon}
     </span>

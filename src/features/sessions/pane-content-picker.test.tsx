@@ -8,6 +8,31 @@ import { createCliProfilesSnapshot, createToolCatalogData } from "./sessions-tes
 afterEach(cleanup);
 
 describe("PaneContentPicker", () => {
+  // Open the existing explorer only when the workspace is available.
+  it("browses files and respects the workspace lock", async () => {
+    const user = userEvent.setup();
+    const onBrowseFiles = vi.fn();
+    const props = {
+      catalog: createToolCatalogData(),
+      selectingProfileId: null,
+      onSelect: vi.fn(),
+      onBrowseFiles,
+    };
+    const { rerender } = render(
+      <MemoryRouter>
+        <PaneContentPicker {...props} isLocked={false} />
+      </MemoryRouter>,
+    );
+    await user.click(screen.getByRole("button", { name: "Browse files…" }));
+    expect(onBrowseFiles).toHaveBeenCalledOnce();
+    rerender(
+      <MemoryRouter>
+        <PaneContentPicker {...props} isLocked />
+      </MemoryRouter>,
+    );
+    expect(screen.getByRole("button", { name: "Browse files…" })).toBeDisabled();
+  });
+
   // Verify catalog order, file deferral, and an available selection.
   it("renders and selects an available profile", async () => {
     const user = userEvent.setup();
