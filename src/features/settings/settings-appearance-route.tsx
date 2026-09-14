@@ -9,9 +9,9 @@ import { AppearanceSegmented } from "./appearance-segmented";
 import { AppearanceTerminalPreview } from "./appearance-terminal-preview";
 import {
   type AppearanceErrorGroup,
-  type SettingsSaveFailure,
   classifySettingsFailure,
   classifySettingsSaveFailure,
+  type SettingsSaveFailure,
 } from "./settings-error-copy";
 import { SettingRow, SettingsSection } from "./settings-section";
 import { useSettingsStore } from "./settings-store";
@@ -130,7 +130,7 @@ function AppearanceRows(props: {
   };
 
   return (
-    <div>
+    <div className="[&>div]:py-1.5">
       <SettingRow description="Follow the operating system or pin one mode." first label="Theme">
         <AppearanceSegmented
           label="Theme"
@@ -143,7 +143,7 @@ function AppearanceRows(props: {
       <SettingRow
         description="Pick a starting point, then adjust colours below."
         label="Preset"
-        layout="stacked"
+        align="start"
       >
         <AppearancePresetCards onChange={editor.setPreset} value={appearance.themePreset} />
       </SettingRow>
@@ -151,16 +151,16 @@ function AppearanceRows(props: {
       <SettingRow
         description="Accent is used for primary actions only."
         label="Interface colours"
-        layout="stacked"
+        align="start"
       >
-        <div className="flex w-full min-w-0 flex-col gap-3">
+        <div className="flex w-full min-w-0 flex-col gap-2">
           <AppearanceSegmented
             label="Interface colours scheme"
             onChange={editor.setEditedScheme}
             options={EDITED_SCHEMES}
             value={editor.editedScheme}
           />
-          <div className="grid min-w-0 grid-cols-[repeat(auto-fit,minmax(240px,1fr))] gap-x-6 gap-y-2">
+          <div className="grid min-w-0 gap-1">
             {INTERFACE_COLOR_KEYS.map((entry) => (
               <AppearanceColorField
                 errorMessage={backendFieldError(
@@ -181,16 +181,17 @@ function AppearanceRows(props: {
       <SettingRow
         description="Background, foreground and the 16 ANSI colours."
         label="Terminal palette"
-        layout="stacked"
+        align="start"
       >
-        <div className="flex w-full min-w-0 flex-col gap-3">
-          <div className="grid min-w-0 grid-cols-[repeat(auto-fit,minmax(240px,1fr))] gap-x-6 gap-y-2">
+        <div className="flex w-full min-w-0 flex-col gap-2">
+          <div className="flex min-w-0 items-center gap-5">
             <AppearanceColorField
               errorMessage={backendFieldError("terminalPalette.background")}
               label="Background"
               onChange={(next) => editor.setTerminalColor("background", next)}
               onCommitNow={editor.flushPendingCommit}
               value={palette.background}
+              variant="chip"
             />
             <AppearanceColorField
               errorMessage={backendFieldError("terminalPalette.foreground")}
@@ -198,9 +199,10 @@ function AppearanceRows(props: {
               onChange={(next) => editor.setTerminalColor("foreground", next)}
               onCommitNow={editor.flushPendingCommit}
               value={palette.foreground}
+              variant="chip"
             />
           </div>
-          <div className="grid min-w-0 grid-cols-[repeat(auto-fit,minmax(200px,1fr))] gap-x-6 gap-y-2">
+          <div className="grid min-w-0 grid-cols-8 gap-1.5">
             {palette.ansiColors.map((color, index) => (
               <AppearanceColorField
                 errorMessage={backendFieldError(`terminalPalette.ansiColors.${index}`)}
@@ -211,6 +213,7 @@ function AppearanceRows(props: {
                 onChange={(next) => editor.setTerminalColor(`ansi:${index}`, next)}
                 onCommitNow={editor.flushPendingCommit}
                 value={color}
+                variant="swatch"
               />
             ))}
           </div>

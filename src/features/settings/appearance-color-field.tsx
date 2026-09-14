@@ -1,5 +1,6 @@
-import { type KeyboardEvent, useEffect, useId, useRef, useState } from "react";
+import { type KeyboardEvent, useCallback, useId, useRef, useState } from "react";
 import { Input } from "@/components/ui/input";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { isFullHex, normalizeHex } from "./appearance-contrast";
 
 /** Message shown once the user leaves a field whose text is not a full hex colour. */
@@ -10,16 +11,17 @@ export function AppearanceColorField(props: {
   label: string;
   value: string;
   errorMessage?: string;
+  variant?: "row" | "swatch" | "chip";
   onChange(next: string): void;
   onCommitNow(): void;
 }) {
-  const { label, value, errorMessage, onChange, onCommitNow } = props;
+  const { label, value, errorMessage, variant = "row", onChange, onCommitNow } = props;
+  const [open, setOpen] = useState(false);
   const textId = useId();
   const errorId = useId();
   const [rawText, setRawText] = useState(value);
   const [blurred, setBlurred] = useState(false);
   const lastValueRef = useRef(value);
-  const pickerRef = useRef<HTMLInputElement>(null);
   const commitNowRef = useRef(onCommitNow);
   commitNowRef.current = onCommitNow;
 
@@ -30,8 +32,8 @@ export function AppearanceColorField(props: {
     setBlurred(false);
   }
 
-  useEffect(() => {
-    const picker = pickerRef.current;
+  /** Connect native commit events whenever the inline or popover picker mounts. */
+  const pickerRef = useCallback((picker: HTMLInputElement | null) => {
     if (picker === null) {
       return;
     }
@@ -87,7 +89,7 @@ export function AppearanceColorField(props: {
     }
   };
 
-  return (
+  const controls = (
     <div className="flex min-w-0 flex-col gap-1">
       <div className="flex min-w-0 items-center justify-between gap-4">
         <label className="text-[13px] text-body" htmlFor={textId}>
@@ -122,5 +124,30 @@ export function AppearanceColorField(props: {
         </p>
       )}
     </div>
+  );
+
+  if (variant === "row") {
+    return controls;
+  }
+
+  return (
+    <Popover onOpenChange={setOpen} open={open}>
+      <PopoverTrigger asChild>
+        <button
+          aria-invalid={message === null ? undefined : true}
+          aria-label={`Edit ${label}`}
+          className="flex min-w-0 items-center gap-2 rounded-sm text-[12px] outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          title={`${label}: ${message ?? value}`}
+          type="button"
+        >
+          <span
+            className="h-6 min-w-6 flex-1 rounded-sm border border-hairline"
+            style={{ backgroundColor: pickerValue }}
+          />
+          {variant === "chip" && <span>{label}</span>}
+        </button>
+      </PopoverTrigger>
+      <PopoverContent className="w-72 p-3">{controls}</PopoverContent>
+    </Popover>
   );
 }

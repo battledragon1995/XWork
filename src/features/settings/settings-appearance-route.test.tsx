@@ -143,16 +143,18 @@ describe("SettingsAppearanceRoute", () => {
     expect(screen.getByText("Custom colours")).toBeInTheDocument();
   });
 
-  // Verify the four interface colour rows and both terminal rows carry their exact labels.
-  it("renders every colour row", () => {
+  // Verify interface fields and compact terminal editors keep their accessible labels.
+  it("renders every colour editor", () => {
     renderReady();
 
-    for (const label of ["Accent", "Canvas", "Sidebar", "Text", "Background", "Foreground"]) {
+    for (const label of ["Accent", "Canvas", "Sidebar", "Text"]) {
       expect(screen.getByLabelText(label)).toBeInTheDocument();
       expect(screen.getByLabelText(`${label} colour picker`)).toBeInTheDocument();
     }
+    expect(screen.getByRole("button", { name: "Edit Background" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Edit Foreground" })).toBeInTheDocument();
     for (let index = 0; index < 16; index += 1) {
-      expect(screen.getByLabelText(`ANSI ${index}`)).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: `Edit ANSI ${index}` })).toBeInTheDocument();
     }
   });
 
@@ -301,6 +303,7 @@ describe("SettingsAppearanceRoute", () => {
     try {
       renderReady();
 
+      fireEvent.click(screen.getByRole("button", { name: "Edit ANSI 5" }));
       fireEvent.change(hexField("ANSI 5"), { target: { value: "#123456" } });
       act(() => vi.advanceTimersByTime(300));
 
@@ -492,6 +495,11 @@ describe("SettingsAppearanceRoute", () => {
 
     await user.click(themeRadio("Dark"));
 
+    expect(screen.getByRole("button", { name: "Edit Foreground" })).toHaveAttribute(
+      "aria-invalid",
+      "true",
+    );
+    await user.click(screen.getByRole("button", { name: "Edit Foreground" }));
     expect(hexField("Foreground")).toHaveAttribute("aria-invalid", "true");
     expect(hexField("Accent")).not.toHaveAttribute("aria-invalid");
   });

@@ -67,11 +67,7 @@ export function AppearancePresetCards(props: {
 
   return (
     <div className="flex w-full min-w-0 flex-col gap-2">
-      <div
-        aria-label="Preset"
-        className="grid min-w-0 grid-cols-[repeat(auto-fit,minmax(120px,1fr))] gap-2"
-        role="radiogroup"
-      >
+      <div aria-label="Preset" className="grid min-w-0 grid-cols-3 gap-2" role="radiogroup">
         {PRESET_CARDS.map((card, index) => {
           const checked = card.value === value;
           // A native radio cannot carry the card visual this control needs, so the group
@@ -82,7 +78,7 @@ export function AppearancePresetCards(props: {
               aria-checked={checked}
               className={cn(
                 "min-w-0 rounded-md border border-hairline bg-canvas p-1.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                checked && "border-brand",
+                checked && "border-ink ring-1 ring-ink",
               )}
               key={card.value}
               onClick={() => onChange(card.value)}
@@ -105,7 +101,7 @@ export function AppearancePresetCards(props: {
               </span>
               <span className="mt-1.5 flex items-center justify-between gap-1 text-[12px] font-medium text-body-strong">
                 <span className="truncate">{card.label}</span>
-                {checked && <Check aria-hidden="true" className="size-3.5 shrink-0 text-brand" />}
+                {checked && <Check aria-hidden="true" className="size-3.5 shrink-0 text-ink" />}
               </span>
             </button>
           );

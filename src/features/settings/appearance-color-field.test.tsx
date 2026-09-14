@@ -36,6 +36,41 @@ describe("AppearanceColorField", () => {
     cleanup();
   });
 
+  // Verify reopening a compact editor reconnects native picker persistence and hex editing.
+  it("keeps compact swatches editable across popover mounts", async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    const onCommitNow = vi.fn();
+    render(
+      <AppearanceColorField
+        label="ANSI 5"
+        value="#cc785c"
+        variant="swatch"
+        onChange={onChange}
+        onCommitNow={onCommitNow}
+      />,
+    );
+
+    const trigger = screen.getByRole("button", { name: "Edit ANSI 5" });
+    await user.click(trigger);
+    fireEvent.input(screen.getByLabelText("ANSI 5 colour picker"), {
+      target: { value: "#112233" },
+    });
+    fireEvent.change(screen.getByLabelText("ANSI 5 colour picker"));
+    expect(onCommitNow).toHaveBeenCalledTimes(1);
+    await user.keyboard("{Escape}");
+    await user.click(trigger);
+    fireEvent.input(screen.getByLabelText("ANSI 5 colour picker"), {
+      target: { value: "#445566" },
+    });
+    fireEvent.change(screen.getByLabelText("ANSI 5 colour picker"));
+    expect(onCommitNow).toHaveBeenCalledTimes(2);
+    await user.clear(screen.getByLabelText("ANSI 5"));
+    await user.type(screen.getByLabelText("ANSI 5"), "#AABBCC{Enter}");
+    expect(onChange).toHaveBeenLastCalledWith("#aabbcc");
+    expect(onCommitNow).toHaveBeenCalledTimes(3);
+  });
+
   // Verify both controls start on the same committed colour and are separately labelled.
   it("synchronizes both controls on the committed colour", () => {
     renderField("#cc785c");

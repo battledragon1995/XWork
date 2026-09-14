@@ -24,7 +24,7 @@ export function SettingsSection(props: {
 /**
  * Render one labelled Settings value with its explanation and control. The default `inline`
  * layout keeps the trailing control in its own column; `stacked` places a full-width control
- * under the label, which is what the Appearance colour editors need.
+ * under the label. Large control groups can align their label at the top.
  */
 export function SettingRow(props: {
   label: string;
@@ -32,6 +32,7 @@ export function SettingRow(props: {
   children: ReactNode;
   first?: boolean;
   layout?: "inline" | "stacked";
+  align?: "center" | "start";
 }) {
   const stacked = props.layout === "stacked";
 
@@ -39,7 +40,7 @@ export function SettingRow(props: {
     <div
       className={`min-w-0 py-3.5 ${stacked ? "" : "grid grid-cols-[minmax(0,1fr)_340px] items-center gap-6"} ${props.first ? "" : "border-t border-hairline-soft"}`}
     >
-      <div className="min-w-0">
+      <div className={`min-w-0 ${props.align === "start" ? "self-start" : ""}`}>
         <div className="text-[14px] font-medium text-body-strong">{props.label}</div>
         {props.description !== undefined && (
           <div className="mt-0.5 text-[12px] leading-5 text-muted">{props.description}</div>

@@ -38,7 +38,7 @@ function Slider({
         data-slot="slider-track"
         className="relative h-1 w-full grow overflow-hidden rounded-full bg-cream-strong"
       >
-        <SliderPrimitive.Range data-slot="slider-range" className="absolute h-full bg-brand" />
+        <SliderPrimitive.Range data-slot="slider-range" className="absolute h-full bg-ink" />
       </SliderPrimitive.Track>
       {values.map((_, index) => (
         <SliderPrimitive.Thumb
@@ -48,7 +48,7 @@ function Slider({
           // Thumbs are positional and interchangeable, so the index is their only identity.
           // biome-ignore lint/suspicious/noArrayIndexKey: a thumb has no other stable identity
           key={index}
-          className="block size-4 shrink-0 rounded-full border border-brand bg-canvas shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background disabled:pointer-events-none"
+          className="block size-4 shrink-0 rounded-full border border-ink bg-canvas shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background disabled:pointer-events-none"
         />
       ))}
     </SliderPrimitive.Root>
