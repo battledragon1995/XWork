@@ -1,0 +1,201 @@
+Window: "XWork", App: xwork.exe.
+	0 window XWork Secondary Actions: Raise
+		1 pane TAURI_DRAG_RESIZE_WINDOW
+		2 pane
+			3 pane XWork
+				4 pane (disabled)
+				5 region XWork - Web content
+					6 region
+						7 region
+							8 region
+								9 region
+								10 region
+									11 region
+										12 region
+											13 region
+												14 region
+													15 region
+													16 document XWork ID: RootWebArea
+														156 group
+															17 group ID: root
+																751 header
+																	752 button XWork menu ID: radix-_r_0_
+																	753 list Breadcrumb
+																		851 list item Settings
+																		886 list item /Appearance
+																	755 button Search or run a command
+																	756 button Notifications, 0 unread
+																	757 button Minimize
+																	758 button Maximize
+																	759 button Close (hides to tray)
+																760 navigation Main
+																	761 list
+																		762 list item Home
+																			763 link Home
+																		764 list item Projects
+																			765 link Projects
+																		766 list item Notes
+																			767 link Notes
+																		768 list item Calendar
+																			769 link Calendar
+																	770 text PROJECTS
+																	771 button Add Project
+																	772 list
+																		773 list item XWork
+																			774 button Sessions for XWork
+																			775 link XWork
+																	776 list
+																		777 list item Settings
+																			778 link Settings
+																		779 list item Collapse sidebar
+																			780 button Collapse sidebar
+																781 thumb Resize sidebar
+																49 main
+																	50 group
+																	853 text SETTINGS
+																	854 list Settings sections
+																		855 list item General
+																			856 link General
+																		857 list item Appearance
+																			858 link Appearance
+																		859 list item Terminal & CLI Profiles
+																			860 link Terminal & CLI Profiles
+																		861 list item Keyboard Shortcuts
+																			862 link Keyboard Shortcuts
+																		863 list item Notifications
+																			864 link Notifications
+																		865 list item Data
+																			866 link Data
+																		867 list item About
+																			868 link About
+																	887 heading Appearance
+																	888 group
+																	889 button Restore default theme
+																	890 text Theme, colours and text size. Changes preview live in the window behind this panel.
+																	891 text Theme
+																	892 text Follow the operating system or pin one mode.
+																	893 radio group Theme
+																		894 radio button (selectable) Light
+																		895 radio button (selectable) Dark
+																		896 radio button (selectable) System
+																	897 text Preset
+																	898 text Pick a starting point, then adjust colours below.
+																	899 radio group Preset
+																		900 radio button (selectable) Cream
+																		901 radio button (selectable) Ink
+																		902 radio button (selectable) Paper
+																	903 text Interface colours
+																	904 text Accent is used for primary actions only.
+																	905 radio group Interface colours scheme
+																		906 radio button (selectable) Light
+																		907 radio button (selectable) Dark
+																	908 text Accent
+																	909 colour picker Accent colour picker
+																	910 edit Accent
+																	911 text Canvas
+																	912 colour picker Canvas colour picker
+																	913 edit Canvas
+																	914 text Sidebar
+																	915 colour picker Sidebar colour picker
+																	916 edit Sidebar
+																	917 text Text
+																	918 colour picker Text colour picker
+																	919 edit Text
+																	920 text Terminal palette
+																	921 text Background, foreground and the 16 ANSI colours.
+																	922 text Background
+																	923 colour picker Background colour picker
+																	924 edit Background
+																	925 text Foreground
+																	926 colour picker Foreground colour picker
+																	927 edit Foreground
+																	928 text ANSI 0
+																	929 colour picker ANSI 0 colour picker
+																	930 edit ANSI 0
+																	931 text ANSI 1
+																	932 colour picker ANSI 1 colour picker
+																	933 edit ANSI 1
+																	934 text ANSI 2
+																	935 colour picker ANSI 2 colour picker
+																	936 edit ANSI 2
+																	937 text ANSI 3
+																	938 colour picker ANSI 3 colour picker
+																	939 edit ANSI 3
+																	940 text ANSI 4
+																	941 colour picker ANSI 4 colour picker
+																	942 edit ANSI 4
+																	943 text ANSI 5
+																	944 colour picker ANSI 5 colour picker
+																	945 edit ANSI 5
+																	946 text ANSI 6
+																	947 colour picker ANSI 6 colour picker
+																	948 edit ANSI 6
+																	949 text ANSI 7
+																	950 colour picker ANSI 7 colour picker
+																	951 edit ANSI 7
+																	952 text ANSI 8
+																	953 colour picker ANSI 8 colour picker
+																	954 edit ANSI 8
+																	955 text ANSI 9
+																	956 colour picker ANSI 9 colour picker
+																	957 edit ANSI 9
+																	958 text ANSI 10
+																	959 colour picker ANSI 10 colour picker
+																	960 edit ANSI 10
+																	961 text ANSI 11
+																	962 colour picker ANSI 11 colour picker
+																	963 edit ANSI 11
+																	964 text ANSI 12
+																	965 colour picker ANSI 12 colour picker
+																	966 edit ANSI 12
+																	967 text ANSI 13
+																	968 colour picker ANSI 13 colour picker
+																	969 edit ANSI 13
+																	970 text ANSI 14
+																	971 colour picker ANSI 14 colour picker
+																	972 edit ANSI 14
+																	973 text ANSI 15
+																	974 colour picker ANSI 15 colour picker
+																	975 edit ANSI 15
+																	976 group Terminal preview
+																		977 text PS F:\Self Projects\XWork>
+																		978 text pnpm test
+																		979 text 
+																		980 text 
+																		981 text ✓
+																		982 text project-card.test.tsx
+																		983 text 
+																		984 text (6)
+																		985 text 
+																		986 text ⚠
+																		987 text 1 skipped
+																		988 text 
+																		989 text ✗
+																		990 text 0 failed
+																		991 text 
+																		992 text PS F:\Self Projects\XWork>
+																		993 text 
+																		994 text ▮
+																	995 text Interface text size
+																	996 text 15
+																	997 text px
+																	998 group
+																		999 slider Interface text size
+																	1000 text Terminal text size
+																	1001 text 16
+																	1002 text px
+																	1003 group
+																		1004 slider Terminal text size
+								101 region
+						102 region
+						103 region
+		104 title bar
+			105 menu bar System ID: MenuBar
+				106 menu item System
+			107 button Minimise
+			108 button Maximise
+			109 button Close
+
+Document text: ```
+#faf9f5
+```

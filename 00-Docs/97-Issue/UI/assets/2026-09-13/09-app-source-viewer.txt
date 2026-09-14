@@ -1,0 +1,330 @@
+Window: "XWork", App: xwork.exe.
+	0 window XWork Secondary Actions: Raise
+		1 pane TAURI_DRAG_RESIZE_WINDOW
+		2 pane
+			3 pane XWork
+				4 pane (disabled)
+				5 region XWork - Web content
+					6 region
+						7 region
+							8 region
+								9 region
+								10 region
+									11 region
+										12 region
+											13 region
+												14 region
+													15 region
+													16 document XWork ID: RootWebArea
+														156 group
+															17 group ID: root
+																18 header
+																	19 button XWork menu ID: radix-_r_0_
+																	20 list Breadcrumb
+																		110 list item Projects
+																		121 list item /XWork
+																		157 list item /New Session
+																	22 button Search or run a command
+																	23 button Notifications, 0 unread
+																	24 button Minimize
+																	25 button Maximize
+																	26 button Close (hides to tray)
+																27 navigation Main
+																	28 list
+																		29 list item Home
+																			30 link Home
+																		31 list item Projects
+																			32 link Projects
+																		33 list item Notes
+																			34 link Notes
+																		35 list item Calendar
+																			36 link Calendar
+																	37 text PROJECTS
+																	38 button Add Project
+																	39 list
+																		40 list item XWorkNew outputNew Session
+																			41 button Sessions for XWork
+																			42 link XWork
+																			158 list
+																				159 list item New outputNew Session
+																					160 link New output New Session
+																	43 list
+																		44 list item Settings
+																			45 link Settings
+																		46 list item Collapse sidebar
+																			47 button Collapse sidebar
+																48 thumb Resize sidebar
+																49 main
+																	50 group
+																	301 complementary File Explorer
+																		302 section header
+																			303 heading File Explorer
+																			304 button Refresh files
+																			305 button Collapse all
+																			306 button Close File Explorer
+																		307 edit Filter files Description: Filter files
+																		314 text XWork
+																		308 text Project ignore rules applied
+																		311 group
+																			312 tree Project files
+																				315 tree item (selectable) .agents Description: .agents
+																				316 tree item (selectable) .claude Description: .claude
+																				317 tree item (selectable) .github Description: .github
+																				318 tree item (selectable) 00-Docs Description: 00-Docs
+																				319 tree item (selectable) src Description: src
+																				320 tree item (selectable) src-tauri Description: src-tauri
+																				321 tree item (selectable) .gitattributes Description: .gitattributes
+																				322 tree item (selectable) .gitignore Description: .gitignore
+																				323 tree item (selectable) AGENTS.md Description: AGENTS.md
+																				324 tree item (selectable) biome.json Description: biome.json
+																				325 tree item (selectable) CLAUDE.md Description: CLAUDE.md
+																				326 tree item (selectable) components.json Description: components.json
+																				327 tree item (selectable) index.html Description: index.html
+																				328 tree item (selectable) package.json Description: package.json
+																				329 tree item (selectable) PLANS.md Description: PLANS.md
+																				330 tree item (selectable) pnpm-lock.yaml Description: pnpm-lock.yaml
+																				331 tree item (selectable) pnpm-workspace.yaml Description: pnpm-workspace.yaml
+																				332 tree item (selectable) rust-toolchain.toml Description: rust-toolchain.toml
+																				333 tree item (selectable) tsconfig.json Description: tsconfig.json
+																				334 tree item (selectable) vite.config.ts Description: vite.config.ts
+																			361 button Actions for package.json
+																		313 status
+																			385 text Opened package.json in a new tab.
+																	176 tab Session tabs
+																		177 tab item (selectable) Terminal Description: Terminal
+																		178 sortable Reorder tab “Terminal” Description: Reorder tab “Terminal”
+																		179 button Close tab “Terminal” Description: Close tab “Terminal”
+																		363 tab item (selectable) New Tab Description: New Tab
+																		364 sortable Reorder tab “New Tab” Description: Reorder tab “New Tab”
+																		365 button Close tab “New Tab” Description: Close tab “New Tab”
+																		180 button New tab
+																	181 status ID: DndLiveRegion-0
+																	182 button Hide File Explorer
+																	183 button Tab options ID: radix-_r_2k_
+																	366 group
+																		367 section header
+																			368 text package.json
+																			386 text package.json
+																			387 text Read-only
+																			370 button Split right (Ctrl \)
+																			371 button Split down (Ctrl Alt \)
+																			372 toggle button Maximize pane (Ctrl Shift M)
+																			373 button Close pane (Ctrl Shift W)
+																		388 region Source view of package.json
+																			389 group
+																			390 group
+																				391 edit
+																					392 text {
+																					393 text 
+																					434 text "name"
+																					435 text :
+																					436 text "xwork"
+																					437 text ,
+																					394 text 
+																					438 text "private"
+																					439 text :
+																					440 text true
+																					441 text ,
+																					395 text 
+																					442 text "version"
+																					443 text :
+																					444 text "0.0.0"
+																					445 text ,
+																					396 text 
+																					446 text "type"
+																					447 text :
+																					448 text "module"
+																					449 text ,
+																					397 text 
+																					450 text "packageManager"
+																					451 text :
+																					452 text "pnpm@11.25.0"
+																					453 text ,
+																					398 text 
+																					454 text "engines"
+																					455 text : {
+																					399 text 
+																					456 text "node"
+																					457 text :
+																					458 text "24"
+																					400 text },
+																					401 text 
+																					459 text "scripts"
+																					460 text : {
+																					402 text 
+																					461 text "dev"
+																					462 text :
+																					463 text "vite"
+																					464 text ,
+																					403 text 
+																					465 text "build"
+																					466 text :
+																					467 text "vite build"
+																					468 text ,
+																					404 text 
+																					469 text "tauri"
+																					470 text :
+																					471 text "tauri"
+																					472 text ,
+																					405 text 
+																					473 text "format"
+																					474 text :
+																					475 text "biome format --write ."
+																					476 text ,
+																					406 text 
+																					477 text "format:check"
+																					478 text :
+																					479 text "biome format ."
+																					480 text ,
+																					407 text 
+																					481 text "format:rust"
+																					482 text :
+																					483 text "cargo fmt --manifest-path src-tauri/Cargo.toml --check"
+																					484 text ,
+																					408 text 
+																					485 text "lint"
+																					486 text :
+																					487 text "biome lint ."
+																					488 text ,
+																					409 text 
+																					489 text "lint:rust"
+																					490 text :
+																					491 text "cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --all-features -- -D warnings"
+																					492 text ,
+																					410 text 
+																					493 text "typecheck"
+																					494 text :
+																					495 text "tsc --noEmit"
+																					496 text ,
+																					411 text 
+																					497 text "test"
+																					498 text :
+																					499 text "vitest run"
+																					500 text ,
+																					412 text 
+																					501 text "test:watch"
+																					502 text :
+																					503 text "vitest"
+																					504 text ,
+																					413 text 
+																					505 text "test:rust"
+																					506 text :
+																					507 text "cargo test --manifest-path src-tauri/Cargo.toml"
+																					414 text },
+																					415 text 
+																					508 text "dependencies"
+																					509 text : {
+																					416 text 
+																					510 text "@codemirror/lang-cpp"
+																					511 text :
+																					512 text "6.0.3"
+																					513 text ,
+																					417 text 
+																					514 text "@codemirror/lang-css"
+																					515 text :
+																					516 text "6.3.1"
+																					517 text ,
+																					418 text 
+																					518 text "@codemirror/lang-go"
+																					519 text :
+																					520 text "6.0.1"
+																					521 text ,
+																					419 text 
+																					522 text "@codemirror/lang-html"
+																					523 text :
+																					524 text "6.4.12"
+																					525 text ,
+																					420 text 
+																					526 text "@codemirror/lang-java"
+																					527 text :
+																					528 text "6.0.2"
+																					529 text ,
+																					421 text 
+																					530 text "@codemirror/lang-javascript"
+																					531 text :
+																					532 text "6.2.5"
+																					533 text ,
+																					422 text 
+																					534 text "@codemirror/lang-json"
+																					535 text :
+																					536 text "6.0.2"
+																					537 text ,
+																					423 text 
+																					538 text "@codemirror/lang-markdown"
+																					539 text :
+																					540 text "6.5.2"
+																					541 text ,
+																					424 text 
+																					542 text "@codemirror/lang-php"
+																					543 text :
+																					544 text "6.0.2"
+																					545 text ,
+																					425 text 
+																					546 text "@codemirror/lang-python"
+																					547 text :
+																					548 text "6.2.1"
+																					549 text ,
+																					426 text 
+																					550 text "@codemirror/lang-rust"
+																					551 text :
+																					552 text "6.0.2"
+																					553 text ,
+																					427 text 
+																					554 text "@codemirror/lang-sql"
+																					555 text :
+																					556 text "6.10.0"
+																					557 text ,
+																		428 text JSON
+																		429 text UTF-8
+																		430 text CRLF
+																		431 text 86 lines
+																		432 text Read-only · edit in your editor
+																		433 status
+								101 region
+						102 region
+						103 region
+		104 title bar
+			105 menu bar System ID: MenuBar
+				106 menu item System
+			107 button Minimise
+			108 button Maximise
+			109 button Close
+
+Document text: ```
+{  
+"name": "xwork",  
+"private": true,  
+"version": "0.0.0",  
+"type": "module",  
+"packageManager": "pnpm@11.25.0",  
+"engines": {    
+"node": "24"
+  },  
+"scripts": {    
+"dev": "vite",    
+"build": "vite build",    
+"tauri": "tauri",    
+"format": "biome format --write .",    
+"format:check": "biome format .",    
+"format:rust": "cargo fmt --manifest-path src-tauri/Cargo.toml --check",    
+"lint": "biome lint .",    
+"lint:rust": "cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --all-features -- -D warnings",    
+"typecheck": "tsc --noEmit",    
+"test": "vitest run",    
+"test:watch": "vitest",    
+"test:rust": "cargo test --manifest-path src-tauri/Cargo.toml"
+  },  
+"dependencies": {    
+"@codemirror/lang-cpp": "6.0.3",    
+"@codemirror/lang-css": "6.3.1",    
+"@codemirror/lang-go": "6.0.1",    
+"@codemirror/lang-html": "6.4.12",    
+"@codemirror/lang-java": "6.0.2",    
+"@codemirror/lang-javascript": "6.2.5",    
+"@codemirror/lang-json": "6.0.2",    
+"@codemirror/lang-markdown": "6.5.2",    
+"@codemirror/lang-php": "6.0.2",    
+"@codemirror/lang-python": "6.2.1",    
+"@codemirror/lang-rust": "6.0.2",    
+"@codemirror/lang-sql": "6.10.0",
+```

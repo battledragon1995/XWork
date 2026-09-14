@@ -1,0 +1,65 @@
+Window: "XWork", App: xwork.exe.
+	0 window XWork Secondary Actions: Raise
+		1 pane TAURI_DRAG_RESIZE_WINDOW
+		2 pane
+			3 pane XWork
+				4 pane (disabled)
+				5 region XWork - Web content
+					6 region
+						7 region
+							8 region
+								9 region
+								10 region
+									11 region
+										12 region
+											13 region
+												14 region
+													15 region
+													16 document XWork ID: RootWebArea
+														156 group
+															17 group ID: root
+																49 main
+																	50 group
+																	1008 group
+															1045 dialogue New profile Secondary Actions: Raise ID: radix-_r_5p_
+																1046 heading New profile ID: radix-_r_5q_
+																1047 button Close
+																1048 text Configure one custom CLI profile. Arguments and environment values stay separate fields.
+																1049 text Name
+																1050 edit Name
+																1051 text Icon
+																1052 edit Icon
+																1053 text Colour
+																1054 colour picker Colour picker
+																1055 edit Colour
+																1056 text Command
+																1057 edit Command
+																1058 group Arguments
+																	1059 text Arguments
+																	1060 text No arguments yet.
+																	1061 text Each row is passed as one argument. Values are never joined into a shell string.
+																	1062 button Add argument
+																1063 text Shell (optional)
+																1064 combo box Shell (optional)
+																1065 group Environment variables
+																	1066 text Environment variables
+																	1067 text No environment variables yet.
+																	1068 text Secret values are stored in the operating system credential store and are never shown or exported in backups.
+																	1069 button Add variable
+																1070 button (disabled) Check command
+																1071 text Save changes before checking.
+																1072 button Cancel
+																1073 button Save profile
+								101 region
+						102 region
+						103 region
+		104 title bar
+			105 menu bar System ID: MenuBar
+				106 menu item System
+			107 button Minimise
+			108 button Maximise
+			109 button Close
+
+Document text: ```
+￼
+```

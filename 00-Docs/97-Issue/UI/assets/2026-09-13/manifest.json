@@ -1,0 +1,508 @@
+{
+  "date": "2026-09-13",
+  "baseline_commit": "0194f59",
+  "report_files": 18,
+  "issues": 56,
+  "priorities": {
+    "P2": 47,
+    "P1": 6,
+    "P3": 3
+  },
+  "image_count": 61,
+  "image_bytes": 4605388,
+  "checks": {
+    "utf8_and_links_and_unique_ids": true,
+    "images_fully_decoded": true
+  },
+  "errors": [],
+  "assets": [
+    {
+      "file": "01-app-home-top.jpg",
+      "format": "JPEG",
+      "width": 1282,
+      "height": 802,
+      "bytes": 75369,
+      "sha256": "07745d12965d84cf2a7e15ec01d3d1daa57ae6207dbd649065d02a21988c8ac1"
+    },
+    {
+      "file": "01-ref-home-empty.jpg",
+      "format": "JPEG",
+      "width": 1440,
+      "height": 1000,
+      "bytes": 86635,
+      "sha256": "7d4a240b00a6d89ed48ed010f4790350fcf947258c6cc1bb96f9c8d2fad34add"
+    },
+    {
+      "file": "02-app-home-scroll.jpg",
+      "format": "JPEG",
+      "width": 1282,
+      "height": 802,
+      "bytes": 77325,
+      "sha256": "0afdf8af96866085ac7e681b5a3b0cf15078525283233be749597ca6fc5ef363"
+    },
+    {
+      "file": "03-app-projects-grid.jpg",
+      "format": "JPEG",
+      "width": 1282,
+      "height": 802,
+      "bytes": 44920,
+      "sha256": "cf99b8ae9da7de17bdc89b3ab0b81431fce914e81e1fab90a2045004a59b5dcf"
+    },
+    {
+      "file": "03-ref-projects-grid.jpg",
+      "format": "JPEG",
+      "width": 1425,
+      "height": 990,
+      "bytes": 74841,
+      "sha256": "acd7e6cba31414c6dc275eeed36fc7f4c60039cb1805155e1e6c24ad2a3736e0"
+    },
+    {
+      "file": "04-app-project-overview.jpg",
+      "format": "JPEG",
+      "width": 1282,
+      "height": 802,
+      "bytes": 65285,
+      "sha256": "b2e9223847f49fcbe3148743aed2fe369e249be77252f1121f749f1ae5eb86c1"
+    },
+    {
+      "file": "04-ref-project-overview.jpg",
+      "format": "JPEG",
+      "width": 1425,
+      "height": 990,
+      "bytes": 91008,
+      "sha256": "04905bc4a9c0871ae305f0a64e0877e596f6457f35ed9007e07ee84efb23ac16"
+    },
+    {
+      "file": "05-app-new-session.jpg",
+      "format": "JPEG",
+      "width": 1282,
+      "height": 802,
+      "bytes": 57372,
+      "sha256": "173be98f8b47a600fe6ead9141e563ed13aea84bc7024354136e27ebcf708094"
+    },
+    {
+      "file": "05-ref-new-session.jpg",
+      "format": "JPEG",
+      "width": 1425,
+      "height": 990,
+      "bytes": 71912,
+      "sha256": "564cb1b9464af802487bceb2c347e728847449f512e3c16bc62f27a7fa724036"
+    },
+    {
+      "file": "06-app-terminal.jpg",
+      "format": "JPEG",
+      "width": 1282,
+      "height": 802,
+      "bytes": 56114,
+      "sha256": "e1005ad0d482842326e18e8ffab0b084325ba7db7b509e517825d76b34f15d9b"
+    },
+    {
+      "file": "06-ref-session-one-pane.jpg",
+      "format": "JPEG",
+      "width": 1425,
+      "height": 990,
+      "bytes": 69130,
+      "sha256": "2ae31d3f50f3a2430b81ea26c912df52873b74ca61d70113090ee10167bc80de"
+    },
+    {
+      "file": "07-app-pane-picker.jpg",
+      "format": "JPEG",
+      "width": 1282,
+      "height": 802,
+      "bytes": 72477,
+      "sha256": "265c229e9da943fba358a4186ce7ba2df26057de0f564a10174e099d7bd57b82"
+    },
+    {
+      "file": "07-ref-pane-picker.jpg",
+      "format": "JPEG",
+      "width": 1425,
+      "height": 990,
+      "bytes": 87350,
+      "sha256": "5a114d590d26391897a629e5041167760de5c6b7d51fdee5f0ff37e9acba6f68"
+    },
+    {
+      "file": "08-app-file-explorer.jpg",
+      "format": "JPEG",
+      "width": 1282,
+      "height": 802,
+      "bytes": 87360,
+      "sha256": "27080365a4d66d50b29eb2d9a86391b646a36c18905746fd9cf64d88cf583e90"
+    },
+    {
+      "file": "08-ref-file-explorer.jpg",
+      "format": "JPEG",
+      "width": 1425,
+      "height": 990,
+      "bytes": 95462,
+      "sha256": "e4f324517c44d9f130c8d317a5dec01d258fa8a1e51725c3a49bbfa5ea9e36ca"
+    },
+    {
+      "file": "09-app-source-viewer.jpg",
+      "format": "JPEG",
+      "width": 1282,
+      "height": 802,
+      "bytes": 122192,
+      "sha256": "5d441cc5f97028e43658a8ced2233682e728daecacac4cdda2ddd2eb1a09cbdf"
+    },
+    {
+      "file": "09-ref-source-viewer.jpg",
+      "format": "JPEG",
+      "width": 1425,
+      "height": 990,
+      "bytes": 130318,
+      "sha256": "3be1c824c0693955531878078ef997eec939951e6b21607dc597e2232d7c4111"
+    },
+    {
+      "file": "10-app-markdown-blocker.jpg",
+      "format": "JPEG",
+      "width": 1282,
+      "height": 802,
+      "bytes": 46816,
+      "sha256": "edbbb19e6ae26cf606fff9d87cffef1779b2c0e5b1627e03568fafae7ba1eb6f"
+    },
+    {
+      "file": "11-app-notes-empty.jpg",
+      "format": "JPEG",
+      "width": 1282,
+      "height": 802,
+      "bytes": 48788,
+      "sha256": "d289e2350bdd424855ac1e0fabb5a1ecf6c60aec24a0f1b3ea7fd96b935ae38a"
+    },
+    {
+      "file": "11-ref-notes-edit.jpg",
+      "format": "JPEG",
+      "width": 1425,
+      "height": 990,
+      "bytes": 109401,
+      "sha256": "77a95529676ee59e6079fa09792569bdcb0a4f322ba590d5e436ebf7be6f4fd8"
+    },
+    {
+      "file": "12-app-notes-draft.jpg",
+      "format": "JPEG",
+      "width": 1282,
+      "height": 802,
+      "bytes": 58970,
+      "sha256": "bed81beb6ae674a0fc52292e7be65133f906dbf2e21f482b37612fbc23023d6d"
+    },
+    {
+      "file": "12-ref-notes-search.jpg",
+      "format": "JPEG",
+      "width": 1425,
+      "height": 990,
+      "bytes": 95336,
+      "sha256": "950e3c45435d8d62b1272b95a9659ab058947c7664a525cc4dc5e74d8c6348ee"
+    },
+    {
+      "file": "13-app-notes-archive.jpg",
+      "format": "JPEG",
+      "width": 1282,
+      "height": 802,
+      "bytes": 56430,
+      "sha256": "161b9c5c3dcd2ae84611e3b79c43bc7ede6120e39034ce7271c0c68a653afb99"
+    },
+    {
+      "file": "14-app-notes-trash.jpg",
+      "format": "JPEG",
+      "width": 1282,
+      "height": 802,
+      "bytes": 57531,
+      "sha256": "2061e3e4f21124620299c72e3b63f82914c780fba0b8c80174b75a763f4274f5"
+    },
+    {
+      "file": "15-app-calendar-month.jpg",
+      "format": "JPEG",
+      "width": 1282,
+      "height": 802,
+      "bytes": 61973,
+      "sha256": "445167296b4dc31179c043fb69002b3c42715810925ac506981753d2f50ff0c0"
+    },
+    {
+      "file": "15-ref-calendar-month.jpg",
+      "format": "JPEG",
+      "width": 1425,
+      "height": 990,
+      "bytes": 89917,
+      "sha256": "c215eee5e7a505d7221017cd1cb06b1dfd29da85e32aaac6541284f9fa7a6249"
+    },
+    {
+      "file": "16-app-calendar-form-top.jpg",
+      "format": "JPEG",
+      "width": 1282,
+      "height": 802,
+      "bytes": 78008,
+      "sha256": "200e5c6b37f60582fef90546ffbf5df9f8abd2fa8f32becf2d87e59017125dd5"
+    },
+    {
+      "file": "16-ref-calendar-form.jpg",
+      "format": "JPEG",
+      "width": 1425,
+      "height": 990,
+      "bytes": 101880,
+      "sha256": "546721472c55b2369e17839c48b79878103e5dd31dc1ff6a123bdbea5a51cbe2"
+    },
+    {
+      "file": "17-app-calendar-form-middle.jpg",
+      "format": "JPEG",
+      "width": 1282,
+      "height": 802,
+      "bytes": 83036,
+      "sha256": "c32f3b287a247210ea4733fe9fb553e2aab92bf0b2d3c40c573fe4cea3338221"
+    },
+    {
+      "file": "18-app-calendar-form-bottom.jpg",
+      "format": "JPEG",
+      "width": 1282,
+      "height": 802,
+      "bytes": 83135,
+      "sha256": "55f9a72bac183c8119c8990779941d787de35b4d702b776bf90988dbe9d886be"
+    },
+    {
+      "file": "19-app-calendar-upcoming.jpg",
+      "format": "JPEG",
+      "width": 1282,
+      "height": 802,
+      "bytes": 60496,
+      "sha256": "5ae5e5c5f6c3970ceff6f6040167e8d6df97fad3fd95e0ef2c137249ea5d6fb6"
+    },
+    {
+      "file": "20-app-calendar-missed.jpg",
+      "format": "JPEG",
+      "width": 1282,
+      "height": 802,
+      "bytes": 70371,
+      "sha256": "a2cae4ee477b67b76041d81f67479f8dee3c9699793bfcda2d87a13a3a28f13f"
+    },
+    {
+      "file": "21-app-settings-general.jpg",
+      "format": "JPEG",
+      "width": 1282,
+      "height": 802,
+      "bytes": 71871,
+      "sha256": "8570a0a05323702e050e6ff9fed497e5298cfa2932aded489a418dfaef73fff1"
+    },
+    {
+      "file": "21-ref-settings-general.jpg",
+      "format": "JPEG",
+      "width": 1425,
+      "height": 990,
+      "bytes": 76850,
+      "sha256": "14104f59e6275498cd5cbf8b325c98a6db49df237c82652c6df93e7c2b2e71a1"
+    },
+    {
+      "file": "22-app-settings-appearance-top.jpg",
+      "format": "JPEG",
+      "width": 1282,
+      "height": 802,
+      "bytes": 91463,
+      "sha256": "f76e5b5c3582b1c349802888f4e7370566b3eecb6139396ed3cb06cf8f8e3926"
+    },
+    {
+      "file": "22-ref-settings-appearance.jpg",
+      "format": "JPEG",
+      "width": 1425,
+      "height": 990,
+      "bytes": 91021,
+      "sha256": "53ee524521670ff760ee22de07555812d3b042494430b4fe5e529ca82b1fc2df"
+    },
+    {
+      "file": "23-app-settings-appearance-bottom.jpg",
+      "format": "JPEG",
+      "width": 1282,
+      "height": 802,
+      "bytes": 101997,
+      "sha256": "1b8ab3150607975b7ebd6dd8c41b9a77f7e23cf48007a9b0270700cdb1d7be2d"
+    },
+    {
+      "file": "24-app-settings-terminal.jpg",
+      "format": "JPEG",
+      "width": 1282,
+      "height": 802,
+      "bytes": 77042,
+      "sha256": "8d2e5946a7c31b525b2a5a06fcc61d31bd4b1e54b9c25321ee7d74718b6ad30e"
+    },
+    {
+      "file": "24-ref-settings-terminal.jpg",
+      "format": "JPEG",
+      "width": 1425,
+      "height": 990,
+      "bytes": 97867,
+      "sha256": "116d31d2cb72103288c2a69a66aa19e44c9610838c5d3debbaa85d4c07a63875"
+    },
+    {
+      "file": "25-app-profile-form.jpg",
+      "format": "JPEG",
+      "width": 1282,
+      "height": 802,
+      "bytes": 75685,
+      "sha256": "913feee1560a6c93106bf8b06094f6f93bae5157cacd3cd495da0e2ea9e24061"
+    },
+    {
+      "file": "26-app-settings-shortcuts.jpg",
+      "format": "JPEG",
+      "width": 1282,
+      "height": 802,
+      "bytes": 88192,
+      "sha256": "bd42fbadd2c26ed310398e072df0fdf7cf941e5e477cbc4c0a68c69ceb1cb643"
+    },
+    {
+      "file": "26-ref-settings-shortcuts.jpg",
+      "format": "JPEG",
+      "width": 1425,
+      "height": 990,
+      "bytes": 86215,
+      "sha256": "2271c2b23f26be421936c24a8f9762652d4ac9d299dee4b83022dd5ff02b8c8d"
+    },
+    {
+      "file": "27-app-settings-notifications.jpg",
+      "format": "JPEG",
+      "width": 1282,
+      "height": 802,
+      "bytes": 84597,
+      "sha256": "08d48947b4afc67e6251e357d1089f7e46b569937ad9770d4c1b45009b5058e6"
+    },
+    {
+      "file": "27-ref-settings-notifications.jpg",
+      "format": "JPEG",
+      "width": 1425,
+      "height": 990,
+      "bytes": 78879,
+      "sha256": "8fc5c6424f847b50f649d21c52ab15ce163e144a0cd07a576124af1a8923924d"
+    },
+    {
+      "file": "28-app-settings-data.jpg",
+      "format": "JPEG",
+      "width": 1282,
+      "height": 802,
+      "bytes": 90919,
+      "sha256": "4dfd9fc5cf37e95dc8f2f5914bde85fd470a8fb983464d01b2c0f664a02be28f"
+    },
+    {
+      "file": "28-ref-settings-data.jpg",
+      "format": "JPEG",
+      "width": 1425,
+      "height": 990,
+      "bytes": 74037,
+      "sha256": "2c24ac658e2e5775dc20b5bae45741579a2eece3111853a27afe9babfc1286e5"
+    },
+    {
+      "file": "29-app-settings-reset-dialog.jpg",
+      "format": "JPEG",
+      "width": 1282,
+      "height": 802,
+      "bytes": 76283,
+      "sha256": "2290e18ddbeefaeb88b721abd2f0b3dbed91be7689bdc77d2687dd70a1e40939"
+    },
+    {
+      "file": "30-app-settings-about.jpg",
+      "format": "JPEG",
+      "width": 1282,
+      "height": 802,
+      "bytes": 56783,
+      "sha256": "b505431d7d2d9af0d1168e281a1ccddb054c56f41d3dc98ccec2b56f24c1c0d5"
+    },
+    {
+      "file": "30-ref-settings-about.jpg",
+      "format": "JPEG",
+      "width": 1425,
+      "height": 990,
+      "bytes": 59039,
+      "sha256": "b0575826415041853c10592cc8bd7e4db2537c2597b5d8a0fb8bd46739d99410"
+    },
+    {
+      "file": "31-app-command-palette-empty.jpg",
+      "format": "JPEG",
+      "width": 1282,
+      "height": 802,
+      "bytes": 59143,
+      "sha256": "a9579c4e7bdf910025c1470ff04e41887f704396502e2936753041d335728e2b"
+    },
+    {
+      "file": "31-ref-command-palette.jpg",
+      "format": "JPEG",
+      "width": 1425,
+      "height": 990,
+      "bytes": 84803,
+      "sha256": "22dfb8bc13ad76eb9302f0eb49e6f2384fc4c50614910f8e838bc26d088b693a"
+    },
+    {
+      "file": "32-app-command-palette-results.jpg",
+      "format": "JPEG",
+      "width": 1282,
+      "height": 802,
+      "bytes": 47806,
+      "sha256": "5b358b9a389b3be5f4d1d912cb85e2a057b5465882ffe1948b1813812dfcb787"
+    },
+    {
+      "file": "33-app-notifications-empty.jpg",
+      "format": "JPEG",
+      "width": 1282,
+      "height": 802,
+      "bytes": 64965,
+      "sha256": "5304ee64303bcbbd99a09d534f109cf8fbab5affe8c7ab981d08ad10ecb4ab85"
+    },
+    {
+      "file": "33-ref-notifications.jpg",
+      "format": "JPEG",
+      "width": 1425,
+      "height": 990,
+      "bytes": 90380,
+      "sha256": "4d21d1ec1bce5b8b0ea303b41202f265ae1245655aed697a959ccb7f1b808e15"
+    },
+    {
+      "file": "34-app-shell-collapsed.jpg",
+      "format": "JPEG",
+      "width": 1282,
+      "height": 802,
+      "bytes": 52482,
+      "sha256": "f7a6aa3d51dc95c408ecc4239d14012a73fcc946e48426c42496239884b798ec"
+    },
+    {
+      "file": "35-app-quick-note-top.jpg",
+      "format": "JPEG",
+      "width": 562,
+      "height": 422,
+      "bytes": 24465,
+      "sha256": "b3d2c95a8f1b09a844594e1d8500657960295b03ef6204950ba9a7a7e0cea184"
+    },
+    {
+      "file": "35-ref-quick-note.jpg",
+      "format": "JPEG",
+      "width": 1425,
+      "height": 990,
+      "bytes": 49946,
+      "sha256": "083274361512c254c41a01edc7f7feb287e68d42b47026bcc6cbfa09dc3eeabd"
+    },
+    {
+      "file": "36-app-quick-note-bottom.jpg",
+      "format": "JPEG",
+      "width": 562,
+      "height": 422,
+      "bytes": 26113,
+      "sha256": "d9f5a8249e41366238dd725e836054e58afc10654122616eb60375b542412b8e"
+    },
+    {
+      "file": "37-app-home-session.jpg",
+      "format": "JPEG",
+      "width": 1282,
+      "height": 802,
+      "bytes": 74285,
+      "sha256": "b72bb1e0fa77f337d7a8247ddbd066c8f6e588e0b9820d2bbe5340fe6b0d0493"
+    },
+    {
+      "file": "37-ref-home-full.jpg",
+      "format": "JPEG",
+      "width": 1425,
+      "height": 990,
+      "bytes": 117392,
+      "sha256": "a774883c9320357df889e62592ce45443846c74076238b377db1f99645665a6d"
+    },
+    {
+      "file": "38-app-home-bottom.jpg",
+      "format": "JPEG",
+      "width": 1282,
+      "height": 802,
+      "bytes": 67710,
+      "sha256": "15c67434496cb5375909805211d63de88634cd5b0362222d49cbe5556f836a88"
+    }
+  ]
+}

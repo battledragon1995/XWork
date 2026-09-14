@@ -1,0 +1,147 @@
+Window: "XWork", App: xwork.exe.
+	0 window XWork Secondary Actions: Raise
+		1 pane TAURI_DRAG_RESIZE_WINDOW
+		2 pane
+			3 pane XWork
+				4 pane (disabled)
+				5 region XWork - Web content
+					6 region
+						7 region
+							8 region
+								9 region
+								10 region
+									11 region
+										12 region
+											13 region
+												14 region
+													15 region
+													16 document XWork ID: RootWebArea
+														156 group
+															17 group ID: root
+																1074 header
+																	1075 button XWork menu ID: radix-_r_0_
+																	1076 list Breadcrumb
+																		1077 list item Settings
+																		1351 list item /Notifications
+																	1079 button Search or run a command
+																	1080 button Notifications, 0 unread
+																	1081 button Minimize
+																	1082 button Maximize
+																	1083 button Close (hides to tray)
+																1084 navigation Main
+																	1085 list
+																		1086 list item Home
+																			1087 link Home
+																		1088 list item Projects
+																			1089 link Projects
+																		1090 list item Notes
+																			1091 link Notes
+																		1092 list item Calendar
+																			1093 link Calendar
+																	1094 text PROJECTS
+																	1095 button Add Project
+																	1096 list
+																		1097 list item XWork
+																			1098 button Sessions for XWork
+																			1099 link XWork
+																	1100 list
+																		1101 list item Settings
+																			1102 link Settings
+																		1103 list item Collapse sidebar
+																			1104 button Collapse sidebar
+																1105 thumb Resize sidebar
+																49 main
+																	50 group
+																	1106 text SETTINGS
+																	1107 list Settings sections
+																		1108 list item General
+																			1109 link General
+																		1110 list item Appearance
+																			1111 link Appearance
+																		1112 list item Terminal & CLI Profiles
+																			1113 link Terminal & CLI Profiles
+																		1114 list item Keyboard Shortcuts
+																			1115 link Keyboard Shortcuts
+																		1116 list item Notifications
+																			1117 link Notifications
+																		1118 list item Data
+																			1119 link Data
+																		1120 list item About
+																			1121 link About
+																	1352 heading Notifications
+																	1353 text Choose what appears in the bell and operating-system notifications.
+																	1354 group
+																		1355 text Terminal and AI CLI activity
+																		1356 text Show terminal activity in the bell. Choose which states can also notify the operating system below.
+																		1357 switch Terminal and AI CLI activity
+																		1358 group Send to the operating system when
+																			1359 text Send to the operating system when
+																			1360 checkbox Needs input
+																			1361 checkbox Process finished
+																			1362 checkbox Process exited with an error
+																		1363 text Turn on terminal activity to change these choices. Turning it off keeps your selections.
+																		1364 text Events and reminders
+																		1365 text Show due reminders in the bell. Operating-system notifications appear when the event is not visible.
+																		1366 switch Events and reminders
+																		1367 text Turning this off keeps existing notifications and Missed reminders. Turning it back on applies to future reminders without sending a burst of past notifications.
+																		1368 text Missed reminders on launch
+																		1369 text After XWork reopens, reminders missed while it was closed appear in Calendar → Missed without an operating-system notification burst.
+																		1370 text Always on
+								101 region
+						102 region
+						103 region
+		104 title bar
+			105 menu bar System ID: MenuBar
+				106 menu item System
+			107 button Minimise
+			108 button Maximise
+			109 button Close
+
+Document text: ```
+Settings
+/Notifications
+Search or run a command
+Ctrl K
+Notifications, 0 unread
+Minimize
+Maximize
+Close (hides to tray)
+￼
+Home
+Projects
+Notes
+Calendar
+PROJECTS
+Add Project
+Sessions for XWork
+XWork
+Settings
+Collapse sidebar
+Resize sidebar
+￼
+SETTINGS
+General
+Appearance
+Terminal & CLI Profiles
+Keyboard Shortcuts
+Notifications
+Data
+About
+Notifications
+Choose what appears in the bell and operating-system notifications.
+Terminal and AI CLI activity
+Show terminal activity in the bell. Choose which states can also notify the operating system below.
+Terminal and AI CLI activity
+Send to the operating system when
+￼
+￼
+￼
+Turn on terminal activity to change these choices. Turning it off keeps your selections.
+Events and reminders
+Show due reminders in the bell. Operating-system notifications appear when the event is not visible.
+Events and reminders
+Turning this off keeps existing notifications and Missed reminders. Turning it back on applies to future reminders without sending a burst of past notifications.
+Missed reminders on launch
+After XWork reopens, reminders missed while it was closed appear in Calendar → Missed without an operating-system notification burst.
+Always on
+```

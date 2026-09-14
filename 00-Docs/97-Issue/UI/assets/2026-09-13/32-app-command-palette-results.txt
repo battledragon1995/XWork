@@ -1,0 +1,69 @@
+Window: "XWork", App: xwork.exe.
+	0 window XWork Secondary Actions: Raise
+		1 pane TAURI_DRAG_RESIZE_WINDOW
+		2 pane
+			3 pane XWork
+				4 pane (disabled)
+				5 region XWork - Web content
+					6 region
+						7 region
+							8 region
+								9 region
+								10 region
+									11 region
+										12 region
+											13 region
+												14 region
+													15 region
+													16 document XWork ID: RootWebArea
+														156 group
+															17 group ID: root
+																49 main
+																	50 group
+															1498 dialogue Search or run a command Secondary Actions: Raise ID: radix-_r_4_
+																1499 heading Search or run a command ID: radix-_r_5_
+																1500 combo box Search or run a command
+																1501 button Close search
+																1502 group
+																	1503 list Search results
+																		1555 group Projects
+																			1556 text Projects
+																			1557 group
+																				1558 text XWork
+																				1559 text F:\Self Projects\
+																				1560 text XWork
+																		1561 group Sessions
+																			1562 text Sessions
+																			1563 group
+																				1564 text New Session
+																				1565 text XWork
+																				1566 text · New output
+																1527 text ↑ ↓ move
+																1567 text Enter open
+																1529 status
+																	1530 text 2 results
+								101 region
+						102 region
+						103 region
+		104 title bar
+			105 menu bar System ID: MenuBar
+				106 menu item System
+			107 button Minimise
+			108 button Maximise
+			109 button Close
+
+Document text: ```
+￼
+Search or run a command
+xwork
+Close search
+Projects
+XWork
+F:\Self Projects\XWork
+Sessions
+New Session
+XWork · New output
+↑ ↓ move
+Enter open
+2 results
+```

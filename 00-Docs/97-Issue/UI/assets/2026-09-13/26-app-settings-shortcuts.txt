@@ -1,0 +1,273 @@
+Window: "XWork", App: xwork.exe.
+	0 window XWork Secondary Actions: Raise
+		1 pane TAURI_DRAG_RESIZE_WINDOW
+		2 pane
+			3 pane XWork
+				4 pane (disabled)
+				5 region XWork - Web content
+					6 region
+						7 region
+							8 region
+								9 region
+								10 region
+									11 region
+										12 region
+											13 region
+												14 region
+													15 region
+													16 document XWork ID: RootWebArea
+														156 group
+															17 group ID: root
+																1074 header
+																	1075 button XWork menu ID: radix-_r_0_
+																	1076 list Breadcrumb
+																		1077 list item Settings
+																		1160 list item /Keyboard Shortcuts
+																	1079 button Search or run a command
+																	1080 button Notifications, 0 unread
+																	1081 button Minimize
+																	1082 button Maximize
+																	1083 button Close (hides to tray)
+																1084 navigation Main
+																	1085 list
+																		1086 list item Home
+																			1087 link Home
+																		1088 list item Projects
+																			1089 link Projects
+																		1090 list item Notes
+																			1091 link Notes
+																		1092 list item Calendar
+																			1093 link Calendar
+																	1094 text PROJECTS
+																	1095 button Add Project
+																	1096 list
+																		1097 list item XWork
+																			1098 button Sessions for XWork
+																			1099 link XWork
+																	1100 list
+																		1101 list item Settings
+																			1102 link Settings
+																		1103 list item Collapse sidebar
+																			1104 button Collapse sidebar
+																1105 thumb Resize sidebar
+																49 main
+																	50 group
+																	1106 text SETTINGS
+																	1107 list Settings sections
+																		1108 list item General
+																			1109 link General
+																		1110 list item Appearance
+																			1111 link Appearance
+																		1112 list item Terminal & CLI Profiles
+																			1113 link Terminal & CLI Profiles
+																		1114 list item Keyboard Shortcuts
+																			1115 link Keyboard Shortcuts
+																		1116 list item Notifications
+																			1117 link Notifications
+																		1118 list item Data
+																			1119 link Data
+																		1120 list item About
+																			1121 link About
+																	1161 heading Keyboard Shortcuts
+																	1162 text Click a shortcut to record a new one. Conflicts are flagged until you resolve them.
+																	1163 edit Search actions Description: Search actions
+																	1164 button Restore all defaults
+																	1165 status
+																	1166 heading NAVIGATION
+																	1167 table
+																		1168 row
+																			1169 column header Action
+																			1170 column header Shortcut
+																			1171 column header Status
+																		1172 row
+																			1173 item Search or run a command
+																			1174 item Change shortcut for Search or run a command
+																				1175 button Change shortcut for Search or run a command
+																					1176 group Ctrl
+																					1177 group K
+																			1178 item Default
+																		1179 row
+																			1180 item Previous project Not available yet
+																				1181 group Description: You can customize this shortcut now. Its action is not available in this version.
+																			1182 item Change shortcut for Previous project
+																				1183 button Change shortcut for Previous project
+																					1184 group Ctrl
+																					1185 group Alt
+																					1186 group Arrow left
+																			1187 item Default
+																		1188 row
+																			1189 item Next project Not available yet
+																				1190 group Description: You can customize this shortcut now. Its action is not available in this version.
+																			1191 item Change shortcut for Next project
+																				1192 button Change shortcut for Next project
+																					1193 group Ctrl
+																					1194 group Alt
+																					1195 group Arrow right
+																			1196 item Default
+																		1197 row
+																			1198 item Previous session Not available yet
+																				1199 group Description: You can customize this shortcut now. Its action is not available in this version.
+																			1200 item Change shortcut for Previous session
+																				1201 button Change shortcut for Previous session
+																					1202 group Ctrl
+																					1203 group Alt
+																					1204 group Arrow up
+																			1205 item Default
+																		1206 row
+																			1207 item Next session Not available yet
+																				1208 group Description: You can customize this shortcut now. Its action is not available in this version.
+																			1209 item Change shortcut for Next session
+																				1210 button Change shortcut for Next session
+																					1211 group Ctrl
+																					1212 group Alt
+																					1213 group Arrow down
+																			1214 item Default
+																		1215 row
+																			1216 item Previous tab Not available yet
+																				1217 group Description: You can customize this shortcut now. Its action is not available in this version.
+																			1218 item Change shortcut for Previous tab
+																				1219 button Change shortcut for Previous tab
+																					1220 group Ctrl
+																					1221 group Page Up
+																			1222 item Default
+																		1223 row
+																			1224 item Next tab Not available yet
+																				1225 group Description: You can customize this shortcut now. Its action is not available in this version.
+																			1226 item Change shortcut for Next tab
+																				1227 button Change shortcut for Next tab
+																					1228 group Ctrl
+																					1229 group Page Down
+																			1230 item Default
+																	1231 heading TABS
+																	1232 table
+																		1233 row
+																			1234 column header Action
+																			1235 column header Shortcut
+																			1236 column header Status
+																		1237 row
+																			1238 item New tab
+																			1239 item Change shortcut for New tab
+																				1240 button Change shortcut for New tab
+																					1241 group Ctrl
+																					1242 group T
+																			1243 item Default
+																		1244 row
+																			1245 item Close tab
+																			1246 item Change shortcut for Close tab
+																				1247 button Change shortcut for Close tab
+																					1248 group Ctrl
+																					1249 group W
+																			1250 item Default
+																		1251 row
+																			1252 item Reopen closed tab
+																			1253 item Change shortcut for Reopen closed tab
+																				1254 button Change shortcut for Reopen closed tab
+																					1255 group Ctrl
+																					1256 group Shift
+																					1257 group T
+																			1258 item Default
+																	1259 heading PANES
+																	1260 table
+																		1261 row
+																			1262 column header Action
+																			1263 column header Shortcut
+																			1264 column header Status
+																		1265 row
+																			1266 item Split right
+																			1267 item Change shortcut for Split right
+																				1268 button Change shortcut for Split right
+																					1269 group Ctrl
+																					1270 group \
+																			1271 item Default
+																		1272 row
+																			1273 item Split down
+																			1274 item Change shortcut for Split down
+																				1275 button Change shortcut for Split down
+																					1276 group Ctrl
+																					1277 group Alt
+																					1278 group \
+																			1279 item Default
+																		1280 row
+																			1281 item Maximize or restore pane
+																			1282 item Change shortcut for Maximize or restore pane
+																				1283 button Change shortcut for Maximize or restore pane
+																					1284 group Ctrl
+																					1285 group Shift
+																					1286 group M
+																			1287 item Default
+																		1288 row
+																			1289 item Close pane
+																			1290 item Change shortcut for Close pane
+																				1291 button Change shortcut for Close pane
+																					1292 group Ctrl
+																					1293 group Shift
+																					1294 group W
+																			1295 item Default
+																		1296 row
+																			1297 item Focus pane above Not available yet
+																				1298 group Description: You can customize this shortcut now. Its action is not available in this version.
+																			1299 item Change shortcut for Focus pane above
+																				1300 button Change shortcut for Focus pane above
+																					1301 group Ctrl
+																					1302 group Alt
+																					1303 group Shift
+																					1304 group Arrow up
+																			1305 item Default
+																		1306 row
+																			1307 item Focus pane below Not available yet
+																				1308 group Description: You can customize this shortcut now. Its action is not available in this version.
+																			1309 item Change shortcut for Focus pane below
+																				1310 button Change shortcut for Focus pane below
+																					1311 group Ctrl
+																					1312 group Alt
+																					1313 group Shift
+																					1314 group Arrow down
+																			1315 item Default
+																		1316 row
+																			1317 item Focus pane left Not available yet
+																				1318 group Description: You can customize this shortcut now. Its action is not available in this version.
+																			1319 item Change shortcut for Focus pane left
+																				1320 button Change shortcut for Focus pane left
+																					1321 group Ctrl
+																					1322 group Alt
+																					1323 group Shift
+																					1324 group Arrow left
+																			1325 item Default
+																		1326 row
+																			1327 item Focus pane right Not available yet
+																				1328 group Description: You can customize this shortcut now. Its action is not available in this version.
+																			1329 item Change shortcut for Focus pane right
+																				1330 button Change shortcut for Focus pane right
+																					1331 group Ctrl
+																					1332 group Alt
+																					1333 group Shift
+																					1334 group Arrow right
+																			1335 item Default
+																	1336 heading GLOBAL
+																	1337 table
+																		1338 row
+																			1339 column header Action
+																			1340 column header Shortcut
+																			1341 column header Status
+																		1342 row
+																			1343 item Open Quick Note
+																			1344 item Change shortcut for Open Quick Note
+																				1345 button Change shortcut for Open Quick Note
+																					1346 group Ctrl
+																					1347 group Shift
+																					1348 group N
+																			1349 item Default
+																				1350 status
+								101 region
+						102 region
+						103 region
+		104 title bar
+			105 menu bar System ID: MenuBar
+				106 menu item System
+			107 button Minimise
+			108 button Maximise
+			109 button Close
+
+Document text: ```
+Search actions
+```

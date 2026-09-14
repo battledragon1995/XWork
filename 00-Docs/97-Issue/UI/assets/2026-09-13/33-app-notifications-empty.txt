@@ -1,0 +1,161 @@
+Window: "XWork", App: xwork.exe.
+	0 window XWork Secondary Actions: Raise
+		1 pane TAURI_DRAG_RESIZE_WINDOW
+		2 pane
+			3 pane XWork
+				4 pane (disabled)
+				5 region XWork - Web content
+					6 region
+						7 region
+							8 region
+								9 region
+								10 region
+									11 region
+										12 region
+											13 region
+												14 region
+													15 region
+													16 document XWork ID: RootWebArea
+														156 group
+															1631 group
+															17 group ID: root
+																1568 header
+																	1569 button XWork menu ID: radix-_r_0_
+																	1570 list Breadcrumb
+																		1571 list item Settings
+																		1572 list item /About
+																	1573 button Search or run a command
+																	1574 button Notifications, 0 unread
+																	1575 button Minimize
+																	1576 button Maximize
+																	1577 button Close (hides to tray)
+																1578 navigation Main
+																	1579 list
+																		1580 list item Home
+																			1581 link Home
+																		1582 list item Projects
+																			1583 link Projects
+																		1584 list item Notes
+																			1585 link Notes
+																		1586 list item Calendar
+																			1587 link Calendar
+																	1588 text PROJECTS
+																	1589 button Add Project
+																	1590 list
+																		1591 list item XWork
+																			1592 button Sessions for XWork
+																			1593 link XWork
+																	1594 list
+																		1595 list item Settings
+																			1596 link Settings
+																		1597 list item Collapse sidebar
+																			1598 button Collapse sidebar
+																1599 thumb Resize sidebar
+																49 main
+																	50 group
+																	1600 text SETTINGS
+																	1601 list Settings sections
+																		1602 list item General
+																			1603 link General
+																		1604 list item Appearance
+																			1605 link Appearance
+																		1606 list item Terminal & CLI Profiles
+																			1607 link Terminal & CLI Profiles
+																		1608 list item Keyboard Shortcuts
+																			1609 link Keyboard Shortcuts
+																		1610 list item Notifications
+																			1611 link Notifications
+																		1612 list item Data
+																			1613 link Data
+																		1614 list item About
+																			1615 link About
+																	1616 heading About
+																	1617 text Application and operating-system details.
+																	1618 text XWork
+																	1619 text Local-first workspace for projects and AI CLIs
+																	1620 text Version
+																	1621 text 0.0.0
+																	1622 table
+																		1623 row
+																			1624 row header Operating system
+																			1625 item Windows 10.0.26200
+																		1626 row
+																			1627 row header Architecture
+																			1628 item x86_64
+															1632 dialogue Notifications Secondary Actions: Raise
+																1633 heading Notifications
+																1634 button (disabled) Mark all read
+																1635 button Clear read
+																1636 button Close notifications
+																1637 group
+																	1638 status
+																	1639 text No notifications yet
+																	1640 text Terminal activity and event reminders will appear here.
+																	1641 list
+																1642 text Terminal activity and event reminders appear here.
+																1643 link Notification settings
+															1644 group
+								101 region
+						102 region
+						103 region
+		104 title bar
+			105 menu bar System ID: MenuBar
+				106 menu item System
+			107 button Minimise
+			108 button Maximise
+			109 button Close
+
+Document text: ```
+￼
+XWork menu
+Settings
+/About
+Search or run a command
+Ctrl K
+￼
+Notifications, 0 unread
+Minimize
+Maximize
+Close (hides to tray)
+￼
+Home
+Projects
+Notes
+Calendar
+PROJECTS
+Add Project
+Sessions for XWork
+XWork
+Settings
+Collapse sidebar
+Resize sidebar
+￼
+SETTINGS
+General
+Appearance
+Terminal & CLI Profiles
+Keyboard Shortcuts
+Notifications
+Data
+About
+About
+Application and operating-system details.
+XWork
+Local-first workspace for projects and AI CLIs
+Version 0.0.0
+Operating system
+Windows 10.0.26200
+Architecture
+x86_64
+Notifications
+Mark all read
+Clear read
+Close notifications
+￼
+No notifications yet
+Terminal activity and event reminders will appear here.
+￼
+Terminal activity and event reminders appear here.
+Notification settings
+￼
+```

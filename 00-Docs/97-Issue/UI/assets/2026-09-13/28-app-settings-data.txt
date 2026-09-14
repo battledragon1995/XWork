@@ -1,0 +1,102 @@
+Window: "XWork", App: xwork.exe.
+	0 window XWork Secondary Actions: Raise
+		1 pane TAURI_DRAG_RESIZE_WINDOW
+		2 pane
+			3 pane XWork
+				4 pane (disabled)
+				5 region XWork - Web content
+					6 region
+						7 region
+							8 region
+								9 region
+								10 region
+									11 region
+										12 region
+											13 region
+												14 region
+													15 region
+													16 document XWork ID: RootWebArea
+														156 group
+															17 group ID: root
+																1074 header
+																	1075 button XWork menu ID: radix-_r_0_
+																	1076 list Breadcrumb
+																		1077 list item Settings
+																		1371 list item /Data
+																	1079 button Search or run a command
+																	1080 button Notifications, 0 unread
+																	1081 button Minimize
+																	1082 button Maximize
+																	1083 button Close (hides to tray)
+																1084 navigation Main
+																	1085 list
+																		1086 list item Home
+																			1087 link Home
+																		1088 list item Projects
+																			1089 link Projects
+																		1090 list item Notes
+																			1091 link Notes
+																		1092 list item Calendar
+																			1093 link Calendar
+																	1094 text PROJECTS
+																	1095 button Add Project
+																	1096 list
+																		1097 list item XWork
+																			1098 button Sessions for XWork
+																			1099 link XWork
+																	1100 list
+																		1101 list item Settings
+																			1102 link Settings
+																		1103 list item Collapse sidebar
+																			1104 button Collapse sidebar
+																1105 thumb Resize sidebar
+																49 main
+																	50 group
+																	1106 text SETTINGS
+																	1107 list Settings sections
+																		1108 list item General
+																			1109 link General
+																		1110 list item Appearance
+																			1111 link Appearance
+																		1112 list item Terminal & CLI Profiles
+																			1113 link Terminal & CLI Profiles
+																		1114 list item Keyboard Shortcuts
+																			1115 link Keyboard Shortcuts
+																		1116 list item Notifications
+																			1117 link Notifications
+																		1118 list item Data
+																			1119 link Data
+																		1120 list item About
+																			1121 link About
+																	1372 heading Data
+																	1373 text Everything XWork stores lives on this machine. Project source is never copied.
+																	1374 text Export a backup
+																	1375 text Project metadata, custom CLI profiles, theme, shortcuts and settings. Secrets are included as references only. This unencrypted backup may contain private paths and configuration.
+																	1376 button Export backup…
+																	1377 text Import a backup
+																	1378 text Project and profile records are merged. Included settings, default shell and shortcut overrides replace their current configuration.
+																	1379 button Import backup…
+																	1380 text Backups never include project source, running sessions, terminal output, CLI history, logs or notifications.
+																	1381 text Data location
+																	1382 text xwork.sqlite3 · logs
+																	1383 group
+																		1384 edit Data location
+																		1385 button Copy path
+																		1386 button Open folder
+																	1387 heading Danger zone
+																	1388 text Reset XWork
+																	1389 text Removes project metadata, custom profiles and notifications, and restores settings and shortcuts to defaults. Running sessions are stopped. Project files and logs are kept.
+																	1390 button Reset XWork…
+								101 region
+						102 region
+						103 region
+		104 title bar
+			105 menu bar System ID: MenuBar
+				106 menu item System
+			107 button Minimise
+			108 button Maximise
+			109 button Close
+
+Document text: ```
+C:\Users\ntnha\AppData\Roaming\com.xwork.app
+```

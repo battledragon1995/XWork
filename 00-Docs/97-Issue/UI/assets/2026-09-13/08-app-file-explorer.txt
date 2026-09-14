@@ -1,0 +1,176 @@
+Window: "XWork", App: xwork.exe.
+	0 window XWork Secondary Actions: Raise
+		1 pane TAURI_DRAG_RESIZE_WINDOW
+		2 pane
+			3 pane XWork
+				4 pane (disabled)
+				5 region XWork - Web content
+					6 region
+						7 region
+							8 region
+								9 region
+								10 region
+									11 region
+										12 region
+											13 region
+												14 region
+													15 region
+													16 document XWork ID: RootWebArea
+														156 group
+															17 group ID: root
+																18 header
+																	19 button XWork menu ID: radix-_r_0_
+																	20 list Breadcrumb
+																		110 list item Projects
+																		121 list item /XWork
+																		157 list item /New Session
+																	22 button Search or run a command
+																	23 button Notifications, 0 unread
+																	24 button Minimize
+																	25 button Maximize
+																	26 button Close (hides to tray)
+																27 navigation Main
+																	28 list
+																		29 list item Home
+																			30 link Home
+																		31 list item Projects
+																			32 link Projects
+																		33 list item Notes
+																			34 link Notes
+																		35 list item Calendar
+																			36 link Calendar
+																	37 text PROJECTS
+																	38 button Add Project
+																	39 list
+																		40 list item XWorkNew outputNew Session
+																			41 button Sessions for XWork
+																			42 link XWork
+																			158 list
+																				159 list item New outputNew Session
+																					160 link New output New Session
+																	43 list
+																		44 list item Settings
+																			45 link Settings
+																		46 list item Collapse sidebar
+																			47 button Collapse sidebar
+																48 thumb Resize sidebar
+																49 main
+																	50 group
+																	301 complementary File Explorer
+																		302 section header
+																			303 heading File Explorer
+																			304 button Refresh files
+																			305 button Collapse all
+																			306 button Close File Explorer
+																		307 edit Filter files Description: Filter files
+																		314 text XWork
+																		308 text Project ignore rules applied
+																		311 group
+																			312 tree Project files
+																				315 tree item (selectable) .agents Description: .agents
+																				316 tree item (selectable) .claude Description: .claude
+																				317 tree item (selectable) .github Description: .github
+																				318 tree item (selectable) 00-Docs Description: 00-Docs
+																				319 tree item (selectable) src Description: src
+																				320 tree item (selectable) src-tauri Description: src-tauri
+																				321 tree item (selectable) .gitattributes Description: .gitattributes
+																				322 tree item (selectable) .gitignore Description: .gitignore
+																				323 tree item (selectable) AGENTS.md Description: AGENTS.md
+																				324 tree item (selectable) biome.json Description: biome.json
+																				325 tree item (selectable) CLAUDE.md Description: CLAUDE.md
+																				326 tree item (selectable) components.json Description: components.json
+																				327 tree item (selectable) index.html Description: index.html
+																				328 tree item (selectable) package.json Description: package.json
+																				329 tree item (selectable) PLANS.md Description: PLANS.md
+																				330 tree item (selectable) pnpm-lock.yaml Description: pnpm-lock.yaml
+																				331 tree item (selectable) pnpm-workspace.yaml Description: pnpm-workspace.yaml
+																				332 tree item (selectable) rust-toolchain.toml Description: rust-toolchain.toml
+																				333 tree item (selectable) tsconfig.json Description: tsconfig.json
+																				334 tree item (selectable) vite.config.ts Description: vite.config.ts
+																		313 status
+																	176 tab Session tabs
+																		177 tab item (selectable) Terminal Description: Terminal
+																		178 sortable Reorder tab “Terminal” Description: Reorder tab “Terminal”
+																		179 button Close tab “Terminal” Description: Close tab “Terminal”
+																		180 button New tab
+																	181 status ID: DndLiveRegion-0
+																	182 button Hide File Explorer
+																	183 button Tab options ID: radix-_r_2k_
+																	236 group
+																		237 section header
+																			238 text Terminal
+																			239 text F:\Self Projects\XWork
+																			240 button Split right (Ctrl \)
+																			241 button Split down (Ctrl Alt \)
+																			242 toggle button Maximize pane (Ctrl Shift M)
+																			243 button Close pane (Ctrl Shift W)
+																		244 region Terminal
+																			245 tool bar Terminal actions
+																				246 button (disabled) Copy
+																				247 button Paste
+																				248 button Find
+																				249 button History
+																				250 button Latest
+																				251 button Clear
+																			252 region Terminal
+																				201 group
+																					273 text PowerShell 7.6.5
+																					274 text PS F:\Self Projects\XWork>
+																					275 text 
+																					276 text 
+																					277 text 
+																					278 text 
+																					279 text 
+																					280 text 
+																					281 text 
+																					282 text 
+																					283 text 
+																					284 text 
+																					285 text 
+																					286 text 
+																					287 text 
+																					288 text 
+																					289 text 
+																					290 text 
+																					291 text 
+																					292 text 
+																					293 text 
+																					294 text 
+																					295 text 
+																					296 text 
+																					297 text 
+																					298 text 
+																					227 edit
+																	253 thumb Resize panes left and right ID: split-4-separator
+																	254 group
+																		255 section header
+																			256 text New pane
+																			257 text F:\Self Projects\XWork
+																			258 button Split right (Ctrl \)
+																			259 button Split down (Ctrl Alt \)
+																			260 toggle button Maximize pane (Ctrl Shift M)
+																			261 button Close pane (Ctrl Shift W)
+																		262 section header
+																			263 heading What goes here?
+																			264 text Pick a tool or a file for this pane.
+																		265 heading RECENT
+																		266 button Terminal pwsh.exe · default shell Used just now
+																		267 heading TERMINAL / CLI
+																		268 button Codex codex --yolo
+																		269 button Claude claude --dangerously-skip-permissions
+																		270 button Terminal pwsh.exe · default shell
+																		271 heading FILE
+																		272 text Open a file from the File Explorer.
+								101 region
+						102 region
+						103 region
+		104 title bar
+			105 menu bar System ID: MenuBar
+				106 menu item System
+			107 button Minimise
+			108 button Maximise
+			109 button Close
+
+Document text: ```
+￼
+```

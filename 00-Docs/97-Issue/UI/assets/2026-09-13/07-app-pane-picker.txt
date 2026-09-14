@@ -1,0 +1,144 @@
+Window: "XWork", App: xwork.exe.
+	0 window XWork Secondary Actions: Raise
+		1 pane TAURI_DRAG_RESIZE_WINDOW
+		2 pane
+			3 pane XWork
+				4 pane (disabled)
+				5 region XWork - Web content
+					6 region
+						7 region
+							8 region
+								9 region
+								10 region
+									11 region
+										12 region
+											13 region
+												14 region
+													15 region
+													16 document XWork ID: RootWebArea
+														156 group
+															17 group ID: root
+																18 header
+																	19 button XWork menu ID: radix-_r_0_
+																	20 list Breadcrumb
+																		110 list item Projects
+																		121 list item /XWork
+																		157 list item /New Session
+																	22 button Search or run a command
+																	23 button Notifications, 0 unread
+																	24 button Minimize
+																	25 button Maximize
+																	26 button Close (hides to tray)
+																27 navigation Main
+																	28 list
+																		29 list item Home
+																			30 link Home
+																		31 list item Projects
+																			32 link Projects
+																		33 list item Notes
+																			34 link Notes
+																		35 list item Calendar
+																			36 link Calendar
+																	37 text PROJECTS
+																	38 button Add Project
+																	39 list
+																		40 list item XWorkNew outputNew Session
+																			41 button Sessions for XWork
+																			42 link XWork
+																			158 list
+																				159 list item New outputNew Session
+																					160 link New output New Session
+																	43 list
+																		44 list item Settings
+																			45 link Settings
+																		46 list item Collapse sidebar
+																			47 button Collapse sidebar
+																48 thumb Resize sidebar
+																49 main
+																	50 group
+																	176 tab Session tabs
+																		177 tab item (selectable) Terminal Description: Terminal
+																		178 sortable Reorder tab “Terminal” Description: Reorder tab “Terminal”
+																		179 button Close tab “Terminal” Description: Close tab “Terminal”
+																		180 button New tab
+																	181 status ID: DndLiveRegion-0
+																	182 button Show File Explorer
+																	183 button Tab options ID: radix-_r_2k_
+																	236 group
+																		237 section header
+																			238 text Terminal
+																			239 text F:\Self Projects\XWork
+																			240 button Split right (Ctrl \)
+																			241 button Split down (Ctrl Alt \)
+																			242 toggle button Maximize pane (Ctrl Shift M)
+																			243 button Close pane (Ctrl Shift W)
+																		244 region Terminal
+																			245 tool bar Terminal actions
+																				246 button (disabled) Copy
+																				247 button Paste
+																				248 button Find
+																				249 button History
+																				250 button Latest
+																				251 button Clear
+																			252 region Terminal
+																				201 group
+																					230 text PowerShell 7.6.5
+																					233 text PS F:\Self Projects\XWork>
+																					234 text 
+																					235 text 
+																					205 text 
+																					206 text 
+																					207 text 
+																					208 text 
+																					209 text 
+																					210 text 
+																					211 text 
+																					212 text 
+																					213 text 
+																					214 text 
+																					215 text 
+																					216 text 
+																					217 text 
+																					218 text 
+																					219 text 
+																					220 text 
+																					221 text 
+																					222 text 
+																					223 text 
+																					224 text 
+																					225 text 
+																					226 text 
+																					227 edit
+																	253 thumb Resize panes left and right ID: split-4-separator
+																	254 group
+																		255 section header
+																			256 text New pane
+																			257 text F:\Self Projects\XWork
+																			258 button Split right (Ctrl \)
+																			259 button Split down (Ctrl Alt \)
+																			260 toggle button Maximize pane (Ctrl Shift M)
+																			261 button Close pane (Ctrl Shift W)
+																		262 section header
+																			263 heading What goes here?
+																			264 text Pick a tool or a file for this pane.
+																		265 heading RECENT
+																		266 button Terminal pwsh.exe · default shell Used just now
+																		267 heading TERMINAL / CLI
+																		268 button Codex codex --yolo
+																		269 button Claude claude --dangerously-skip-permissions
+																		270 button Terminal pwsh.exe · default shell
+																		271 heading FILE
+																		272 text Open a file from the File Explorer.
+								101 region
+						102 region
+						103 region
+		104 title bar
+			105 menu bar System ID: MenuBar
+				106 menu item System
+			107 button Minimise
+			108 button Maximise
+			109 button Close
+
+Document text: ```
+￼
+```

@@ -1,0 +1,97 @@
+Window: "XWork", App: xwork.exe.
+	0 window XWork Secondary Actions: Raise
+		1 pane TAURI_DRAG_RESIZE_WINDOW
+		2 pane
+			3 pane XWork
+				4 pane (disabled)
+				5 region XWork - Web content
+					6 region
+						7 region
+							8 region
+								9 region
+								10 region
+									11 region
+										12 region
+											13 region
+												14 region
+													15 region
+													16 document XWork ID: RootWebArea
+														156 group
+															17 group ID: root
+																18 header
+																	19 button XWork menu ID: radix-_r_0_
+																	20 list Breadcrumb
+																		578 list item Notes
+																	22 button Search or run a command
+																	23 button Notifications, 0 unread
+																	24 button Minimize
+																	25 button Maximize
+																	26 button Close (hides to tray)
+																27 navigation Main
+																	28 list
+																		29 list item Home
+																			30 link Home
+																		31 list item Projects
+																			32 link Projects
+																		33 list item Notes
+																			34 link Notes
+																		35 list item Calendar
+																			36 link Calendar
+																	37 text PROJECTS
+																	38 button Add Project
+																	39 list
+																		40 list item XWork
+																			41 button Sessions for XWork
+																			42 link XWork
+																	43 list
+																		44 list item Settings
+																			45 link Settings
+																		46 list item Collapse sidebar
+																			47 button Collapse sidebar
+																48 thumb Resize sidebar
+																49 main
+																	50 group
+																	579 complementary Notes list
+																		580 heading Notes
+																		581 button New note
+																		582 navigation Note lifecycle
+																			583 button All notes0
+																			584 button Archive0
+																			585 button Trash0
+																		586 text Search notes
+																		587 edit Search notes
+																		588 text Project filter
+																		589 combo box Project filter
+																		590 checkbox Pinned only
+																		591 button Refresh
+																		592 group
+																			615 text No notes yet
+																			595 list
+																	600 region Note editor
+																		601 button Edit
+																		602 button Preview
+																		603 status
+																			604 text Draft
+																		605 edit Note title Description: Untitled note
+																		606 text Project
+																		607 combo box Note project
+																		608 button Copy Markdown
+																		609 text Add some content to save this note
+																		610 group
+																		611 group
+																			612 edit Note Markdown
+																				613 text 
+																		614 button Discard draft
+								101 region
+						102 region
+						103 region
+		104 title bar
+			105 menu bar System ID: MenuBar
+				106 menu item System
+			107 button Minimise
+			108 button Maximise
+			109 button Close
+
+Document text: ```
+Note title
+```

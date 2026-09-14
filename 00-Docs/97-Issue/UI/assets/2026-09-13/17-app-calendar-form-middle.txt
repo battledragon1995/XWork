@@ -1,0 +1,102 @@
+Window: "XWork", App: xwork.exe.
+	0 window XWork Secondary Actions: Raise
+		1 pane TAURI_DRAG_RESIZE_WINDOW
+		2 pane
+			3 pane XWork
+				4 pane (disabled)
+				5 region XWork - Web content
+					6 region
+						7 region
+							8 region
+								9 region
+								10 region
+									11 region
+										12 region
+											13 region
+												14 region
+													15 region
+													16 document XWork ID: RootWebArea
+														156 group
+															17 group ID: root
+																49 main
+																	50 group
+															682 dialogue New Event Secondary Actions: Raise ID: radix-_r_3u_
+																683 heading New Event ID: radix-_r_3v_
+																684 text Create a calendar event
+																685 form
+																	686 group Event definition
+																		687 text Event definition
+																		688 text Title
+																		689 edit Title
+																		690 text Description
+																		691 edit Description
+																		692 text Project
+																		693 combo box Project
+																		696 checkbox All day
+																		697 text Starts
+																		698 date picker Starts
+																			699 spin button Month Starts Description: mm
+																			700 text /
+																			701 spin button Day Starts Description: dd
+																			702 text /
+																			703 spin button Year Starts Description: yyyy
+																			704 button Show date picker Description: Show date picker ID: picker
+																		705 text Ends
+																		706 date picker Ends
+																			707 spin button Month Ends Description: mm
+																			708 text /
+																			709 spin button Day Ends Description: dd
+																			710 text /
+																			711 spin button Year Ends Description: yyyy
+																			712 button Show date picker Description: Show date picker ID: picker
+																		713 text Start time
+																		714 time picker Start time
+																			715 spin button Hours Start time Description: --
+																			716 text :
+																			717 spin button Minutes Start time Description: --
+																			718 text 
+																			719 spin button AM/PM Start time Description: --
+																			720 button Show time picker Description: Show time picker ID: picker
+																		721 text End time
+																		722 time picker End time
+																			723 spin button Hours End time Description: --
+																			724 text :
+																			725 spin button Minutes End time Description: --
+																			726 text 
+																			727 spin button AM/PM End time Description: --
+																			728 button Show time picker Description: Show time picker ID: picker
+																		729 text Time zone
+																		730 edit Time zone
+																		731 text Changing the time zone keeps these wall times. Daylight saving time is checked when saving.
+																		732 group Repeat
+																			733 text Repeat
+																			734 combo box Repeat
+																		735 group Reminders
+																			736 text Reminders
+																			737 text Reminder
+																			738 text 1
+																			739 text preset
+																			740 combo box Reminder 1 preset
+																			741 text Reminder
+																			742 text 1
+																			743 text minutes
+																			744 spin button Reminder 1 minutes
+																			745 button Remove reminder 1
+																			746 button Add reminder
+																	747 text Unsaved event changes are discarded when quitting or replacing app data.
+																	748 button Cancel
+																	749 button Save event
+																750 button Close
+								101 region
+						102 region
+						103 region
+		104 title bar
+			105 menu bar System ID: MenuBar
+				106 menu item System
+			107 button Minimise
+			108 button Maximise
+			109 button Close
+
+Document text: ```
+Asia/Bangkok
+```

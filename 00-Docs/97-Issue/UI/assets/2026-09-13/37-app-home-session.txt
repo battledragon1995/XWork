@@ -1,0 +1,115 @@
+Window: "XWork", App: xwork.exe.
+	0 window XWork Secondary Actions: Raise
+		1 pane TAURI_DRAG_RESIZE_WINDOW
+		2 pane
+			3 pane XWork
+				4 pane (disabled)
+				5 region XWork - Web content
+					6 region
+						1718 region
+							8 region
+								9 region
+								10 region
+									11 region
+										12 region
+											13 region
+												14 region
+													15 region
+													16 document XWork ID: RootWebArea
+														156 group
+															17 group ID: root
+																1568 header
+																	1569 button XWork menu ID: radix-_r_0_
+																	1570 list Breadcrumb
+																		1668 list item Home
+																	1573 button Search or run a command
+																	1574 button Notifications, 0 unread
+																	1575 button Minimize
+																	1576 button Maximize
+																	1577 button Close (hides to tray)
+																1578 navigation Main
+																	1579 list
+																		1580 list item Home
+																			1656 link Home
+																		1582 list item Projects
+																			1657 link Projects
+																		1584 list item Notes
+																			1658 link Notes
+																		1586 list item Calendar
+																			1659 link Calendar
+																	1660 text PROJECTS
+																	1661 button Add Project
+																	1662 list
+																		1663 list item XWork
+																			1664 button Sessions for XWork
+																			1665 link XWork
+																	1594 list
+																		1595 list item Settings
+																			1666 link Settings
+																		1597 list item Collapse sidebar
+																			1598 button Collapse sidebar
+																1667 thumb Resize sidebar
+																49 main
+																	50 group
+																	1669 section header
+																		1670 heading Home
+																		1671 text Sunday, 13 September
+																		1672 button Open Quick Note window
+																		1673 text 1 sessions running
+																		1674 text ·
+																		1675 text 
+																		1676 text 0
+																		1677 text need attention
+																	1678 region Sessions
+																		1679 heading Sessions ID: home-sessions
+																		1680 link Projects
+																		1681 list
+																			1682 list item New SessionXWorkUnseen output3 tabs · 1 processes
+																				1683 link Open session New Session
+																	1684 region Recent projects
+																		1685 heading Recent projects ID: home-projects
+																		1686 link All projects
+																		1687 list
+																			1688 list item XWorkF:\Self Projects\XWorkOpened 13/09/2026, 20:50:03
+																				1689 link Open project XWork
+																	1690 region Upcoming calendar events
+																		1691 heading Upcoming events
+																		1692 text No events in the next 14 days
+																		1693 link View calendar
+																	1694 group
+																		1695 heading Quick Note
+																		1696 text Title (optional)
+																		1697 edit Title (optional) Description: Title (optional)
+																		1698 text Markdown
+																		1699 edit Markdown Description: Write a note… Markdown works here.
+																		1700 text Project
+																		1701 combo box Project
+																		1702 button (disabled) Cancel
+																		1703 button Save
+																		1704 text Saved notes appear in Notes and on the linked project.
+																	1705 link Open Notes
+																	1706 region Pinned notes
+																		1707 heading Pinned notes
+																		1727 text No notes yet
+																		1709 list
+																		1710 link All notes
+																		1711 button Refresh
+																	1712 region Recent notes
+																		1713 heading Recent notes
+																		1728 text No notes yet
+																		1715 list
+																		1716 link All notes
+																		1717 button Refresh
+								101 region
+						102 region
+						103 region
+		104 title bar
+			105 menu bar System ID: MenuBar
+				106 menu item System
+			107 button Minimise
+			108 button Maximise
+			109 button Close
+
+Document text: ```
+￼
+```

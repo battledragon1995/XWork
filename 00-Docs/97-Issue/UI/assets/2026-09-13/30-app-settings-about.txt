@@ -1,0 +1,133 @@
+Window: "XWork", App: xwork.exe.
+	0 window XWork Secondary Actions: Raise
+		1 pane TAURI_DRAG_RESIZE_WINDOW
+		2 pane
+			3 pane XWork
+				4 pane (disabled)
+				5 region XWork - Web content
+					6 region
+						7 region
+							8 region
+								9 region
+								10 region
+									11 region
+										12 region
+											13 region
+												14 region
+													15 region
+													16 document XWork ID: RootWebArea
+														156 group
+															17 group ID: root
+																1415 header
+																	1416 button XWork menu ID: radix-_r_0_
+																	1417 list Breadcrumb
+																		1418 list item Settings
+																		1482 list item /About
+																	1420 button Search or run a command
+																	1421 button Notifications, 0 unread
+																	1422 button Minimize
+																	1423 button Maximize
+																	1424 button Close (hides to tray)
+																1425 navigation Main
+																	1426 list
+																		1427 list item Home
+																			1428 link Home
+																		1429 list item Projects
+																			1430 link Projects
+																		1431 list item Notes
+																			1432 link Notes
+																		1433 list item Calendar
+																			1434 link Calendar
+																	1435 text PROJECTS
+																	1436 button Add Project
+																	1437 list
+																		1438 list item XWork
+																			1439 button Sessions for XWork
+																			1440 link XWork
+																	1441 list
+																		1442 list item Settings
+																			1443 link Settings
+																		1444 list item Collapse sidebar
+																			1445 button Collapse sidebar
+																1446 thumb Resize sidebar
+																49 main
+																	50 group
+																	1447 text SETTINGS
+																	1448 list Settings sections
+																		1449 list item General
+																			1450 link General
+																		1451 list item Appearance
+																			1452 link Appearance
+																		1453 list item Terminal & CLI Profiles
+																			1454 link Terminal & CLI Profiles
+																		1455 list item Keyboard Shortcuts
+																			1456 link Keyboard Shortcuts
+																		1457 list item Notifications
+																			1458 link Notifications
+																		1459 list item Data
+																			1460 link Data
+																		1461 list item About
+																			1462 link About
+																	1483 heading About
+																	1484 text Application and operating-system details.
+																	1485 text XWork
+																	1486 text Local-first workspace for projects and AI CLIs
+																	1487 text Version
+																	1488 text 0.0.0
+																	1489 table
+																		1490 row
+																			1491 row header Operating system
+																			1492 item Windows 10.0.26200
+																		1493 row
+																			1494 row header Architecture
+																			1495 item x86_64
+								101 region
+						102 region
+						103 region
+		104 title bar
+			105 menu bar System ID: MenuBar
+				106 menu item System
+			107 button Minimise
+			108 button Maximise
+			109 button Close
+
+Document text: ```
+Settings
+/About
+Search or run a command
+Ctrl K
+Notifications, 0 unread
+Minimize
+Maximize
+Close (hides to tray)
+￼
+Home
+Projects
+Notes
+Calendar
+PROJECTS
+Add Project
+Sessions for XWork
+XWork
+Settings
+Collapse sidebar
+Resize sidebar
+￼
+SETTINGS
+General
+Appearance
+Terminal & CLI Profiles
+Keyboard Shortcuts
+Notifications
+Data
+About
+About
+Application and operating-system details.
+XWork
+Local-first workspace for projects and AI CLIs
+Version 0.0.0
+Operating system
+Windows 10.0.26200
+Architecture
+x86_64
+```

@@ -1,0 +1,47 @@
+Window: "XWork Quick Note", App: xwork.exe.
+	0 window XWork Quick Note Secondary Actions: Raise
+		22 pane TAURI_DRAG_RESIZE_WINDOW
+		1 pane
+			2 pane XWork
+				3 pane (disabled)
+				4 region XWork - Web content
+					5 region
+						6 region
+							7 region
+								8 region
+								9 region
+									10 region
+										11 region
+											12 region
+												13 region
+													14 region
+													23 document XWork ID: RootWebArea
+														24 group ID: root
+															25 main
+																26 section header
+																	27 heading XWork / Quick Note
+																	28 text Esc cancel
+																	29 button Close Quick Note
+																30 group
+																	31 text Title (optional)
+																	32 edit Title (optional)
+																	33 text Markdown
+																	34 edit Markdown Description: Write a note… Markdown works here.
+																	35 text Project
+																	36 combo box Project
+																	37 button Refresh projects
+																	38 text Markdown supported. Saved notes appear in Notes and on the linked project.
+																	39 section footer
+																		40 button Cancel
+																		41 button Save
+								15 region
+						16 region
+						17 region
+		18 title bar
+			19 menu bar System ID: MenuBar
+				20 menu item System
+			21 button Close
+
+Document text: ```
+￼
+```

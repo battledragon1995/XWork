@@ -1,0 +1,180 @@
+Window: "XWork", App: xwork.exe.
+	0 window XWork Secondary Actions: Raise
+		1 pane TAURI_DRAG_RESIZE_WINDOW
+		2 pane
+			3 pane XWork
+				4 pane (disabled)
+				5 region XWork - Web content
+					6 region
+						7 region
+							8 region
+								9 region
+								10 region
+									11 region
+										12 region
+											13 region
+												14 region
+													15 region
+													16 document XWork ID: RootWebArea
+														156 group
+															17 group ID: root
+																751 header
+																	752 button XWork menu ID: radix-_r_0_
+																	753 list Breadcrumb
+																		851 list item Settings
+																		1005 list item /Terminal & CLI Profiles
+																	755 button Search or run a command
+																	756 button Notifications, 0 unread
+																	757 button Minimize
+																	758 button Maximize
+																	759 button Close (hides to tray)
+																760 navigation Main
+																	761 list
+																		762 list item Home
+																			763 link Home
+																		764 list item Projects
+																			765 link Projects
+																		766 list item Notes
+																			767 link Notes
+																		768 list item Calendar
+																			769 link Calendar
+																	770 text PROJECTS
+																	771 button Add Project
+																	772 list
+																		773 list item XWork
+																			774 button Sessions for XWork
+																			775 link XWork
+																	776 list
+																		777 list item Settings
+																			778 link Settings
+																		779 list item Collapse sidebar
+																			780 button Collapse sidebar
+																781 thumb Resize sidebar
+																49 main
+																	50 group
+																	853 text SETTINGS
+																	854 list Settings sections
+																		855 list item General
+																			856 link General
+																		857 list item Appearance
+																			858 link Appearance
+																		859 list item Terminal & CLI Profiles
+																			860 link Terminal & CLI Profiles
+																		861 list item Keyboard Shortcuts
+																			862 link Keyboard Shortcuts
+																		863 list item Notifications
+																			864 link Notifications
+																		865 list item Data
+																			866 link Data
+																		867 list item About
+																			868 link About
+																	1006 heading Terminal & CLI Profiles
+																	1007 text Which shell opens by default and which tools appear on the New Session screen.
+																	1008 group
+																	1009 text Default shell
+																	1010 text Used by the Terminal profile and by any profile without its own shell.
+																	1011 combo box Default shell
+																	1012 text Resolves to
+																	1013 text PowerShell 7
+																	1014 text (
+																	1015 text pwsh.exe
+																	1016 text ).
+																	1017 heading Built-in profiles
+																	1018 table Built-in profiles
+																		1019 row
+																			1020 column header PROFILE
+																			1021 column header COMMAND
+																			1022 column header STATUS
+																			1023 column header ACTIONS
+																		1024 row
+																			1025 item Codex
+																			1026 item codex
+																			1027 item Available Checked 20:48
+																			1028 item Check command for Codex
+																				1029 button Check command for Codex
+																		1030 row
+																			1031 item Claude
+																			1032 item claude
+																			1033 item Available Checked 20:48
+																			1034 item Check command for Claude
+																				1035 button Check command for Claude
+																		1036 row
+																			1037 item Terminal
+																			1038 item pwsh.exe
+																			1039 item Available Checked 20:48
+																			1040 item Check command for Terminal
+																				1041 button Check command for Terminal
+																	1042 heading Custom profiles
+																	1043 button New Profile
+																	1044 text No custom profiles yet.
+								101 region
+						102 region
+						103 region
+		104 title bar
+			105 menu bar System ID: MenuBar
+				106 menu item System
+			107 button Minimise
+			108 button Maximise
+			109 button Close
+
+Document text: ```
+Settings
+/Terminal & CLI Profiles
+Search or run a command
+Ctrl K
+Notifications, 0 unread
+Minimize
+Maximize
+Close (hides to tray)
+￼
+Home
+Projects
+Notes
+Calendar
+PROJECTS
+Add Project
+Sessions for XWork
+XWork
+Settings
+Collapse sidebar
+Resize sidebar
+￼
+SETTINGS
+General
+Appearance
+Terminal & CLI Profiles
+Keyboard Shortcuts
+Notifications
+Data
+About
+Terminal & CLI Profiles
+Which shell opens by default and which tools appear on the New Session screen.
+￼
+Default shell
+Used by the Terminal profile and by any profile without its own shell.
+Default shell
+Resolves to PowerShell 7 (pwsh.exe).
+Built-in profiles
+PROFILE
+COMMAND
+STATUS
+ACTIONS
+Codex
+codex
+Available
+Checked 20:48
+Check command for Codex
+Claude
+claude
+Available
+Checked 20:48
+Check command for Claude
+Terminal
+pwsh.exe
+Available
+Checked 20:48
+Check command for Terminal
+Custom profiles
+New Profile
+No custom profiles yet.
+```

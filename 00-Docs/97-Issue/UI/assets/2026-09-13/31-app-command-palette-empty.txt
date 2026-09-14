@@ -1,0 +1,88 @@
+Window: "XWork", App: xwork.exe.
+	0 window XWork Secondary Actions: Raise
+		1 pane TAURI_DRAG_RESIZE_WINDOW
+		2 pane
+			3 pane XWork
+				4 pane (disabled)
+				5 region XWork - Web content
+					6 region
+						7 region
+							8 region
+								9 region
+								10 region
+									11 region
+										12 region
+											13 region
+												14 region
+													15 region
+													16 document XWork ID: RootWebArea
+														156 group
+															17 group ID: root
+																49 main
+																	50 group
+															1498 dialogue Search or run a command Secondary Actions: Raise ID: radix-_r_4_
+																1499 heading Search or run a command ID: radix-_r_5_
+																1500 combo box Search or run a command
+																1501 button Close search
+																1502 group
+																	1503 list Search results
+																		1504 group Commands
+																			1505 text Commands
+																			1506 group
+																				1507 text Open Home
+																			1508 group
+																				1509 text Open Projects
+																			1510 group
+																				1511 text Open Settings › General
+																			1512 group
+																				1513 text Open Settings › Appearance
+																			1514 group
+																				1515 text Open Settings › Terminal & CLI Profiles
+																			1516 group
+																				1517 text Open Settings › Keyboard Shortcuts
+																			1518 group (disabled)
+																				1519 text Previous project
+																				1520 text Not available yet.
+																				1521 text Ctrl Alt ←
+																			1522 group (disabled)
+																				1523 text Next project
+																				1524 text Not available yet.
+																				1525 text Ctrl Alt →
+																			1526 text More matches available. Refine your search.
+																1527 text ↑ ↓ move
+																1528 text Enter run
+																1529 status
+																	1530 text 8 results
+								101 region
+						102 region
+						103 region
+		104 title bar
+			105 menu bar System ID: MenuBar
+				106 menu item System
+			107 button Minimise
+			108 button Maximise
+			109 button Close
+
+Document text: ```
+￼
+Search or run a command
+Search or run a command
+Close search
+Commands
+Open Home
+Open Projects
+Open Settings › General
+Open Settings › Appearance
+Open Settings › Terminal & CLI Profiles
+Open Settings › Keyboard Shortcuts
+Previous project
+Not available yet.
+Ctrl Alt ←
+Next project
+Not available yet.
+Ctrl Alt →
+More matches available. Refine your search.
+↑ ↓ move
+Enter run
+8 results
+```

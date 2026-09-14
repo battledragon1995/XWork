@@ -1,0 +1,146 @@
+Window: "XWork", App: xwork.exe.
+	0 window XWork Secondary Actions: Raise
+		1 pane TAURI_DRAG_RESIZE_WINDOW
+		2 pane
+			3 pane XWork
+				4 pane (disabled)
+				5 region XWork - Web content
+					6 region
+						7 region
+							8 region
+								9 region
+								10 region
+									11 region
+										12 region
+											13 region
+												14 region
+													15 region
+													16 document XWork ID: RootWebArea
+														156 group
+															17 group ID: root
+																751 header
+																	752 button XWork menu ID: radix-_r_0_
+																	753 list Breadcrumb
+																		851 list item Settings
+																		852 list item /General
+																	755 button Search or run a command
+																	756 button Notifications, 0 unread
+																	757 button Minimize
+																	758 button Maximize
+																	759 button Close (hides to tray)
+																760 navigation Main
+																	761 list
+																		762 list item Home
+																			763 link Home
+																		764 list item Projects
+																			765 link Projects
+																		766 list item Notes
+																			767 link Notes
+																		768 list item Calendar
+																			769 link Calendar
+																	770 text PROJECTS
+																	771 button Add Project
+																	772 list
+																		773 list item XWork
+																			774 button Sessions for XWork
+																			775 link XWork
+																	776 list
+																		777 list item Settings
+																			778 link Settings
+																		779 list item Collapse sidebar
+																			780 button Collapse sidebar
+																781 thumb Resize sidebar
+																49 main
+																	50 group
+																	853 text SETTINGS
+																	854 list Settings sections
+																		855 list item General
+																			856 link General
+																		857 list item Appearance
+																			858 link Appearance
+																		859 list item Terminal & CLI Profiles
+																			860 link Terminal & CLI Profiles
+																		861 list item Keyboard Shortcuts
+																			862 link Keyboard Shortcuts
+																		863 list item Notifications
+																			864 link Notifications
+																		865 list item Data
+																			866 link Data
+																		867 list item About
+																			868 link About
+																	869 heading General
+																	870 text Language, window and tray behaviour.
+																	871 text Interface language
+																	872 text More languages will arrive in a later release.
+																	873 text English
+																	874 text Closing the window hides XWork to the tray
+																	875 text Terminals, AI CLIs and reminders keep running. Use Quit XWork to stop everything.
+																	876 switch (disabled) Closing the window hides XWork to the tray
+																	877 text Show tray icon
+																	878 text Turning this off means the window can only be reopened from the taskbar.
+																	879 switch (disabled) Show tray icon
+																	880 text Ask before quitting
+																	881 text Shows how many sessions and processes will be stopped.
+																	882 switch (disabled) Ask before quitting
+																	883 text Open at Home on launch
+																	884 text XWork always opens at Home. Sessions are not restored after Quit.
+																	885 switch (disabled) Open at Home on launch
+								101 region
+						102 region
+						103 region
+		104 title bar
+			105 menu bar System ID: MenuBar
+				106 menu item System
+			107 button Minimise
+			108 button Maximise
+			109 button Close
+
+Document text: ```
+Settings
+/General
+Search or run a command
+Ctrl K
+Notifications, 0 unread
+Minimize
+Maximize
+Close (hides to tray)
+￼
+￼
+Home
+Projects
+Notes
+Calendar
+PROJECTS
+Add Project
+Sessions for XWork
+XWork
+Settings
+Collapse sidebar
+Resize sidebar
+￼
+SETTINGS
+General
+Appearance
+Terminal & CLI Profiles
+Keyboard Shortcuts
+Notifications
+Data
+About
+General
+Language, window and tray behaviour.
+Interface language
+More languages will arrive in a later release.
+English
+Closing the window hides XWork to the tray
+Terminals, AI CLIs and reminders keep running. Use Quit XWork to stop everything.
+Closing the window hides XWork to the tray
+Show tray icon
+Turning this off means the window can only be reopened from the taskbar.
+Show tray icon
+Ask before quitting
+Shows how many sessions and processes will be stopped.
+Ask before quitting
+Open at Home on launch
+XWork always opens at Home. Sessions are not restored after Quit.
+Open at Home on launch
+```

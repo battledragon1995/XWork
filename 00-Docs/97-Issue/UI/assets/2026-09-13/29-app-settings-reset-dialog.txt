@@ -1,0 +1,59 @@
+Window: "XWork", App: xwork.exe.
+	0 window XWork Secondary Actions: Raise
+		1 pane TAURI_DRAG_RESIZE_WINDOW
+		2 pane
+			3 pane XWork
+				4 pane (disabled)
+				5 region XWork - Web content
+					6 region
+						7 region
+							8 region
+								9 region
+								10 region
+									11 region
+										12 region
+											13 region
+												14 region
+													15 region
+													16 document XWork ID: RootWebArea
+														156 group
+															17 group ID: root
+																49 main
+																	50 group
+															1391 dialogue Reset XWork? Secondary Actions: Raise ID: radix-_r_s_
+																1392 heading Reset XWork? ID: radix-_r_t_
+																1393 text Running sessions are stopped. Project files and logs are kept.
+																1394 group
+																	1395 text Projects:
+																	1396 text 1
+																	1397 text · Custom CLI profiles:
+																	1398 text 
+																	1399 text 0
+																	1400 text Shortcut overrides:
+																	1401 text 0
+																	1402 text Settings differ from defaults:
+																	1403 text 
+																	1404 text Yes
+																	1405 text Sessions:
+																	1406 text 1
+																	1407 text · Running processes:
+																	1408 text 
+																	1409 text 1
+																	1410 text Counts may change. Reset stops all sessions and removes all current XWork data in the categories above.
+																	1411 text Type RESET to confirm
+																	1412 edit Type RESET to confirm ID: data-reset-confirmation
+																1413 button Cancel
+																1414 button (disabled) Reset XWork
+								101 region
+						102 region
+						103 region
+		104 title bar
+			105 menu bar System ID: MenuBar
+				106 menu item System
+			107 button Minimise
+			108 button Maximise
+			109 button Close
+
+Document text: ```
+￼
+```

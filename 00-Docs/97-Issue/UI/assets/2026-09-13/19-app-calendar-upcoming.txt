@@ -1,0 +1,197 @@
+Window: "XWork", App: xwork.exe.
+	0 window XWork Secondary Actions: Raise
+		1 pane TAURI_DRAG_RESIZE_WINDOW
+		2 pane
+			3 pane XWork
+				4 pane (disabled)
+				5 region XWork - Web content
+					6 region
+						7 region
+							8 region
+								9 region
+								10 region
+									11 region
+										12 region
+											13 region
+												14 region
+													15 region
+													16 document XWork ID: RootWebArea
+														156 group
+															17 group ID: root
+																751 header
+																	752 button XWork menu ID: radix-_r_0_
+																	753 list Breadcrumb
+																		754 list item Calendar
+																	755 button Search or run a command
+																	756 button Notifications, 0 unread
+																	757 button Minimize
+																	758 button Maximize
+																	759 button Close (hides to tray)
+																760 navigation Main
+																	761 list
+																		762 list item Home
+																			763 link Home
+																		764 list item Projects
+																			765 link Projects
+																		766 list item Notes
+																			767 link Notes
+																		768 list item Calendar
+																			769 link Calendar
+																	770 text PROJECTS
+																	771 button Add Project
+																	772 list
+																		773 list item XWork
+																			774 button Sessions for XWork
+																			775 link XWork
+																	776 list
+																		777 list item Settings
+																			778 link Settings
+																		779 list item Collapse sidebar
+																			780 button Collapse sidebar
+																781 thumb Resize sidebar
+																49 main
+																	50 group
+																	782 group
+																		783 heading Calendar
+																		784 text Time zone:
+																		785 text Asia/Bangkok
+																		786 button New Event
+																		787 button Previous month
+																		788 heading September 2026
+																		789 button Next month
+																		790 button Today
+																		791 text Mon
+																		792 text Tue
+																		793 text Wed
+																		794 text Thu
+																		795 text Fri
+																		796 text Sat
+																		797 text Sun
+																		798 toggle button 2026-08-31
+																		799 toggle button 2026-09-01
+																		800 toggle button 2026-09-02
+																		801 toggle button 2026-09-03
+																		802 toggle button 2026-09-04
+																		803 toggle button 2026-09-05
+																		804 toggle button 2026-09-06
+																		805 toggle button 2026-09-07
+																		806 toggle button 2026-09-08
+																		807 toggle button 2026-09-09
+																		808 toggle button 2026-09-10
+																		809 toggle button 2026-09-11
+																		810 toggle button 2026-09-12
+																		811 toggle button 2026-09-13, today
+																		812 toggle button 2026-09-14
+																		813 toggle button 2026-09-15
+																		814 toggle button 2026-09-16
+																		815 toggle button 2026-09-17
+																		816 toggle button 2026-09-18
+																		817 toggle button 2026-09-19
+																		818 toggle button 2026-09-20
+																		819 toggle button 2026-09-21
+																		820 toggle button 2026-09-22
+																		821 toggle button 2026-09-23
+																		822 toggle button 2026-09-24
+																		823 toggle button 2026-09-25
+																		824 toggle button 2026-09-26
+																		825 toggle button 2026-09-27
+																		826 toggle button 2026-09-28
+																		827 toggle button 2026-09-29
+																		828 toggle button 2026-09-30
+																		829 toggle button 2026-10-01
+																		830 toggle button 2026-10-02
+																		831 toggle button 2026-10-03
+																		832 toggle button 2026-10-04
+																		833 text No events this month
+																		834 toggle button Day
+																		835 toggle button Upcoming
+																		836 toggle button Missed (0)
+																		837 heading Next 14 days
+																		842 text No events in the next 14 days
+								101 region
+						102 region
+						103 region
+		104 title bar
+			105 menu bar System ID: MenuBar
+				106 menu item System
+			107 button Minimise
+			108 button Maximise
+			109 button Close
+
+Document text: ```
+Calendar
+Search or run a command
+Ctrl K
+Notifications, 0 unread
+Minimize
+Maximize
+Close (hides to tray)
+￼
+Home
+Projects
+Notes
+Calendar
+PROJECTS
+Add Project
+Sessions for XWork
+XWork
+Settings
+Collapse sidebar
+Resize sidebar
+￼
+Calendar
+Time zone: Asia/Bangkok
+New Event
+Previous month
+September 2026
+Next month
+Today
+Mon
+Tue
+Wed
+Thu
+Fri
+Sat
+Sun
+2026-08-31
+2026-09-01
+2026-09-02
+2026-09-03
+2026-09-04
+2026-09-05
+2026-09-06
+2026-09-07
+2026-09-08
+2026-09-09
+2026-09-10
+2026-09-11
+2026-09-12
+2026-09-13, today
+2026-09-14
+2026-09-15
+2026-09-16
+2026-09-17
+2026-09-18
+2026-09-19
+2026-09-20
+2026-09-21
+2026-09-22
+2026-09-23
+2026-09-24
+2026-09-25
+2026-09-26
+2026-09-27
+2026-09-28
+2026-09-29
+2026-09-30
+2026-10-01
+2026-10-02
+2026-10-03
+2026-10-04
+No events this month
+Day
+Upcoming
+Missed (0)
+Next 14 days
+No events in the next 14 days
+```
