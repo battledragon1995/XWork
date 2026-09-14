@@ -81,7 +81,7 @@ describe("AppearanceThemeSync", () => {
     expect(readRootVariable("--color-canvas")).toBe("#faf9f5");
     expect(readRootVariable("--color-brand")).toBe("#cc785c");
     expect(readRootVariable("--color-body")).toBe("color-mix(in srgb, #141413 78%, #faf9f5)");
-    expect(readRootVariable("--color-on-primary")).toBe("#141413");
+    expect(readRootVariable("--color-on-primary")).toBe("#ffffff");
     expect(readRootVariable("--terminal-background")).toBe("#181715");
     expect(readRootVariable("--terminal-ansi-12")).toBe("#b4cde6");
     expect(readRootVariable("--ui-font-size")).toBe("16px");

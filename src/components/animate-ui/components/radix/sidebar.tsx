@@ -197,7 +197,8 @@ function Sidebar({
         {...props}
       >
         <Highlight
-          containerClassName={cn("size-full", containerClassName)}
+          // The hover background must stay inside the rail while its width animates.
+          containerClassName={cn("size-full overflow-hidden", containerClassName)}
           enabled={animateOnHover}
           hover
           controlledItems

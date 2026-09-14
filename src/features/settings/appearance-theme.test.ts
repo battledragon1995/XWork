@@ -48,8 +48,8 @@ describe("buildAppearanceStyle", () => {
 
   // Verify every derived token keeps its exact formula, percentage and source colours.
   it.each([
-    ["--color-surface-card", "color-mix(in srgb, #141413 8%, #f5f0e8)"],
-    ["--color-cream-strong", "color-mix(in srgb, #141413 14%, #f5f0e8)"],
+    ["--color-surface-card", "#efe9de"],
+    ["--color-cream-strong", "#e8e0d2"],
     ["--color-hairline", "color-mix(in srgb, #141413 12%, #faf9f5)"],
     ["--color-hairline-soft", "color-mix(in srgb, #141413 7%, #faf9f5)"],
     ["--color-body-strong", "color-mix(in srgb, #141413 92%, #faf9f5)"],
@@ -62,10 +62,25 @@ describe("buildAppearanceStyle", () => {
     expect(readVariable(createAppearanceSettings(), "light", name)).toBe(expected);
   });
 
-  // Verify the primary label picks whichever candidate reads better on the accent.
-  it("selects the higher-contrast primary label", () => {
-    expect(readVariable(createAppearanceSettings(), "light", "--color-on-primary")).toBe("#141413");
+  // Preserve the wireframe's white label on the built-in coral accent.
+  it("uses white primary labels for the Cream palette", () => {
+    expect(readVariable(createAppearanceSettings(), "light", "--color-on-primary")).toBe("#ffffff");
     expect(readVariable(createAppearanceSettings(), "dark", "--color-on-primary")).toBe("#ffffff");
+  });
+
+  // Keep custom light surfaces derived from their own palette and pale accents readable.
+  it("preserves custom surface derivation and readable custom primary labels", () => {
+    const appearance = createAppearanceSettings();
+    appearance.interfaceColors.light = {
+      accent: "#ffffcc",
+      canvas: "#ffffff",
+      sidebar: "#eeeeee",
+      text: "#101010",
+    };
+    const variables = buildAppearanceStyle(appearance, "light").variables;
+    expect(variables["--color-surface-card"]).toBe("color-mix(in srgb, #101010 8%, #eeeeee)");
+    expect(variables["--color-cream-strong"]).toBe("color-mix(in srgb, #101010 14%, #eeeeee)");
+    expect(variables["--color-on-primary"]).toBe("#101010");
   });
 
   // Verify a very dark accent flips the label to white in the same scheme.

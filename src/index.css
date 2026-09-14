@@ -1,9 +1,9 @@
 @import "tailwindcss";
+@import "./assets/fonts/fonts.css";
 
 /* Application design tokens taken from 00-Docs/01-Wireframe/00-Design.md.
-   The shell ships a light palette only; FE-012 adds the dark variant and the
-   operating-system preference. No font asset is bundled, so both families fall
-   back to the local stacks documented in the design source. */
+   Wireframe fonts are self-hosted so typography stays consistent offline.
+   Appearance settings supply the light/dark palettes and user overrides. */
 @theme {
   /* Surfaces */
   --color-canvas: #faf9f5;
@@ -69,9 +69,9 @@
   --color-sidebar-ring: var(--color-brand);
 
   /* Type */
-  --font-display: "Tiempos Headline", Garamond, "Times New Roman", serif;
+  --font-display: "Cormorant Garamond", "Tiempos Headline", Garamond, "Times New Roman", serif;
   --font-body: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  --font-mono: Consolas, "Cascadia Mono", monospace;
+  --font-mono: "JetBrains Mono", Consolas, "Cascadia Mono", monospace;
 
   /* Shape */
   --radius-xs: 4px;

@@ -40,6 +40,8 @@ export function buildAppearanceStyle(
   const { accent, canvas, sidebar, text } = colors;
   const terminal = appearance.terminalPalette;
   const uiScale = readUiScale(appearance.interfaceFontSizePx);
+  const usesCreamSurfaces =
+    scheme === "light" && canvas === "#faf9f5" && sidebar === "#f5f0e8" && text === "#141413";
 
   const variables: Record<string, string> = {
     "--color-canvas": canvas,
@@ -47,8 +49,8 @@ export function buildAppearanceStyle(
     "--color-surface-soft": sidebar,
     "--color-ink": text,
     "--color-brand": accent,
-    "--color-surface-card": mix(text, 8, sidebar),
-    "--color-cream-strong": mix(text, 14, sidebar),
+    "--color-surface-card": usesCreamSurfaces ? "#efe9de" : mix(text, 8, sidebar),
+    "--color-cream-strong": usesCreamSurfaces ? "#e8e0d2" : mix(text, 14, sidebar),
     "--color-hairline": mix(text, 12, canvas),
     "--color-hairline-soft": mix(text, 7, canvas),
     "--color-body-strong": mix(text, 92, canvas),
@@ -57,10 +59,9 @@ export function buildAppearanceStyle(
     "--color-muted-soft": mix(text, 42, canvas),
     "--color-brand-active": mix(text, 22, accent),
     "--color-brand-disabled": mix(accent, 30, canvas),
-    // Primary buttons must stay readable whichever accent the user picked, so the label
-    // takes whichever of white and the interface text colour contrasts better with it.
+    // Preserve the wireframe label on coral; custom accents keep their contrast-aware label.
     "--color-on-primary":
-      contrastRatio(LIGHT_ON_PRIMARY, accent) >= contrastRatio(text, accent)
+      accent === "#cc785c" || contrastRatio(LIGHT_ON_PRIMARY, accent) >= contrastRatio(text, accent)
         ? LIGHT_ON_PRIMARY
         : text,
     "--color-dark": terminal.background,
