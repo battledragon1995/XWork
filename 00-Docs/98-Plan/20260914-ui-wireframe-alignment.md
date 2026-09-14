@@ -105,7 +105,8 @@ Paths abbreviated after a feature prefix in a row remain within that feature dir
 - Task 10 complete: removed the repeated empty-state sentence from the bell panel footer and retained one compact Notification settings link. All 14 notification-center tests and Biome passed; native empty panel checked. No build.
 - Task 11 complete: ink switches, an explicit Always on label for the fixed enabled Home setting, and an outlined read-only English selector. All 9 General tests, TypeScript and changed-file Biome passed; native General verified. Startup integration is absent from the current settings contract, so Start XWork when I sign in remains unimplemented. No build.
 - Task 12 complete: Appearance control groups occupy the right column, three preset cards stay in one row, ink marks/sliders replace coral selections, and ANSI colours occupy two rows of editable swatches. Background/foreground chips use the same popover editor. A failing compact-editor test caught the native colour commit listener being absent after portal mount; a callback ref now connects and cleans it for each mount. All 86 Appearance/editor tests, TypeScript and Biome passed. Native 1280×800/current 15px scale shows both font sliders without scrolling; ANSI popup opened and closed without changing configuration. No build.
-- Tasks 13–17: pending.
+- Task 13 complete: built-in marks reuse the wireframe palette, the table uses light row dividers, and the narrower profile sheet groups icon/colour beside Name with lighter Add actions. Its scaled-height flex layout keeps Save/Cancel fixed. Existing width/copy assertions were updated; all 44 route tests and the final 41 editor tests passed, with TypeScript and Biome. Native table and empty New Profile sheet verified without saving or checking commands. Arguments remain separate literal rows and secret replacement rules remain unchanged. No build.
+- Tasks 14–17: pending.
 
 ## Deviations and Decisions
 

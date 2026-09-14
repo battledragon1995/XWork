@@ -5,8 +5,8 @@ import { userEvent } from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { CliProfileInputDto } from "@/bindings/terminal/cli-profiles";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import type { CliProfilesFailure } from "./cli-profile-error-copy";
 import { CliProfileEditor, type CliProfileEditorProps } from "./cli-profile-editor";
+import type { CliProfilesFailure } from "./cli-profile-error-copy";
 import {
   createCliProfileDto,
   createCliShellCatalog,
@@ -90,7 +90,7 @@ describe("sheet shell", () => {
 
     const content = screen.getByRole("dialog");
     expect(content.className).toContain("right-0");
-    expect(content.className).toContain("w-[min(520px,100vw)]");
+    expect(content.className).toContain("w-[min(480px,100%)]");
   });
 
   // Verify the sheet body is the only part that scrolls vertically.
@@ -151,11 +151,7 @@ describe("create defaults", () => {
   it("renders the argument and secret hints", () => {
     renderEditor();
 
-    expect(
-      screen.getByText(
-        "Each row is passed as one argument. Values are never joined into a shell string.",
-      ),
-    ).toBeInTheDocument();
+    expect(screen.getByText("One argument per row, including any spaces.")).toBeInTheDocument();
     expect(
       screen.getByText(
         "Secret values are stored in the operating system credential store and are never shown or exported in backups.",

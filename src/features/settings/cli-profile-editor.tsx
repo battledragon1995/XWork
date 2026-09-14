@@ -1,4 +1,4 @@
-import { ArrowDown, ArrowUp, X } from "lucide-react";
+import { ArrowDown, ArrowUp, Plus, X } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 import type {
   CliProfileDto,
@@ -22,11 +22,11 @@ import {
   addEnvironmentRow,
   beginReplaceStoredValue,
   buildCliProfileInput,
-  canKeepStoredValue,
   type CliEnvironmentDraft,
   type CliProfileDraft,
   type CliProfileFormField,
   type CliProfileValidation,
+  canKeepStoredValue,
   createEditProfileDraft,
   createEmptyProfileDraft,
   isCliProfileDraftDirty,
@@ -35,15 +35,15 @@ import {
   MAX_ENVIRONMENT_ROWS,
   moveDraftRow,
   removeDraftRow,
+  SYSTEM_SHELL_ID,
   setEnvironmentName,
   setEnvironmentSecret,
-  SYSTEM_SHELL_ID,
   validateCliProfileDraft,
 } from "./cli-profile-form";
 
 /** Position and size the FE-013 sheet, which the shared centred dialog does not provide. */
 const SHEET_CLASS =
-  "top-0 right-0 bottom-0 left-auto h-full w-[min(520px,100vw)] max-w-none translate-x-0 translate-y-0 grid-rows-[auto_minmax(0,1fr)_auto] gap-0 rounded-none p-0 shadow-pop sm:max-w-none";
+  "top-0 right-0 bottom-auto left-auto flex h-[calc(100dvh/var(--ui-scale))] w-[min(480px,100%)] max-w-none translate-x-0 translate-y-0 flex-col gap-0 rounded-none p-0 shadow-pop sm:max-w-none";
 
 /** Identify one repeated row's own input, so validation can focus the exact offending row. */
 function rowInputId(rowKey: string): string {
@@ -495,7 +495,7 @@ export function CliProfileEditor(props: CliProfileEditorProps) {
           }}
           showCloseButton={false}
         >
-          <DialogHeader className="flex-row items-center justify-between border-b border-hairline px-5 py-3.5">
+          <DialogHeader className="shrink-0 flex-row items-center justify-between border-b border-hairline px-5 py-3.5">
             <DialogTitle className="text-[18px]">
               {mode === "create" ? "New profile" : "Edit profile"}
             </DialogTitle>
@@ -515,7 +515,7 @@ export function CliProfileEditor(props: CliProfileEditorProps) {
           </DialogDescription>
 
           <div
-            className="flex min-h-0 flex-col gap-4 overflow-y-auto px-5 py-4"
+            className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-5 py-4"
             data-testid="cli-profile-editor-body"
           >
             {bannerMessage !== null && (
@@ -538,7 +538,7 @@ export function CliProfileEditor(props: CliProfileEditorProps) {
               </div>
             )}
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-3">
               <Field
                 errorId={errorIds.name}
                 errorMessage={fieldError("name")}
@@ -556,62 +556,69 @@ export function CliProfileEditor(props: CliProfileEditorProps) {
                   value={draft.name}
                 />
               </Field>
-              <div className="flex min-w-0 items-end gap-2">
-                <Field
-                  errorId={errorIds.icon}
-                  errorMessage={fieldError("icon")}
-                  htmlFor={iconId}
-                  label="Icon"
-                >
-                  <Input
-                    aria-describedby={fieldError("icon") === undefined ? undefined : errorIds.icon}
-                    aria-invalid={fieldError("icon") === undefined ? undefined : true}
-                    autoComplete="off"
-                    className="w-[72px]"
-                    disabled={isLocked}
-                    id={iconId}
-                    onChange={(event) => setDraft({ ...draft, icon: event.currentTarget.value })}
-                    ref={iconRef}
-                    value={draft.icon}
-                  />
-                </Field>
-                <Field
-                  errorId={errorIds.color}
-                  errorMessage={fieldError("color")}
-                  htmlFor={colorId}
-                  label="Colour"
-                >
-                  <span className="flex items-center gap-2">
-                    <input
-                      aria-label="Colour picker"
-                      className="size-7 shrink-0 cursor-pointer rounded-sm border border-hairline bg-transparent p-0.5 outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                      disabled={isLocked}
-                      onChange={(event) =>
-                        setDraft({ ...draft, color: event.currentTarget.value.toLowerCase() })
-                      }
-                      type="color"
-                      value={
-                        /^#[0-9a-f]{6}$/.test(draft.color.toLowerCase())
-                          ? draft.color.toLowerCase()
-                          : "#000000"
-                      }
-                    />
+              <div className="flex min-w-0 flex-col gap-1">
+                <span className="text-[12px] font-medium text-body-strong">Icon &amp; colour</span>
+                <div className="flex min-w-0 items-start gap-2 [&_label]:sr-only">
+                  <Field
+                    errorId={errorIds.icon}
+                    errorMessage={fieldError("icon")}
+                    htmlFor={iconId}
+                    label="Icon"
+                  >
                     <Input
                       aria-describedby={
-                        fieldError("color") === undefined ? undefined : errorIds.color
+                        fieldError("icon") === undefined ? undefined : errorIds.icon
                       }
-                      aria-invalid={fieldError("color") === undefined ? undefined : true}
+                      aria-invalid={fieldError("icon") === undefined ? undefined : true}
                       autoComplete="off"
-                      className="w-[104px] font-mono text-[12px]"
+                      className="w-12 text-center"
                       disabled={isLocked}
-                      id={colorId}
-                      onChange={(event) => setDraft({ ...draft, color: event.currentTarget.value })}
-                      ref={colorRef}
-                      spellCheck={false}
-                      value={draft.color}
+                      id={iconId}
+                      onChange={(event) => setDraft({ ...draft, icon: event.currentTarget.value })}
+                      ref={iconRef}
+                      value={draft.icon}
                     />
-                  </span>
-                </Field>
+                  </Field>
+                  <Field
+                    errorId={errorIds.color}
+                    errorMessage={fieldError("color")}
+                    htmlFor={colorId}
+                    label="Colour"
+                  >
+                    <span className="flex items-center gap-2">
+                      <input
+                        aria-label="Colour picker"
+                        className="size-7 shrink-0 cursor-pointer rounded-sm border border-hairline bg-transparent p-0.5 outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        disabled={isLocked}
+                        onChange={(event) =>
+                          setDraft({ ...draft, color: event.currentTarget.value.toLowerCase() })
+                        }
+                        type="color"
+                        value={
+                          /^#[0-9a-f]{6}$/.test(draft.color.toLowerCase())
+                            ? draft.color.toLowerCase()
+                            : "#000000"
+                        }
+                      />
+                      <Input
+                        aria-describedby={
+                          fieldError("color") === undefined ? undefined : errorIds.color
+                        }
+                        aria-invalid={fieldError("color") === undefined ? undefined : true}
+                        autoComplete="off"
+                        className="w-[88px] font-mono text-[12px]"
+                        disabled={isLocked}
+                        id={colorId}
+                        onChange={(event) =>
+                          setDraft({ ...draft, color: event.currentTarget.value })
+                        }
+                        ref={colorRef}
+                        spellCheck={false}
+                        value={draft.color}
+                      />
+                    </span>
+                  </Field>
+                </div>
               </div>
             </div>
 
@@ -692,17 +699,17 @@ export function CliProfileEditor(props: CliProfileEditorProps) {
               {fieldError("arguments") !== undefined && (
                 <p className="text-[11px] text-error">{fieldError("arguments")}</p>
               )}
-              <p className="text-[11px] text-muted">
-                Each row is passed as one argument. Values are never joined into a shell string.
-              </p>
+              <p className="text-[11px] text-muted">One argument per row, including any spaces.</p>
               <div>
                 <Button
                   disabled={isLocked || draft.arguments.length >= MAX_ARGUMENT_ROWS}
                   onClick={() => setDraft(addArgumentRow(draft))}
                   size="sm"
                   type="button"
-                  variant="outline"
+                  variant="ghost"
+                  className="h-7 px-0 text-muted hover:text-ink"
                 >
+                  <Plus aria-hidden="true" />
                   Add argument
                 </Button>
               </div>
@@ -789,8 +796,10 @@ export function CliProfileEditor(props: CliProfileEditorProps) {
                   onClick={() => setDraft(addEnvironmentRow(draft))}
                   size="sm"
                   type="button"
-                  variant="outline"
+                  variant="ghost"
+                  className="h-7 px-0 text-muted hover:text-ink"
                 >
+                  <Plus aria-hidden="true" />
                   Add variable
                 </Button>
               </div>
@@ -812,7 +821,7 @@ export function CliProfileEditor(props: CliProfileEditorProps) {
             </div>
           </div>
 
-          <DialogFooter className="border-t border-hairline px-5 py-3.5">
+          <DialogFooter className="shrink-0 border-t border-hairline px-5 py-3.5">
             <Button disabled={isLocked} onClick={requestClose} type="button" variant="outline">
               Cancel
             </Button>

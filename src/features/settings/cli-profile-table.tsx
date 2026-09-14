@@ -6,6 +6,7 @@ import type {
 } from "@/bindings/terminal/cli-profiles";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { profileMarkColor } from "@/lib/utils/profile-mark";
 
 /** Textual label of every generated availability status, so colour is never the only signal. */
 const AVAILABILITY_LABELS: Record<CliProfileAvailabilityStatusDto, string> = {
@@ -144,7 +145,7 @@ export function CliProfileTable(props: CliProfileTableProps) {
   const { label, profiles, showArguments, checkingProfileIds, actionsDisabled } = props;
 
   return (
-    <div className="overflow-x-auto rounded-md border border-hairline">
+    <div className="overflow-x-auto">
       <table aria-label={label} className="w-full min-w-[560px] border-collapse text-[13px]">
         <thead>
           <tr className="border-b border-hairline text-left text-[11px] tracking-[0.08em] text-muted uppercase">
@@ -172,7 +173,7 @@ export function CliProfileTable(props: CliProfileTableProps) {
               <tr className="border-t border-hairline-soft" key={profile.id}>
                 <td className="px-3 py-2">
                   <span className="flex min-w-0 items-center gap-2">
-                    <ProfileMark color={profile.color} icon={profile.icon} />
+                    <ProfileMark color={profileMarkColor(profile)} icon={profile.icon} />
                     <span className="truncate font-medium text-ink">{profile.name}</span>
                   </span>
                 </td>
