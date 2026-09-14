@@ -1,4 +1,4 @@
-import { ChevronsDownUp, RefreshCw, X } from "lucide-react";
+import { ChevronsDownUp, Folder, RefreshCw, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { FileTreeEntryDto, FileTreePageDto, FileTreeSearchDto } from "@/bindings/files/files";
 import { Button } from "@/components/ui/button";
@@ -127,9 +127,9 @@ export function FileExplorer(props: FileExplorerProps): React.JSX.Element {
       aria-label="File Explorer"
       className="flex h-full min-h-0 min-w-0 flex-col gap-2 overflow-auto border-hairline bg-surface px-2 py-2 text-body"
     >
-      <header className="flex items-center justify-between gap-1">
-        <h2 className="text-sm font-semibold">File Explorer</h2>
-        <div className="flex">
+      <header className="flex shrink-0 items-center gap-1">
+        <h2 className="sr-only">File Explorer</h2>
+        <div className="order-2 flex shrink-0">
           <Tooltip>
             <TooltipTrigger asChild>
               <Button
@@ -176,33 +176,34 @@ export function FileExplorer(props: FileExplorerProps): React.JSX.Element {
             <TooltipContent>Close File Explorer</TooltipContent>
           </Tooltip>
         </div>
-      </header>
-      <Input
-        ref={filter}
-        aria-label="Filter files"
-        placeholder="Filter files"
-        value={state.query}
-        disabled={disabled}
-        aria-invalid={!!state.validation}
-        aria-describedby={state.validation ? `${props.regionId}-validation` : undefined}
-        onChange={
-          /** Retire old results as soon as the draft changes. */ (event) =>
-            owner.setQuery(event.target.value)
-        }
-        onCompositionStart={
-          /** Pause debounce while IME owns the draft. */ () => owner.setComposing(true)
-        }
-        onCompositionEnd={/** Schedule the committed IME text. */ () => owner.setComposing(false)}
-        onKeyDown={
-          /** Clear only a committed filter without capturing application keys. */ (event) => {
-            if (event.key === "Escape" && !event.nativeEvent.isComposing && state.query) {
-              event.preventDefault();
-              event.stopPropagation();
-              owner.setQuery("");
+        <Input
+          ref={filter}
+          className="h-7 min-w-0 text-xs"
+          aria-label="Filter files"
+          placeholder="Filter files"
+          value={state.query}
+          disabled={disabled}
+          aria-invalid={!!state.validation}
+          aria-describedby={state.validation ? `${props.regionId}-validation` : undefined}
+          onChange={
+            /** Retire old results as soon as the draft changes. */ (event) =>
+              owner.setQuery(event.target.value)
+          }
+          onCompositionStart={
+            /** Pause debounce while IME owns the draft. */ () => owner.setComposing(true)
+          }
+          onCompositionEnd={/** Schedule the committed IME text. */ () => owner.setComposing(false)}
+          onKeyDown={
+            /** Clear only a committed filter without capturing application keys. */ (event) => {
+              if (event.key === "Escape" && !event.nativeEvent.isComposing && state.query) {
+                event.preventDefault();
+                event.stopPropagation();
+                owner.setQuery("");
+              }
             }
           }
-        }
-      />
+        />
+      </header>
       {state.validation && (
         <p id={`${props.regionId}-validation`} role="alert" className="text-xs">
           {state.validation}
@@ -218,10 +219,15 @@ export function FileExplorer(props: FileExplorerProps): React.JSX.Element {
           Clear filter
         </Button>
       )}
-      <p className="truncate text-xs font-semibold" title={state.project?.displayName}>
-        {state.project?.displayName}
-      </p>
-      <p className="text-xs text-muted">Project ignore rules applied</p>
+      <div className="flex shrink-0 items-center justify-between gap-2 px-1 text-[11px] text-muted">
+        <span className="flex min-w-0 items-center gap-1.5" title={state.project?.displayName}>
+          <Folder aria-hidden="true" className="size-3 shrink-0" />
+          <span className="truncate">{state.project?.displayName}</span>
+        </span>
+        <span className="shrink-0" title="Project ignore rules applied">
+          Ignore rules applied
+        </span>
+      </div>
       {(!current || (state.blocked && !state.error)) && (
         <p role="status">File Explorer is temporarily unavailable.</p>
       )}
@@ -303,7 +309,7 @@ export function FileExplorer(props: FileExplorerProps): React.JSX.Element {
           Explorer display limit reached. Collapse folders or use Filter files.
         </p>
       )}
-      <div role="status" aria-live="polite" className="text-xs">
+      <div role="status" aria-live="polite" className="sr-only">
         {state.feedback}
         {state.openFeedback}
         {openingName !== null && openingFileCopy(openingName)}

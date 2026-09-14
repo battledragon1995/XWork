@@ -6,9 +6,9 @@ import {
   buildSourceExtensions,
   createSourceState,
   createSourceView,
-  type SourceEditorView,
   SOURCE_THEME_SPEC,
   SOURCE_TOKEN_COLORS,
+  type SourceEditorView,
   sourceHighlightStyle,
   sourceLanguageCompartment,
 } from "./source-view-adapter";
@@ -128,7 +128,7 @@ describe("appearance mapping", () => {
       fontSize: "var(--terminal-font-size)",
     });
     expect(SOURCE_THEME_SPEC[".cm-gutters"]).toMatchObject({
-      color: "var(--terminal-ansi-8)",
+      color: "color-mix(in srgb, var(--terminal-foreground) 55%, var(--terminal-background))",
       backgroundColor: "var(--terminal-background)",
     });
   });

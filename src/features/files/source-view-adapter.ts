@@ -27,12 +27,16 @@ export const SOURCE_THEME_SPEC: Record<string, Record<string, string>> = {
     height: "100%",
     minWidth: "0",
     minHeight: "0",
+    colorScheme: "dark",
   },
   // `overflow: auto` keeps both axes inside the pane instead of widening the window.
   ".cm-scroller": {
     fontFamily: "var(--font-mono)",
     lineHeight: "1.5",
     overflow: "auto",
+    scrollbarColor:
+      "color-mix(in srgb, var(--terminal-foreground) 30%, var(--terminal-background)) var(--terminal-background)",
+    scrollbarWidth: "thin",
   },
   // `pre` is what stops one very long source line from wrapping.
   ".cm-content": {
@@ -40,11 +44,11 @@ export const SOURCE_THEME_SPEC: Record<string, Record<string, string>> = {
   },
   ".cm-gutters": {
     backgroundColor: "var(--terminal-background)",
-    color: "var(--terminal-ansi-8)",
+    color: "color-mix(in srgb, var(--terminal-foreground) 55%, var(--terminal-background))",
     border: "none",
   },
   ".cm-lineNumbers .cm-gutterElement": {
-    color: "var(--terminal-ansi-8)",
+    color: "color-mix(in srgb, var(--terminal-foreground) 55%, var(--terminal-background))",
   },
   // The default focus ring is invisible against a dark surface, so it is restated here.
   "&.cm-focused": {

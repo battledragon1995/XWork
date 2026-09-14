@@ -3,11 +3,36 @@ import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SessionTab } from "./session-tab";
-import { createTabDto } from "./sessions-test-fixture";
+import { createPaneDto, createTabDto } from "./sessions-test-fixture";
 
 afterEach(cleanup);
 
 describe("SessionTab", () => {
+  // File titles replace only the untouched default tab label.
+  it.each([
+    ["New Tab", "package.json"],
+    ["My files", "My files"],
+  ])("labels %s as %s", (name, title) => {
+    const pane = createPaneDto({
+      content: { kind: "file", fileHandleId: "file-fixture", title: "package.json" },
+    });
+    render(
+      <DndContext>
+        <SessionTab
+          tab={createTabDto({ name, layout: { kind: "pane", pane } })}
+          isSelected
+          isBusy={false}
+          onSelect={vi.fn()}
+          onClose={vi.fn()}
+          onRename={vi.fn()}
+          onNavigate={vi.fn()}
+        />
+      </DndContext>,
+    );
+    expect(screen.getByRole("tab")).toHaveAccessibleName(title);
+    expect(screen.getByRole("button", { name: `Close tab “${title}”` })).toBeInTheDocument();
+  });
+
   // Verify selected semantics, full-name title, rename, and target-specific close label.
   it("renders and activates one selected tab", async () => {
     const user = userEvent.setup();

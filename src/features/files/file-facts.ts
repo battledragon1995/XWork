@@ -30,8 +30,9 @@ function scaleBytes(bytes: bigint, unit: bigint, suffix: string): string {
   return fraction === 0n ? `${whole} ${suffix}` : `${whole}.${fraction} ${suffix}`;
 }
 
-/** Format one backend byte count without ever coercing it to an unsafe JavaScript number. */
-export function formatByteSize(bytes: bigint): string {
+/** Normalize JSON number counts while preserving exact bigint counts from typed callers. */
+export function formatByteSize(value: bigint | number): string {
+  const bytes = BigInt(value);
   if (bytes < KIBIBYTE) return `${bytes} B`;
   if (bytes < MEBIBYTE) return scaleBytes(bytes, KIBIBYTE, "KB");
   return scaleBytes(bytes, MEBIBYTE, "MB");

@@ -66,7 +66,7 @@ export function createMarkdownState(raw: string, name = "Markdown"): EditorState
         ? [markdown()]
         : []),
       syntaxHighlighting(sourceHighlightStyle),
-      EditorView.theme(SOURCE_THEME_SPEC),
+      EditorView.theme(SOURCE_THEME_SPEC, { dark: true }),
       EditorView.contentAttributes.of({ "aria-label": `Markdown editor: ${name}`, tabindex: "0" }),
     ],
   });

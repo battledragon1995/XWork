@@ -1,3 +1,13 @@
+import {
+  ChevronDown,
+  ChevronRight,
+  FileCode2,
+  FileText,
+  Folder,
+  FolderOpen,
+  Link2,
+  MoreHorizontal,
+} from "lucide-react";
 import { useId, useLayoutEffect, useRef, useState } from "react";
 import type { FileTreeEntryDto } from "@/bindings/files/files";
 import { Button } from "@/components/ui/button";
@@ -97,7 +107,7 @@ export function FileTree(props: {
       const path = entry.relativePath;
       const expanded = !search && entry.kind === "directory" ? props.expanded.has(path) : undefined;
       return (
-        <div role="none" key={path}>
+        <div role="none" key={path} className="relative">
           {/* biome-ignore lint/a11y/noStaticElementInteractions: Both dynamic roles are interactive roving targets. */}
           {/* biome-ignore lint/a11y/useAriaPropsSupportedByRole: Both option and treeitem support the shared ARIA attributes. */}
           <div
@@ -112,7 +122,7 @@ export function FileTree(props: {
             data-file-path={path}
             tabIndex={!props.disabled && tabPath === path ? 0 : -1}
             title={path}
-            className="cursor-default truncate rounded px-2 py-1 text-[13px] outline-none hover:bg-surface-card focus-visible:ring-2 focus-visible:ring-ring aria-selected:bg-surface-card"
+            className="flex cursor-default items-center gap-1.5 rounded px-2 py-1 pr-7 text-[13px] outline-none hover:bg-surface-card focus-visible:ring-2 focus-visible:ring-ring aria-selected:bg-surface-card"
             style={{ paddingLeft: `${(level - 1) * 12 + 8}px` }}
             // Track row ownership separately from selection.
             onFocus={() => {
@@ -149,9 +159,46 @@ export function FileTree(props: {
               }
             }
           >
-            <span aria-hidden="true">{expanded === undefined ? "· " : expanded ? "▾ " : "▸ "}</span>
-            {search ? path : entry.name}
+            <span aria-hidden="true" className="flex shrink-0 items-center gap-1 text-muted">
+              {expanded === undefined ? (
+                <span className="w-3" />
+              ) : expanded ? (
+                <ChevronDown className="size-3" />
+              ) : (
+                <ChevronRight className="size-3" />
+              )}
+              {entry.kind === "directory" ? (
+                expanded ? (
+                  <FolderOpen className="size-3.5" />
+                ) : (
+                  <Folder className="size-3.5" />
+                )
+              ) : entry.kind === "symbolicLink" ? (
+                <Link2 className="size-3.5" />
+              ) : /\.(md|markdown|txt)$/i.test(entry.name) ? (
+                <FileText className="size-3.5" />
+              ) : (
+                <FileCode2 className="size-3.5" />
+              )}
+            </span>
+            <span className="truncate">{search ? path : entry.name}</span>
           </div>
+          {props.selectedPath === path && (
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              className="absolute top-0 right-0 size-6"
+              aria-label={`Actions for ${entry.name}`}
+              title={`Actions for ${entry.name}`}
+              disabled={props.disabled}
+              onClick={
+                /** Open the selected entry menu outside the tree row semantics. */ () =>
+                  props.onMenu(entry)
+              }
+            >
+              <MoreHorizontal aria-hidden="true" />
+            </Button>
+          )}
           {expanded && (
             // biome-ignore lint/a11y/useSemanticElements: This is an ARIA tree group, not a form fieldset.
             <div role="group" id={`${groupPrefix}-${encodeURIComponent(path)}`}>
@@ -161,7 +208,6 @@ export function FileTree(props: {
         </div>
       );
     });
-  const selected = rows.find(({ entry }) => entry.relativePath === props.selectedPath)?.entry;
   return (
     <>
       {/* biome-ignore lint/a11y/useAriaPropsSupportedByRole: Both tree and listbox support an accessible name. */}
@@ -175,23 +221,6 @@ export function FileTree(props: {
       >
         {renderRows(props.matches ?? props.branches.get("")?.entries ?? [], 1)}
       </div>
-      {selected && (
-        <Button
-          variant="ghost"
-          size="sm"
-          disabled={props.disabled}
-          onClick={
-            /** Offer the same menu without letting the click reach a row underneath. */ (
-              event,
-            ) => {
-              event.stopPropagation();
-              props.onMenu(selected);
-            }
-          }
-        >
-          Actions for {selected.name}
-        </Button>
-      )}
       {!search &&
         [...props.branches].map(([path, branch]) => (
           <div key={path} className="px-2 text-xs text-muted">

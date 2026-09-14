@@ -121,10 +121,11 @@ export function MarkdownEditor(props: {
         <span className="min-w-0 truncate" title={state.handle?.relativePath}>
           {state.handle?.relativePath}
         </span>
-        <fieldset className="flex" aria-label="Markdown mode">
+        <fieldset className="flex shrink-0 rounded bg-on-dark/10" aria-label="Markdown mode">
           <Button
             size="sm"
             variant="ghost"
+            className="h-6 px-2 text-on-dark hover:bg-on-dark/10 aria-pressed:bg-on-dark/15"
             aria-pressed={state.markdownMode === "edit"}
             onClick={() => entry.setMarkdownMode("edit")}
           >
@@ -133,6 +134,7 @@ export function MarkdownEditor(props: {
           <Button
             size="sm"
             variant="ghost"
+            className="h-6 px-2 text-on-dark hover:bg-on-dark/10 aria-pressed:bg-on-dark/15"
             aria-pressed={state.markdownMode === "preview"}
             onClick={() => entry.setMarkdownMode("preview")}
           >

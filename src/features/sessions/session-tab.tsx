@@ -26,6 +26,9 @@ export function SessionTab(props: {
   onNavigate(event: React.KeyboardEvent<HTMLButtonElement>): void;
 }) {
   const sortable = useSortable({ id: props.tab.id, disabled: props.isBusy });
+  const content = findPane(props.tab.layout, props.tab.activePaneId)?.content;
+  const title =
+    props.tab.name === "New Tab" && content?.kind === "file" ? content.title : props.tab.name;
   return (
     <div
       ref={sortable.setNodeRef}
@@ -44,7 +47,7 @@ export function SessionTab(props: {
         role="tab"
         aria-selected={props.isSelected}
         tabIndex={props.isSelected ? 0 : -1}
-        title={props.tab.name}
+        title={title}
         disabled={props.isBusy}
         className="flex min-w-0 flex-1 items-center gap-1.5 rounded-sm px-2 text-[13px] outline-none focus-visible:ring-2 focus-visible:ring-ring"
         onClick={props.onSelect}
@@ -59,15 +62,15 @@ export function SessionTab(props: {
             className="size-1.5 shrink-0 rounded-full bg-warn-ink"
           />
         )}
-        <span className="truncate font-medium">{props.tab.name}</span>
+        <span className="truncate font-medium">{title}</span>
       </button>
       <button
         {...sortable.attributes}
         {...sortable.listeners}
         ref={sortable.setActivatorNodeRef}
         type="button"
-        aria-label={`Reorder tab “${props.tab.name}”`}
-        title={`Reorder tab “${props.tab.name}”`}
+        aria-label={`Reorder tab “${title}”`}
+        title={`Reorder tab “${title}”`}
         disabled={props.isBusy}
         className="flex size-5 shrink-0 items-center justify-center rounded-xs text-muted-soft outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
@@ -75,8 +78,8 @@ export function SessionTab(props: {
       </button>
       <button
         type="button"
-        aria-label={`Close tab “${props.tab.name}”`}
-        title={`Close tab “${props.tab.name}”`}
+        aria-label={`Close tab “${title}”`}
+        title={`Close tab “${title}”`}
         disabled={props.isBusy}
         className="mr-1 flex size-5 shrink-0 items-center justify-center rounded-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
         onClick={props.onClose}

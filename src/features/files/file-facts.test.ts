@@ -9,6 +9,12 @@ import {
 } from "./file-facts";
 
 describe("formatByteSize", () => {
+  /** Tauri's JSON transport delivers u64 counts as numbers at runtime. */
+  it("formats JSON byte counts without mixing numeric representations", () => {
+    expect(formatByteSize(JSON.parse("1536"))).toBe("1.5 KB");
+    expect(formatByteSize(JSON.parse("1048576"))).toBe("1 MB");
+  });
+
   /** Byte counts below one kibibyte stay exact so tiny files never read as `0 KB`. */
   it("keeps small counts in bytes", () => {
     expect(formatByteSize(0n)).toBe("0 B");
