@@ -1,3 +1,4 @@
+import { RotateCcw, Search } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { ShortcutCategoryDto } from "@/bindings/keyboard-shortcuts";
 import { Button } from "@/components/ui/button";
@@ -87,14 +88,10 @@ export function SettingsKeyboardShortcutsRoute() {
     // Search labels only, without changing conflict membership.
     (action) => action.label.toLowerCase().includes(query.trim().toLowerCase()),
   );
-  const groups = [
-    ...new Set(
-      filtered.map(
-        // Preserve category first-appearance order from the backend.
-        (action) => action.category,
-      ),
-    ),
-  ];
+  const groups = (Object.keys(CATEGORIES) as ShortcutCategoryDto[]).filter(
+    // Put Global first while retaining every category present in the filtered catalog.
+    (category) => filtered.some((action) => action.category === category),
+  );
   /** Restore focus after removing a reset control or closing a recorder. */
   function restoreFocus() {
     (opener.current?.isConnected ? opener.current : search.current)?.focus();
@@ -120,27 +117,32 @@ export function SettingsKeyboardShortcutsRoute() {
       title="Keyboard Shortcuts"
       description="Click a shortcut to record a new one. Conflicts are flagged until you resolve them."
     >
-      <div className="flex flex-wrap items-center gap-3 pb-5">
-        <Input
-          ref={search}
-          aria-label="Search actions"
-          placeholder="Search actions"
-          className="max-w-sm"
-          value={query}
-          onChange={
-            // Keep search local to this route.
-            (event) => setQuery(event.target.value)
-          }
-        />
+      <div className="flex flex-wrap items-center justify-between gap-3 pb-4">
+        <div className="relative w-60">
+          <Search aria-hidden="true" className="absolute top-2 left-2.5 size-3.5 text-muted" />
+          <Input
+            ref={search}
+            aria-label="Search actions"
+            placeholder="Search actions"
+            className="h-8 pl-8"
+            value={query}
+            onChange={
+              // Keep search local to this route.
+              (event) => setQuery(event.target.value)
+            }
+          />
+        </div>
         <Button
           ref={restoreButton}
           variant="outline"
+          size="sm"
           disabled={!ready}
           onClick={
             // Require a reviewable confirmation before restoring every action.
             () => setRestoreOpen(true)
           }
         >
+          <RotateCcw aria-hidden="true" />
           Restore all defaults
         </Button>
       </div>
@@ -198,22 +200,34 @@ export function SettingsKeyboardShortcutsRoute() {
           </Button>
         </div>
       )}
-      {groups.map(
-        // Render categories and rows in backend order.
-        (category) => (
-          <section key={category} className="mb-6">
-            <h3 className="mb-2 text-xs font-semibold uppercase text-muted">
-              {CATEGORIES[category]}
-            </h3>
-            <table className="w-full table-fixed text-left text-sm">
-              <thead>
-                <tr className="border-b border-hairline">
-                  <th className="p-2">Action</th>
-                  <th className="p-2">Shortcut</th>
-                  <th className="p-2">Status</th>
+      {groups.length > 0 && (
+        <table aria-label="Keyboard shortcuts" className="w-full table-fixed text-left text-[13px]">
+          <thead>
+            <tr className="border-b border-hairline text-[11px] font-medium tracking-wide text-muted uppercase">
+              <th className="w-[40%] px-2 py-2 font-medium" scope="col">
+                Action
+              </th>
+              <th className="w-[32%] px-2 py-2 font-medium" scope="col">
+                Shortcut
+              </th>
+              <th className="px-2 py-2 font-medium" scope="col">
+                Status
+              </th>
+            </tr>
+          </thead>
+          {groups.map(
+            // Keep backend row order inside each wireframe category.
+            (category) => (
+              <tbody key={category} aria-label={CATEGORIES[category]}>
+                <tr>
+                  <th
+                    colSpan={3}
+                    scope="rowgroup"
+                    className="px-2 pt-4 pb-1.5 text-[11px] font-medium tracking-wide text-muted uppercase"
+                  >
+                    {CATEGORIES[category]}
+                  </th>
                 </tr>
-              </thead>
-              <tbody>
                 {filtered
                   .filter(
                     // Select only this category without reordering rows.
@@ -226,22 +240,16 @@ export function SettingsKeyboardShortcutsRoute() {
                         key={action.actionId}
                         className={
                           action.conflictsWith.length > 0
-                            ? "border-b border-hairline bg-warning/10"
-                            : "border-b border-hairline"
+                            ? "border-b border-hairline-soft bg-warning/10"
+                            : "border-b border-hairline-soft"
                         }
                       >
-                        <td className="p-2 align-top break-words">
+                        <td
+                          className={`px-2 py-1.5 align-middle break-words ${AVAILABLE.has(action.actionId) ? "text-body-strong" : "text-muted"}`}
+                        >
                           {action.label}
-                          {!AVAILABLE.has(action.actionId) && (
-                            <p
-                              className="mt-1 text-xs text-muted"
-                              title="You can customize this shortcut now. Its action is not available in this version."
-                            >
-                              Not available yet
-                            </p>
-                          )}
                         </td>
-                        <td className="p-2 align-top">
+                        <td className="px-2 py-1.5 align-middle">
                           <button
                             type="button"
                             ref={
@@ -275,7 +283,7 @@ export function SettingsKeyboardShortcutsRoute() {
                                         true,
                                       )[index]
                                     }
-                                    className="rounded border border-hairline bg-canvas px-1.5 py-0.5"
+                                    className="rounded border border-hairline bg-canvas px-1.5 py-0.5 font-mono text-[11px]"
                                   >
                                     {part}
                                   </kbd>
@@ -283,9 +291,9 @@ export function SettingsKeyboardShortcutsRoute() {
                               )}
                           </button>
                         </td>
-                        <td className="p-2 align-top break-words">
+                        <td className="px-2 py-1.5 align-middle text-[11px] break-words text-muted">
                           {action.actionId === "quick_note.open_global" && (
-                            <div className="mb-2">
+                            <div className="mb-0.5">
                               <p role={globalShortcut.error === null ? "status" : "alert"}>
                                 {globalShortcut.error ??
                                   (globalShortcut.status === "active"
@@ -328,6 +336,14 @@ export function SettingsKeyboardShortcutsRoute() {
                           ) : (
                             "Default"
                           )}
+                          {!AVAILABLE.has(action.actionId) && (
+                            <span
+                              className="ml-2"
+                              title="You can customize this shortcut now. Its action is not available in this version."
+                            >
+                              Not available yet
+                            </span>
+                          )}
                           {action.conflictsWith.length > 0 && (
                             <p className="mt-2">
                               ⚠ Conflicts with{" "}
@@ -349,9 +365,9 @@ export function SettingsKeyboardShortcutsRoute() {
                     ),
                   )}
               </tbody>
-            </table>
-          </section>
-        ),
+            ),
+          )}
+        </table>
       )}
       {editing !== undefined && (
         <ShortcutRecorderDialog

@@ -274,6 +274,12 @@ it("shows actual global status and supports explicit reconciliation", async () =
     new Error("offline"),
   );
   await mount();
+  expect(
+    screen.getAllByRole("rowgroup", { name: /Global|Navigation|Tabs|Panes/ }).map(
+      // Category order is visible even when the backend appends the Global action last.
+      (group) => group.getAttribute("aria-label"),
+    ),
+  ).toEqual(["Global", "Navigation", "Tabs", "Panes"]);
   const row = screen.getByRole("button", { name: "Change shortcut for Quick Note" }).closest("tr");
   expect(row).not.toHaveTextContent("Not available yet");
   expect(
@@ -396,9 +402,9 @@ it("renders 18 ordered actions and ten unavailable handlers", async () => {
   expect(screen.queryByText(/File Explorer|Ctrl\s*\+?\s*B/i)).not.toBeInTheDocument();
   expect(screen.getAllByText("Not available yet")).toHaveLength(10);
   expect(
-    screen.getAllByRole("heading", { level: 3 }).map(
+    screen.getAllByRole("rowgroup", { name: /Navigation|Tabs|Panes/ }).map(
       // Inspect displayed group order without relying on CSS.
-      (heading) => heading.textContent,
+      (group) => group.getAttribute("aria-label"),
     ),
   ).toEqual(["Navigation", "Tabs", "Panes"]);
   const calls = vi.mocked(ipc.getKeyboardShortcuts).mock.calls.length;
