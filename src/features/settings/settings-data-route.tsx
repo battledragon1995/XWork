@@ -1,3 +1,4 @@
+import { Copy, Download, FolderOpen, Upload } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { DataLocationDto } from "@/bindings/data-management";
 import { Button } from "@/components/ui/button";
@@ -60,72 +61,83 @@ export function SettingsDataRoute() {
       <SettingRow
         first
         label="Export a backup"
-        description="Project metadata, custom CLI profiles, theme, shortcuts and settings. Secrets are included as references only. This unencrypted backup may contain private paths and configuration."
+        description="Project metadata, custom CLI profiles, theme, shortcuts and settings."
       >
         <Button
           variant="outline"
+          size="sm"
           disabled={disabled}
           onClick={/** Open the native export picker. */ () => void data.prepare("export")}
         >
+          <Download aria-hidden="true" />
           Export backup…
         </Button>
       </SettingRow>
       <SettingRow
         label="Import a backup"
-        description="Project and profile records are merged. Included settings, default shell and shortcut overrides replace their current configuration."
+        description="Merge projects and profiles; replace included settings, default shell and shortcut overrides."
       >
         <Button
           variant="outline"
+          size="sm"
           disabled={disabled}
           onClick={
             /** Prepare a preview without importing yet. */ () => void data.prepare("import")
           }
         >
+          <Upload aria-hidden="true" />
           Import backup…
         </Button>
       </SettingRow>
       <p className="py-3 text-xs text-muted">
-        Backups never include project source, running sessions, terminal output, CLI history, logs
-        or notifications.
+        Secrets are included as references only. This unencrypted backup may contain private paths
+        and configuration. Backups never include project source, running sessions, terminal output,
+        CLI history, logs or notifications.
       </p>
       <SettingRow
         label="Data location"
-        layout="stacked"
         description={
           location ? `${location.databaseFileName} · ${location.logsDirectoryName}` : undefined
         }
       >
         <div className="min-w-0 w-full space-y-2" aria-busy={loading}>
           {loading && <p role="status">Loading data location…</p>}
-          {location && (
-            <Input
-              aria-label="Data location"
-              readOnly
-              value={location.directory}
-              className="w-full"
-            />
-          )}
-          <div className="flex flex-wrap gap-2">
+          <div className="flex min-w-0 items-center gap-1">
+            {location && (
+              <Input
+                aria-label="Data location"
+                readOnly
+                value={location.directory}
+                className="h-8 min-w-0 flex-1 font-mono text-[11px]"
+                title={location.directory}
+              />
+            )}
             <Button
-              variant="outline"
+              variant="ghost"
+              size="icon-sm"
+              aria-label="Copy path"
+              title="Copy path"
               disabled={!location || loading}
               onClick={/** Copy the native location. */ () => void locationAction(true)}
             >
-              Copy path
+              <Copy aria-hidden="true" />
             </Button>
             <Button
-              variant="outline"
+              variant="ghost"
+              size="icon-sm"
+              aria-label="Open folder"
+              title="Open folder"
               disabled={!location || loading}
               onClick={/** Open the native location. */ () => void locationAction(false)}
             >
-              Open folder
+              <FolderOpen aria-hidden="true" />
             </Button>
-            {error && (
-              <Button variant="outline" onClick={load}>
-                Try again
-              </Button>
-            )}
           </div>
+          {error && (
+            <Button variant="outline" onClick={load}>
+              Try again
+            </Button>
+          )}
           {error && <p role="alert">{error}</p>}
           {copied && <p role="status">Path copied.</p>}
         </div>

@@ -1,4 +1,4 @@
-import { LoaderCircle } from "lucide-react";
+import { LoaderCircle, TriangleAlert } from "lucide-react";
 import { useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import {
@@ -44,7 +44,7 @@ export function DataOperationDialog() {
     >
       <DialogContent
         showCloseButton={false}
-        className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-[560px]"
+        className={`max-h-[calc(100dvh/var(--ui-scale)-2rem)] overflow-y-auto ${reset ? "sm:max-w-[460px]" : "sm:max-w-[560px]"}`}
         aria-busy={applying}
         onOpenAutoFocus={
           /** Prefer the safe action for both destructive and import previews. */ (event) => {
@@ -77,7 +77,10 @@ export function DataOperationDialog() {
           }
         }
       >
-        <DialogTitle>{reset ? "Reset XWork?" : "Import backup?"}</DialogTitle>
+        <DialogTitle className="flex items-center gap-2">
+          {reset && <TriangleAlert aria-hidden="true" className="size-5 text-warn-ink" />}
+          {reset ? "Reset XWork?" : "Import backup?"}
+        </DialogTitle>
         <DialogDescription>
           {reset
             ? "Running sessions are stopped. Project files and logs are kept."
@@ -86,7 +89,7 @@ export function DataOperationDialog() {
         <div
           ref={summary}
           tabIndex={-1}
-          className="min-w-0 space-y-2 break-words text-sm outline-none"
+          className={`min-w-0 space-y-2 break-words text-[13px] outline-none ${reset ? "rounded-md border border-hairline-soft bg-cream-strong px-4 py-3" : ""}`}
         >
           {data.preview && "createdAtMs" in data.preview ? (
             <>
