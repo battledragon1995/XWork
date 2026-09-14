@@ -94,6 +94,23 @@ it("renders results and wraps over disabled options", async () => {
   expect(props.onActivate).toHaveBeenCalledTimes(1);
   expect(input).toHaveFocus();
 });
+/** Visual priority and keyboard activation must agree without dropping capped results. */
+it("puts available commands first and retains disabled catalog entries", async () => {
+  const data = response();
+  data.groups[0].results.reverse();
+  vi.mocked(searchUnified).mockResolvedValue(data);
+  const { props } = setup();
+  await screen.findByText("2 results");
+  expect(screen.getAllByRole("option")[0]).toHaveTextContent("navigation.open_home");
+  expect(screen.getAllByRole("option")[1]).toHaveAttribute("aria-disabled", "true");
+  expect(screen.getByRole("combobox")).toHaveAttribute("spellcheck", "false");
+  await act(async () => fireEvent.keyDown(screen.getByRole("combobox"), { key: "Enter" }));
+  expect(props.onActivate).toHaveBeenCalledWith({
+    kind: "command",
+    actionId: "navigation.open_home",
+    projectId: null,
+  });
+});
 /** IME owns Enter and Escape until its committed value is searchable. */
 it("guards composition and clears stale options while typing", async () => {
   const { props } = setup();

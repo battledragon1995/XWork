@@ -1,4 +1,16 @@
-import { Command, Folder, Terminal } from "lucide-react";
+import {
+  CalendarDays,
+  Columns2,
+  Command,
+  FileText,
+  Folder,
+  Home,
+  PanelsTopLeft,
+  Search,
+  Settings2,
+  StickyNote,
+  Terminal,
+} from "lucide-react";
 import type { SearchResultDto, SearchTextRangeDto } from "@/bindings/search";
 import { formatShortcut, type ShortcutPlatform } from "@/lib/utils/keyboard-shortcuts";
 
@@ -12,7 +24,7 @@ function HighlightText(props: { text: string; ranges: SearchTextRangeDto[] }) {
   for (const range of props.ranges) {
     parts.push(scalars.slice(start, range.startScalar).join(""));
     parts.push(
-      <mark key={range.startScalar} className="bg-accent/20 text-inherit">
+      <mark key={range.startScalar} className="rounded-xs bg-amber/30 text-inherit">
         {scalars.slice(range.startScalar, range.endScalar).join("")}
       </mark>,
     );
@@ -33,7 +45,29 @@ export function SearchResultRow(props: {
   onActivate(): void;
 }) {
   const { result, availability } = props;
-  const Icon = result.kind === "project" ? Folder : result.kind === "session" ? Terminal : Command;
+  const action = result.target.kind === "command" ? result.target.actionId : "";
+  const Icon =
+    result.kind === "project" || action.includes("project")
+      ? Folder
+      : result.kind === "session" || action.startsWith("sessions.")
+        ? Terminal
+        : result.kind === "file"
+          ? FileText
+          : result.kind === "note" || action.includes("note")
+            ? StickyNote
+            : result.kind === "event" || action.includes("calendar")
+              ? CalendarDays
+              : action.includes("home")
+                ? Home
+                : action.includes("settings")
+                  ? Settings2
+                  : action.startsWith("tabs.")
+                    ? PanelsTopLeft
+                    : action.startsWith("panes.")
+                      ? Columns2
+                      : action.includes("palette")
+                        ? Search
+                        : Command;
   return (
     // Options receive pointer input; the owning combobox supplies keyboard navigation.
     // biome-ignore lint/a11y/useKeyWithClickEvents: input-held listbox focus pattern.
@@ -47,7 +81,7 @@ export function SearchResultRow(props: {
       // Prevent pointer selection from moving focus away from the query.
       onPointerDown={(event) => event.preventDefault()}
       onClick={props.onActivate}
-      className={`flex cursor-default items-center gap-3 rounded-md px-3 py-2 text-sm ${props.selected ? "bg-surface-soft" : ""}`}
+      className={`flex cursor-default items-center gap-3 rounded-md px-3 py-2 text-sm ${props.selected ? "bg-surface-card" : ""}`}
     >
       <Icon aria-hidden="true" className="size-4 shrink-0 text-muted" />
       <div className="min-w-0 flex-1 break-words">
@@ -63,7 +97,9 @@ export function SearchResultRow(props: {
       </div>
       {result.shortcut && props.platform && (
         <span className="shrink-0 text-xs text-muted">
-          <kbd>{formatShortcut(result.shortcut, props.platform)}</kbd>
+          <kbd className="rounded border border-hairline bg-surface-soft px-1.5 py-0.5 font-mono text-[11px]">
+            {formatShortcut(result.shortcut, props.platform)}
+          </kbd>
           {result.shortcut.isConflicted && <span className="block">Shortcut conflict</span>}
         </span>
       )}

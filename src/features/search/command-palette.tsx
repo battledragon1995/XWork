@@ -1,4 +1,4 @@
-import { Search, X } from "lucide-react";
+import { Search } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 import type { SearchTargetDto } from "@/bindings/search";
 import { Button } from "@/components/ui/button";
@@ -34,11 +34,28 @@ export function CommandPalette(props: {
     key: string;
   } | null>(null);
   const listId = useId();
-  const rows =
-    search.response?.groups.flatMap(
-      // Preserve the exact backend group and result order.
-      (group) => group.results,
+  const groups =
+    search.response?.groups.map(
+      /** Prioritize usable commands within the returned cap, preserving each partition's rank. */ (
+        group,
+      ) =>
+        group.kind !== "command"
+          ? group
+          : {
+              ...group,
+              results: [
+                ...group.results.filter(
+                  (result) => props.getTargetAvailability(result.target).enabled,
+                ),
+                ...group.results.filter(
+                  (result) => !props.getTargetAvailability(result.target).enabled,
+                ),
+              ],
+            },
     ) ?? [];
+  const rows = groups.flatMap(
+    /** Keep keyboard movement in visual order. */ (group) => group.results,
+  );
   const active =
     (selection?.response === search.response
       ? rows.find(
@@ -145,6 +162,10 @@ export function CommandPalette(props: {
             aria-activedescendant={activeId}
             aria-autocomplete="list"
             value={search.query}
+            spellCheck={false}
+            autoCorrect="off"
+            autoCapitalize="off"
+            className="border-0 bg-transparent shadow-none focus-visible:ring-0"
             onKeyDown={onKeyDown}
             // Forward the complete Unicode input without client-side truncation.
             onChange={(event) => search.setQuery(event.target.value)}
@@ -163,7 +184,9 @@ export function CommandPalette(props: {
           <Tooltip>
             <TooltipTrigger asChild>
               <Button variant="ghost" size="icon" aria-label="Close search" onClick={props.onClose}>
-                <X aria-hidden="true" className="size-4" />
+                <kbd className="rounded border border-hairline px-1 py-0.5 font-mono text-[11px] text-muted">
+                  Esc
+                </kbd>
               </Button>
             </TooltipTrigger>
             <TooltipContent>Close search (Esc)</TooltipContent>
@@ -216,11 +239,13 @@ export function CommandPalette(props: {
             </div>
           )}
           <div role="listbox" id={listId} aria-label="Search results">
-            {search.response?.groups.map(
+            {groups.map(
               // Keep backend labels, counts and cap notices intact.
               (group) => (
                 <fieldset aria-label={group.label} key={group.kind}>
-                  <div className="px-3 py-2 text-xs text-muted">{group.label}</div>
+                  <div className="px-3 py-2 text-[10px] tracking-wider text-muted uppercase">
+                    {group.label}
+                  </div>
                   {group.results.map(
                     // Inject app availability without filtering capped catalog rows.
                     (result) => (
@@ -251,9 +276,15 @@ export function CommandPalette(props: {
           </div>
         </div>
         <div className="flex flex-wrap gap-4 border-t border-hairline px-4 py-2 text-xs text-muted">
-          <span>↑ ↓ move</span>
+          <span className="flex items-center gap-1">
+            <kbd className="rounded border border-hairline px-1 font-mono">↑</kbd>
+            <kbd className="rounded border border-hairline px-1 font-mono">↓</kbd> move
+          </span>
           {active && !busy && props.getTargetAvailability(active.target).enabled && (
-            <span>{active.kind === "command" ? "Enter run" : "Enter open"}</span>
+            <span className="flex items-center gap-1">
+              <kbd className="rounded border border-hairline px-1 font-mono">Enter</kbd>
+              {active.kind === "command" ? "run" : "open"}
+            </span>
           )}
           <span role="status" aria-live="polite" className="ml-auto">
             {search.status === "loading"
