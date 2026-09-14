@@ -44,7 +44,11 @@ it("shows loading without invented policy controls", () => {
   vi.mocked(getSettings).mockReturnValue(new Promise(/** Keep initialization pending. */ () => {}));
   render(<SettingsNotificationsRoute />);
   expect(screen.getByRole("status")).toHaveTextContent("Loading notification settings…");
-  expect(screen.queryByRole("switch")).not.toBeInTheDocument();
+  expect(
+    screen.queryByRole("switch", { name: "Terminal and AI CLI activity" }),
+  ).not.toBeInTheDocument();
+  expect(screen.getByRole("switch", { name: "Missed reminders on launch" })).toBeChecked();
+  expect(screen.getByRole("switch", { name: "Missed reminders on launch" })).toBeDisabled();
   expect(screen.getByText("Always on")).toBeInTheDocument();
 });
 
@@ -58,7 +62,7 @@ it("retries a failed initial read", async () => {
   expect(await screen.findByRole("alert")).toHaveTextContent(
     "Could not load notification settings.",
   );
-  expect(screen.queryByRole("switch")).not.toBeInTheDocument();
+  expect(screen.queryByRole("switch", { name: "Events and reminders" })).not.toBeInTheDocument();
   await user.click(screen.getByRole("button", { name: "Retry" }));
   expect(await screen.findByRole("switch", { name: "Events and reminders" })).toBeChecked();
 });
@@ -85,6 +89,7 @@ it("retains OS choices while the terminal switch is off and toggles by keyboard"
   const terminal = await screen.findByRole("switch", { name: "Terminal and AI CLI activity" });
   const needsInput = screen.getByRole("checkbox", { name: "Needs input" });
   expect(terminal).not.toBeChecked();
+  expect(screen.getByText(/Turn on terminal activity to change/)).toBeInTheDocument();
   expect(needsInput).toBeChecked();
   expect(needsInput).toBeDisabled();
   expect(screen.getByRole("checkbox", { name: "Process finished" })).not.toBeChecked();
@@ -95,6 +100,7 @@ it("retains OS choices while the terminal switch is off and toggles by keyboard"
     /** Wait for the committed master value to unlock its choices. */ () =>
       expect(needsInput).toBeEnabled(),
   );
+  expect(screen.queryByText(/Turn on terminal activity to change/)).not.toBeInTheDocument();
   expect(terminal).toHaveFocus();
   expect(updateSettings).toHaveBeenCalledExactlyOnceWith({
     notifications: { terminalActivityEnabled: true },

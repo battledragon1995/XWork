@@ -99,48 +99,55 @@ export function SettingsNotificationsRoute() {
                 }
               />
             </SettingRow>
-            <fieldset
-              className="mb-4 space-y-2 text-[13px]"
-              disabled={disabled || !policy.terminalActivityEnabled}
-              aria-describedby="terminal-os-help"
+            <SettingRow
+              label="Send to the operating system when"
+              align="start"
+              description={
+                !policy.terminalActivityEnabled ? (
+                  <span id="terminal-os-help">
+                    Turn on terminal activity to change these choices. Turning it off keeps your
+                    selections.
+                  </span>
+                ) : undefined
+              }
             >
-              <legend className="mb-2 font-medium text-body-strong">
-                Send to the operating system when
-              </legend>
-              {OS_STATES.map(
-                /** Keep every OS choice bound to the current committed snapshot. */ ({
-                  field,
-                  label,
-                }) => (
-                  <label key={field} className="flex items-center gap-2 text-body">
-                    <input
-                      type="checkbox"
-                      className="size-4 accent-brand"
-                      checked={policy.terminalOsStates[field]}
-                      onChange={
-                        /** Submit the complete atomic OS state selection from the latest snapshot. */ (
-                          event,
-                        ) => {
-                          const current = useSettingsStore.getState().snapshot?.notifications;
-                          if (current)
-                            void commitNotifications({
-                              terminalOsStates: {
-                                ...current.terminalOsStates,
-                                [field]: event.currentTarget.checked,
-                              },
-                            });
+              <fieldset
+                className="w-full space-y-2 text-[13px]"
+                disabled={disabled || !policy.terminalActivityEnabled}
+                aria-describedby={!policy.terminalActivityEnabled ? "terminal-os-help" : undefined}
+              >
+                <legend className="sr-only">Send to the operating system when</legend>
+                {OS_STATES.map(
+                  /** Keep every OS choice bound to the current committed snapshot. */ ({
+                    field,
+                    label,
+                  }) => (
+                    <label key={field} className="flex items-center gap-2 text-body">
+                      <input
+                        type="checkbox"
+                        className="size-4 accent-ink"
+                        checked={policy.terminalOsStates[field]}
+                        onChange={
+                          /** Submit the complete atomic OS state selection from the latest snapshot. */ (
+                            event,
+                          ) => {
+                            const current = useSettingsStore.getState().snapshot?.notifications;
+                            if (current)
+                              void commitNotifications({
+                                terminalOsStates: {
+                                  ...current.terminalOsStates,
+                                  [field]: event.currentTarget.checked,
+                                },
+                              });
+                          }
                         }
-                      }
-                    />
-                    {label}
-                  </label>
-                ),
-              )}
-            </fieldset>
-            <p id="terminal-os-help" className="mb-4 text-[12px] text-muted">
-              Turn on terminal activity to change these choices. Turning it off keeps your
-              selections.
-            </p>
+                      />
+                      {label}
+                    </label>
+                  ),
+                )}
+              </fieldset>
+            </SettingRow>
             <SettingRow
               label="Events and reminders"
               description="Show due reminders in the bell. Operating-system notifications appear when the event is not visible."
@@ -165,7 +172,10 @@ export function SettingsNotificationsRoute() {
           label="Missed reminders on launch"
           description="After XWork reopens, reminders missed while it was closed appear in Calendar → Missed without an operating-system notification burst."
         >
-          <span className="text-[13px] font-medium text-body-strong">Always on</span>
+          <span className="flex items-center gap-3">
+            <span className="text-[12px] text-muted">Always on</span>
+            <Switch aria-label="Missed reminders on launch" checked disabled />
+          </span>
         </SettingRow>
       </div>
     </SettingsSection>
