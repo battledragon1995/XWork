@@ -11,6 +11,7 @@ import type {
   ListFileChildrenRequestDto,
   OpenFileInPaneRequestDto,
   OpenFileResultDto,
+  RecentFileDto,
   ResolveExternalFileChangeRequestDto,
   SaveMarkdownFileRequestDto,
   SaveMarkdownFileResultDto,
@@ -21,6 +22,11 @@ import { invokeCommand } from "./ipc-error";
 
 /** Handle invalidation event emitted by BE-014 after a committed state change. */
 const FILE_HANDLE_CHANGED_EVENT = "files://handle-changed";
+
+/** Read the existing backend's bounded recent-file projection without opening files. */
+export function listRecentFiles(projectId: string, limit: number): Promise<RecentFileDto[]> {
+  return invokeCommand<RecentFileDto[], FilesError>("list_recent_files", { projectId, limit });
+}
 
 /** Read one page of visible direct children. */
 export function listFileChildren(request: ListFileChildrenRequestDto): Promise<FileTreePageDto> {

@@ -19,7 +19,7 @@ const PROJECT: ProjectDto = {
 };
 
 // Render one card with intent spies; the card itself runs no command.
-function renderCard(overrides: Partial<ProjectDto> = {}, isBusy = false) {
+function renderCard(overrides: Partial<ProjectDto> = {}, isBusy = false, sessionCount?: number) {
   const intents = {
     onOpen: vi.fn(),
     onRename: vi.fn(),
@@ -34,6 +34,7 @@ function renderCard(overrides: Partial<ProjectDto> = {}, isBusy = false) {
       <ProjectCard
         project={{ ...PROJECT, ...overrides }}
         isBusy={isBusy}
+        sessionCount={sessionCount}
         registerTrigger={vi.fn()}
         {...intents}
       />
@@ -48,6 +49,15 @@ afterEach(() => {
 });
 
 describe("ProjectCard content", () => {
+  /** Display confirmed empty and populated runtime counts without inferring process state. */
+  it.each([
+    [0, "No sessions"],
+    [1, "1 session"],
+    [3, "3 sessions"],
+  ] as const)("shows %i sessions", (count, label) => {
+    renderCard({}, false, count);
+    expect(screen.getByText(label)).toBeInTheDocument();
+  });
   // Verify the card shows the name and the full path, with the path also available as a
   // tooltip because the visible text is truncated.
   it("shows the name and the full path", () => {

@@ -124,9 +124,23 @@ function CalendarSection({
   }
   return (
     <section aria-label="Upcoming calendar events" className="min-w-0 space-y-3 self-start">
-      <h2 className="text-[11px] font-medium uppercase tracking-wider text-muted">
-        Upcoming events
-      </h2>
+      <div className="flex items-center justify-between gap-3">
+        <h2 className="text-[11px] font-medium uppercase tracking-wider text-muted">
+          Upcoming events
+        </h2>
+        <Link
+          className="text-xs text-brand"
+          to={`/calendar?new=1${projectId ? `&project=${encodeURIComponent(projectId)}` : ""}`}
+          aria-disabled={boundary.suspended}
+          onClick={
+            /** Keep create navigation inside this boundary. */ (e) => {
+              if (!admitted()) e.preventDefault();
+            }
+          }
+        >
+          New event
+        </Link>
+      </div>
       {query.loading && <p role="status">Loading calendar…</p>}
       {query.refreshing && <p role="status">Refreshing calendar…</p>}
       {query.listenerError && <p role="alert">Calendar updates are unavailable</p>}

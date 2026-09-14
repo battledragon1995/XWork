@@ -1,17 +1,16 @@
-import { cleanup } from "@testing-library/react";
-import { afterEach } from "vitest";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
-import { beforeEach, describe, expect, it, vi } from "vitest";
-import { CalendarRoute } from "./calendar-route";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getCalendarEvent, listCalendarOccurrences, onCalendarChanged } from "@/lib/ipc/calendar";
-import { getProject, listProjects, onProjectsChanged } from "@/lib/ipc/projects";
 import { IpcCallError } from "@/lib/ipc/ipc-error";
+import { getProject, listProjects, onProjectsChanged } from "@/lib/ipc/projects";
 import {
-  getMissedReminders,
   getEventReminderDeliveries,
+  getMissedReminders,
   setVisibleCalendarEvent,
 } from "@/lib/ipc/reminders";
+import { CalendarRoute } from "./calendar-route";
+
 vi.mock(
   "@/lib/ipc/reminders",
   /** Isolate Stage 21 reads from native state. */ () => ({
@@ -65,6 +64,18 @@ beforeEach(
   },
 );
 describe("Calendar route", /** Verify navigation against exact backend read contracts. */ () => {
+  /** Project/dashboard create links must validate scope and open one real draft only. */
+  it("consumes a create intent once after validating its project", async () => {
+    const create = vi.fn();
+    render(
+      <MemoryRouter initialEntries={["/calendar?new=1&project=p&date=2026-09-14"]}>
+        <CalendarRoute onCreateEvent={create} />
+      </MemoryRouter>,
+    );
+    await waitFor(() =>
+      expect(create).toHaveBeenCalledExactlyOnceWith({ date: "2026-09-14", projectId: "p" }),
+    );
+  });
   it("denies create while project scope is unverified or date intent is invalid", /** Do not turn a failed project lookup into an unscoped event. */ async () => {
     const create = vi.fn();
     vi.mocked(getProject).mockReturnValue(

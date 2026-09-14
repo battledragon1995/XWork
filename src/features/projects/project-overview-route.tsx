@@ -92,6 +92,7 @@ export function ProjectOverviewRoute(
   props: {
     renderLinkedNotes?(projectId: string): React.ReactNode;
     renderLinkedEvents?(projectId: string): React.ReactNode;
+    renderRecentFiles?(projectId: string): React.ReactNode;
   } = {},
 ) {
   const { projectId = "" } = useParams();
@@ -250,12 +251,8 @@ export function ProjectOverviewRoute(
           />
         ) : null}
 
-        <div className="grid gap-6 @min-[900px]:grid-cols-[7fr_5fr]">
+        <div className="grid items-start gap-6 @min-[720px]:grid-cols-[7fr_5fr]">
           <div className="grid min-w-0 gap-6">
-            {/* The session block leads the left column; the later right-column features of
-                FE-009 and FE-011 are not pulled forward by this slice. */}
-            {props.renderLinkedNotes?.(project.id)}
-            {props.renderLinkedEvents?.(project.id)}
             <ProjectSessionList
               projectId={project.id}
               isProjectUnavailable={isUnavailable}
@@ -296,6 +293,11 @@ export function ProjectOverviewRoute(
                   )}
               </div>
             )}
+          </div>
+          <div className="grid min-w-0 gap-6">
+            {props.renderRecentFiles?.(project.id)}
+            {props.renderLinkedNotes?.(project.id)}
+            {props.renderLinkedEvents?.(project.id)}
           </div>
         </div>
       </div>

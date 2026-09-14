@@ -6,6 +6,7 @@ import {
   getFileEntryPaths,
   getOpenFile,
   listFileChildren,
+  listRecentFiles,
   onFileHandleChanged,
   openFileInPane,
   openFileWithDefaultApp,
@@ -27,6 +28,14 @@ beforeEach(() => {
   vi.mocked(invoke).mockReset();
   vi.mocked(listen).mockReset();
 });
+// Verify both null root cursors and opaque continuation tokens are forwarded unchanged.
+/** The overview uses the already registered bounded recent-file command. */
+it("lists recent files for a verified project", async () => {
+  vi.mocked(invoke).mockResolvedValue([]);
+  expect(await listRecentFiles("project", 5)).toEqual([]);
+  expect(invoke).toHaveBeenCalledWith("list_recent_files", { projectId: "project", limit: 5 });
+});
+
 // Verify both null root cursors and opaque continuation tokens are forwarded unchanged.
 it.each([null, "opaque/cursor=="])("lists with cursor %s", async (cursor) => {
   const request = { projectId: "project", directory: "", cursor };

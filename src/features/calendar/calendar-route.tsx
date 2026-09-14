@@ -2,13 +2,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
 import type { CalendarOccurrenceDto } from "@/bindings/calendar";
 import type { ReminderTargetDto } from "@/bindings/reminders";
-import { CalendarMissed } from "./calendar-missed";
-import { useMissedReminders } from "./use-missed-reminders";
 import { getProject, listProjects, onProjectsChanged } from "@/lib/ipc/projects";
-import { CalendarMonth } from "./calendar-month";
 import { CalendarAgenda } from "./calendar-agenda";
-import { EventDetailPanel } from "./event-detail-panel";
 import { calendarErrorCopy, calendarErrorKind } from "./calendar-error-copy";
+import { CalendarMissed } from "./calendar-missed";
+import { CalendarMonth } from "./calendar-month";
 import {
   addDays,
   calendarRange,
@@ -20,7 +18,9 @@ import {
   todayDate,
   viewerTimeZone,
 } from "./calendar-presentation";
+import { EventDetailPanel } from "./event-detail-panel";
 import { type CalendarBoundary, useCalendarQuery } from "./use-calendar-query";
+import { useMissedReminders } from "./use-missed-reminders";
 export interface CalendarRouteProps {
   boundary?: CalendarBoundary;
   readBoundary?(): CalendarBoundary;
@@ -177,6 +177,28 @@ export function CalendarRoute({
   );
   const days = monthGrid(month);
   const enabled = project.ready && project.id === projectIntent && !invalidDate;
+  const createIntent = params.get("new") === "1";
+  const handledCreate = useRef(false);
+  useEffect(
+    /** Admit a dashboard create link only after its date/project scope is verified. */ () => {
+      if (!createIntent) {
+        handledCreate.current = false;
+        return;
+      }
+      if (handledCreate.current || !enabled || !admitted() || !onCreateEvent) return;
+      handledCreate.current = true;
+      onCreateEvent({ date: selected, projectId: project.id });
+      setParams(
+        /** Consume this navigation intent once. */ (previous) => {
+          const next = new URLSearchParams(previous);
+          next.delete("new");
+          return next;
+        },
+        { replace: true },
+      );
+    },
+    [createIntent, enabled, admitted, onCreateEvent, selected, project.id, setParams],
+  );
   const monthQuery = useCalendarQuery(
     enabled
       ? {

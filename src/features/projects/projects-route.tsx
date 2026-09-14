@@ -11,8 +11,9 @@ import { RemoveProjectDialog } from "./remove-project-dialog";
 import { RenameProjectDialog } from "./rename-project-dialog";
 import { useAddProject } from "./use-add-project";
 import { useProjectActions } from "./use-project-actions";
-import { useProjects } from "./use-projects";
 import { useProjectSearch } from "./use-project-search";
+import { useProjectSessionCounts } from "./use-project-session-counts";
+import { useProjects } from "./use-projects";
 
 /**
  * Build the count line under the page title. Every count except `matching` comes from the
@@ -48,6 +49,7 @@ export function projectCountSummary(projects: ProjectDto[], matching: number | n
  */
 export function ProjectsRoute() {
   const snapshot = useProjects();
+  const sessionCounts = useProjectSessionCounts(snapshot.projects);
   const search = useProjectSearch(snapshot);
   const add = useAddProject();
   const navigate = useNavigate();
@@ -273,11 +275,14 @@ export function ProjectsRoute() {
               </div>
             </div>
           ) : (
-            <div className="grid grid-cols-1 gap-4 @min-[760px]:grid-cols-2 @min-[1100px]:grid-cols-3">
+            <div className="grid grid-cols-1 gap-4 @min-[540px]:grid-cols-2 @min-[840px]:grid-cols-3">
               {search.projects.map((project) => (
                 // Keyed by backend id, never by index: pinning reorders the grid and the DOM
                 // node has to travel with its project so focus stays on the same card.
                 <ProjectCard
+                  sessionCount={
+                    sessionCounts === null ? undefined : (sessionCounts[project.id] ?? 0)
+                  }
                   key={project.id}
                   project={project}
                   isBusy={actions.pendingProjectId === project.id}

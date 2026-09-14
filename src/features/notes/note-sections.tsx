@@ -34,9 +34,10 @@ function NoteSection({
         <h2 className="text-[11px] font-medium uppercase tracking-wider text-muted">
           {home && empty ? "Notes" : title}
         </h2>
-        <Link className="text-xs text-muted hover:text-ink" to={`/notes?view=active${suffix}`}>
-          All notes
-        </Link>
+        <div className="flex items-center gap-3 text-xs text-brand">
+          <Link to={`/notes?view=active${suffix}`}>All notes</Link>
+          {projectId && <Link to={`/notes?new=1${suffix}`}>New note</Link>}
+        </div>
       </div>
       {query.loading && <p role="status">Loading notes…</p>}
       {query.error && <p role="alert">{query.error}</p>}
@@ -68,7 +69,6 @@ function NoteSection({
         )}
       </ul>
       <div className="flex flex-wrap gap-3">
-        {projectId && <Link to={`/notes?new=1${suffix}`}>New note</Link>}
         {query.error && (
           <Button variant="outline" onClick={query.refresh}>
             Refresh

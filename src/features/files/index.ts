@@ -13,3 +13,4 @@ export type {
   FileHandleRegistry,
 } from "./file-handle-registry";
 export { FilePane, type FilePaneProps } from "./file-pane";
+export { RecentProjectFiles } from "./recent-project-files";

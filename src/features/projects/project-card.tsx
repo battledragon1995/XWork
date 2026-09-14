@@ -1,5 +1,6 @@
 import { Folder, Pin } from "lucide-react";
 import type { ProjectDto } from "@/bindings/projects/projects";
+import { ProjectGitSummary } from "@/components/project-git-summary";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils/cn";
 import { ProjectActionsMenu } from "./project-actions-menu";
@@ -9,6 +10,7 @@ import { unavailableReasonMessage } from "./project-error-copy";
 export interface ProjectCardProps {
   project: ProjectDto;
   isBusy: boolean;
+  sessionCount?: number;
   registerTrigger(projectId: string, element: HTMLButtonElement | null): void;
   onOpen(): void;
   onRename(): void;
@@ -19,9 +21,7 @@ export interface ProjectCardProps {
 }
 
 /**
- * Render one registered project. The card shows only what `BE-003` owns — name, path, pin
- * state and freshly measured availability — so no branch, Git status, changed-file count or
- * session line exists here yet; those arrive with their own capabilities.
+ * Render registered metadata alongside read-only Git and runtime session summaries.
  */
 export function ProjectCard(props: ProjectCardProps) {
   const { project, isBusy, registerTrigger } = props;
@@ -61,6 +61,15 @@ export function ProjectCard(props: ProjectCardProps) {
       <p className="truncate font-mono text-xs text-muted" title={project.rootPath}>
         {project.rootPath}
       </p>
+
+      <ProjectGitSummary projectId={project.id} suspended={isUnavailable || isBusy} />
+      {props.sessionCount !== undefined && (
+        <p className="text-xs text-muted">
+          {props.sessionCount === 0
+            ? "No sessions"
+            : `${props.sessionCount} ${props.sessionCount === 1 ? "session" : "sessions"}`}
+        </p>
+      )}
 
       {isUnavailable && (
         <p className="text-xs text-warn-ink">{unavailableReasonMessage(availability.reason)}</p>

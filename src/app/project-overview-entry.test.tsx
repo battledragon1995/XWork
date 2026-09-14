@@ -1,18 +1,22 @@
 import { render, screen } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import { ProjectOverviewEntry } from "./project-overview-entry";
+
 /** The overview owner supplies only its verified project identity. */
 vi.mock("@/features/projects/project-overview-route", () => ({
   ProjectOverviewRoute: ({
     renderLinkedNotes,
     renderLinkedEvents,
+    renderRecentFiles,
   }: {
     renderLinkedNotes(id: string): React.ReactNode;
     renderLinkedEvents(id: string): React.ReactNode;
+    renderRecentFiles(id: string): React.ReactNode;
   }) => (
     <>
       {renderLinkedNotes("verified-id")}
       {renderLinkedEvents("verified-id")}
+      {renderRecentFiles("verified-id")}
     </>
   ),
 }));
@@ -25,7 +29,15 @@ it("composes linked Notes with the verified project ID", () => {
   render(<ProjectOverviewEntry />);
   expect(screen.getByText("verified-id")).toBeVisible();
   expect(screen.getByText("Calendar for verified-id")).toBeVisible();
+  expect(screen.getByText("Files for verified-id")).toBeVisible();
 });
+
+/** Recent-file composition uses only the public verified project identity. */
+vi.mock("@/features/files", () => ({
+  RecentProjectFiles: ({ projectId }: { projectId: string }) => (
+    <output>Files for {projectId}</output>
+  ),
+}));
 
 /** Keep application admission isolated from native provider initialization. */
 vi.mock("./calendar-entry", () => ({
