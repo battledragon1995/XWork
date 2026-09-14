@@ -1,6 +1,6 @@
 # UI Wireframe Alignment Implementation Plan
 
-**Status:** In progress
+**Status:** Complete
 
 **Goal:** Correct the visual mismatches recorded on 2026-09-13 using existing application capabilities, with one commit per audited screen/function.
 
@@ -73,7 +73,7 @@ Task 1 supplies shared tokens and typography. Tasks 2–17 follow audit order; l
 | 14 | Shortcuts: group order, compact search/table/status | features/settings/settings-keyboard-shortcuts-route.tsx | Existing registry, recorder and restore callbacks | `pnpm exec vitest run src/features/settings/settings-keyboard-shortcuts-route.test.tsx src/features/settings/shortcut-recorder-dialog.test.tsx` |
 | 15 | Notifications settings: right-column checklist and fixed switch | features/settings/settings-notifications-route.tsx | Existing settings patch and fixed reminder rules | `pnpm exec vitest run src/features/settings/settings-notifications-route.test.tsx` |
 | 16 | Data: path/action row, backup icons, reset facts box | features/settings/settings-data-route.tsx; data-operation-dialog.tsx | Existing backup/reset confirmation boundaries unchanged | `pnpm exec vitest run src/features/settings/settings-data-route.test.tsx src/features/settings/data-operation-dialog.test.tsx` |
-| 17 | About: wordmark/metadata layout and explicit missing capability record | features/settings/settings-about-route.tsx | Existing app info only; no fake support links or diagnostic values | `pnpm exec vitest run src/features/settings/settings-about-route.test.tsx` |
+| 17 | About: wordmark/metadata layout and explicit missing capability record | features/settings/settings-about-route.tsx | Existing app info and retained CLI catalog for the resolved default shell; no fake support links or diagnostic values | `pnpm exec vitest run src/features/settings/settings-about-route.test.tsx` |
 
 Paths abbreviated after a feature prefix in a row remain within that feature directory. Additional existing directly related files may be listed in the corresponding progress entry when inspection establishes them.
 
@@ -109,14 +109,18 @@ Paths abbreviated after a feature prefix in a row remain within that feature dir
 - Task 14 complete: Global precedes Navigation/Tabs/Panes, categories share one table header, and compact search/reset controls align at opposite edges. Muted Default/unavailable statuses share the status column without hiding catalog entries or conflict messages. All 15 shortcut route/recorder tests, TypeScript and Biome passed, including category ordering and retained native status reconciliation. Native table and recorder open/cancel checked without saving a chord. No new shortcut handlers and no build.
 - Task 15 complete: terminal OS choices align in the right Settings column with ink checkmarks; the enable-terminal explanation appears only while that category is off. Fixed Missed catch-up shows a disabled checked switch beside Always on, including while mutable policy is loading. All 9 notification-settings tests, TypeScript and Biome passed; native enabled state checked without a policy write. No build.
 - Task 16 complete: path and copy/open icons share the right control row, backup actions have icons, and repeated explanatory copy is condensed while preserving backup/privacy/reset scope. Reset uses a narrower dialog, warning icon and cream facts box; typed confirmation, unsaved-document warning and apply guards remain unchanged. All 5 Data route/dialog tests, TypeScript and Biome passed. Native Data and Reset preview checked, then Cancel selected without typing RESET or applying any operation. No build.
-- Task 17: pending.
+- Task 17 complete: serif XWork wordmark with coral X, adjacent actual version/description and aligned metadata rows. The existing BE-006 catalog now provides the resolved default shell, including read retry and live catalog invalidation; no backend capability was added. All 8 About tests, TypeScript and Biome passed, including independent shell failure/retry and catalog replacement. Native About shows the actual PowerShell 7 executable. WebView2/runtime backend diagnostics, build metadata, public support destinations, diagnostic copy and updater remain unsupported and are recorded in the outcome. No build.
+- Final regression: the first complete run passed 2,742/2,744 tests; two shell/sidebar assertions still expected old Home/Calendar headings. Updated the expected date/month headings and retained chrome identity checks; all 46 tests in those two files passed. The final complete run passed all 2,744 tests across 174 files. Full frontend format/lint/TypeScript and Rustfmt checks passed. Final native Quick Note and Calendar form checks confirm complete footers and fully visible date/time values at the current UI scale. No Rust/generated binding/dependency changes, no desktop E2E and no build.
 
 ## Deviations and Decisions
 
 - Historical plans and the 2026-09-13 audit are not edited.
 - The requested wireframe correction replaces the older default font fallback and Cream color derivation choices; custom themes and existing behavior remain supported.
 - Missing backend capabilities are listed in the outcome, rather than replaced with nonfunctional controls.
+- The historical FE-011 About deferral predates BE-006. Inspection confirmed that the current public catalog already resolves the default shell, so task 17 reuses that read owner and adds isolated tests instead of treating this field as unavailable.
 
 ## Outcome
 
-Pending implementation and verification.
+All 17 audited groups have their UI corrections and a separate commit. The 56 original findings plus the Markdown blocker are mapped to fixes and explicit remaining limitations in `00-Docs/97-Issue/UI/18-Fix-Results.md`. The original audit and screenshots remain unchanged.
+
+Verification completed on Windows with the pre-existing native executable and Vite dev. The final full frontend suite passed (174 files, 2,744 tests); formatting, lint, TypeScript, Rustfmt and whitespace checks passed. Rust compilation, Clippy, Rust tests, production frontend builds and Tauri builds were omitted because this task changes frontend presentation only and the user explicitly waived builds.

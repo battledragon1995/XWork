@@ -1,9 +1,21 @@
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { readAppInfo } from "@/lib/ipc/app-info";
+import { getCliProfiles, onCliProfilesChanged } from "@/lib/ipc/cli-profiles";
+import { resetCliProfilesStore } from "./cli-profiles-store";
+import { createCliProfilesSnapshot } from "./cli-profiles-test-fixture";
 import { SettingsAboutRoute } from "./settings-about-route";
 
 vi.mock("@/lib/ipc/app-info", () => ({ readAppInfo: vi.fn() }));
+vi.mock("@/lib/ipc/cli-profiles", () => ({
+  getCliProfiles: vi.fn(),
+  onCliProfilesChanged: vi.fn(),
+  createCliProfile: vi.fn(),
+  updateCliProfile: vi.fn(),
+  deleteCliProfile: vi.fn(),
+  setDefaultCliShell: vi.fn(),
+  checkCliProfile: vi.fn(),
+}));
 
 const readAppInfoMock = vi.mocked(readAppInfo);
 const APP_INFO = {
@@ -17,11 +29,15 @@ describe("SettingsAboutRoute", () => {
   // Remove previous calls and DOM before each page state.
   beforeEach(() => {
     readAppInfoMock.mockReset();
+    resetCliProfilesStore();
+    vi.mocked(getCliProfiles).mockReset().mockResolvedValue(createCliProfilesSnapshot());
+    vi.mocked(onCliProfilesChanged).mockReset().mockResolvedValue(vi.fn());
   });
 
   // Unmount the hook so late adapter work cannot leak between tests.
   afterEach(() => {
     cleanup();
+    resetCliProfilesStore();
   });
 
   // Verify stable branding appears while the details remain pending.
@@ -30,7 +46,7 @@ describe("SettingsAboutRoute", () => {
     render(<SettingsAboutRoute />);
 
     expect(screen.getByRole("heading", { name: "About" })).toBeInTheDocument();
-    expect(screen.getByText("XWork")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "XWork" })).toBeInTheDocument();
     expect(screen.getByText("Loading application details…")).toHaveAttribute("aria-busy", "true");
   });
 
@@ -42,7 +58,10 @@ describe("SettingsAboutRoute", () => {
     expect(await screen.findByText("Version 0.0.0")).toBeInTheDocument();
     expect(screen.getByRole("cell", { name: "Windows 11.0.26100" })).toBeInTheDocument();
     expect(screen.getByRole("cell", { name: "x86_64" })).toBeInTheDocument();
-    expect(screen.getAllByRole("row")).toHaveLength(2);
+    expect(
+      await screen.findByRole("cell", { name: "PowerShell 7 (pwsh.exe)" }),
+    ).toBeInTheDocument();
+    expect(screen.getAllByRole("row")).toHaveLength(3);
   });
 
   // Verify macOS is title-cased while an unknown platform identifier is preserved.
@@ -71,7 +90,7 @@ describe("SettingsAboutRoute", () => {
     fireEvent.click(retry);
 
     expect(readAppInfoMock).toHaveBeenCalledTimes(2);
-    expect(screen.getByText("XWork")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "XWork" })).toBeInTheDocument();
     expect(screen.getByText("Loading application details…")).toBeInTheDocument();
   });
 
@@ -89,10 +108,43 @@ describe("SettingsAboutRoute", () => {
       "Copy diagnostics",
       "WebView2",
       "Terminal backend",
-      "Default shell",
     ]) {
       expect(screen.queryByText(text)).not.toBeInTheDocument();
     }
-    expect(within(screen.getByRole("table")).getAllByRole("row")).toHaveLength(2);
+    expect(within(screen.getByRole("table")).getAllByRole("row")).toHaveLength(3);
+  });
+
+  // Keep OS facts available when the independent shell read needs a retry.
+  it("retries shell details without replacing application facts", async () => {
+    readAppInfoMock.mockResolvedValue(APP_INFO);
+    vi.mocked(getCliProfiles).mockRejectedValueOnce(new Error("offline"));
+    render(<SettingsAboutRoute />);
+    fireEvent.click(await screen.findByRole("button", { name: "Retry shell" }));
+    expect(
+      await screen.findByRole("cell", { name: "PowerShell 7 (pwsh.exe)" }),
+    ).toBeInTheDocument();
+    expect(readAppInfoMock).toHaveBeenCalledTimes(1);
+  });
+
+  // Follow the existing catalog invalidation event rather than guessing a default executable.
+  it("updates the resolved shell when the catalog changes", async () => {
+    readAppInfoMock.mockResolvedValue(APP_INFO);
+    render(<SettingsAboutRoute />);
+    await screen.findByRole("cell", { name: "PowerShell 7 (pwsh.exe)" });
+    vi.mocked(getCliProfiles).mockResolvedValue(
+      createCliProfilesSnapshot({ revision: "1", effectiveDefaultShellId: "cmd" }),
+    );
+    act(() => {
+      // Deliver the same public invalidation shape as the native listener.
+      vi.mocked(onCliProfilesChanged).mock.calls[0]?.[0]({
+        revision: "1",
+        kind: "defaultShellChanged",
+        profileId: null,
+      });
+    });
+    await waitFor(() => {
+      // Wait for the retained store to publish the replacement shell catalog.
+      expect(screen.getByRole("cell", { name: "Command Prompt (cmd.exe)" })).toBeInTheDocument();
+    });
   });
 });
