@@ -1,5 +1,6 @@
 import { Bell, CalendarClock, CheckCircle2, CircleAlert, MessageSquare, X } from "lucide-react";
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import { Link } from "react-router";
 import { HighlightItem } from "@/components/animate-ui/primitives/effects/highlight";
 import { Button } from "@/components/ui/button";
 import {
@@ -8,7 +9,6 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Link } from "react-router";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { type NotificationCenterProps, useNotifications } from "./use-notifications";
@@ -361,8 +361,7 @@ export function NotificationCenter(props: NotificationCenterProps) {
               {inbox.loadingMore ? "Loading more…" : "Load more"}
             </Button>
           )}
-          <p>Terminal activity and event reminders appear here.</p>
-          <Link className="underline" to="/settings/notifications">
+          <Link className="text-brand hover:underline" to="/settings/notifications">
             Notification settings
           </Link>
         </div>
