@@ -51,12 +51,22 @@ function GeneralRows(props: { general: GeneralSettingsDto }) {
         label="Interface language"
         description="More languages will arrive in a later release."
       >
-        <span className="text-[13px] font-medium text-body-strong">
-          {LANGUAGE_LABELS[props.general.interfaceLanguage]}
-        </span>
+        <select
+          aria-label="Interface language"
+          disabled
+          value={props.general.interfaceLanguage}
+          className="h-8 min-w-40 rounded-md border border-hairline bg-canvas px-3 text-[13px] text-body-strong disabled:opacity-70"
+        >
+          <option value={props.general.interfaceLanguage}>
+            {LANGUAGE_LABELS[props.general.interfaceLanguage]}
+          </option>
+        </select>
       </SettingRow>
       {BOOLEAN_ROWS.map((row) => (
         <SettingRow key={row.field} label={row.label} description={row.description}>
+          {row.field === "openAtHomeOnLaunch" && props.general[row.field] && (
+            <span className="mr-3 text-xs text-muted">Always on</span>
+          )}
           <Switch
             aria-label={row.label}
             checked={props.general[row.field]}
